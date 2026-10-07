@@ -40,6 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-data/
+/data/
 public/dev-snapshot/
 public/engine.worker.js
