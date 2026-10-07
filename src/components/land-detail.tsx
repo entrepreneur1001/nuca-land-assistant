@@ -27,6 +27,12 @@ export function LandDetail() {
   const sectorKey = plot.projectId ?? `city:${plot.cityName}`;
   const sector = dashboard.sectors.find((x) => x.key === sectorKey);
   const booked = plot.status === "booked";
+  // Only show regulation fields the source actually publishes.
+  const rules = [
+    [t.rules.ratio, plot.rules?.ratio],
+    [t.rules.floors, plot.rules?.floors],
+    [t.rules.setbacks, plot.rules?.setbacks],
+  ].filter((x): x is [string, string] => !!x[1]);
 
   return (
     <div className="space-y-4">
@@ -61,56 +67,53 @@ export function LandDetail() {
           <dd>
             {usd(dashboard.budgetLimit)} {plot.downPayment > dashboard.budgetLimit ? <span className="text-bad">{t.detail.over}</span> : null}
           </dd>
-          <dt className="text-muted">{t.detail.builtDist}</dt>
-          <dd>
-            {km(plot.builtKm)} {plot.builtSrc === 1 ? <span className="text-xs text-muted">{t.detail.builtFromSector}</span> : null}
-          </dd>
-          <dt className="text-muted">{t.detail.neighbours}</dt>
-          <dd>{ex?.n == null ? "مش معروف" : pct(ex.n)}</dd>
-          <dt className="text-muted">{t.detail.nucaId}</dt>
-          <dd>{plot.externalPlotId ?? "مش معروف"}</dd>
-          <dt className="text-muted">{t.detail.location}</dt>
-          <dd>
-            {plot.latitude != null ? (
-              <a className="text-accent hover:underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${plot.latitude},${plot.longitude}`}>
-                {t.detail.map}
-              </a>
-            ) : (
-              "مش معروف"
-            )}
-          </dd>
+          {plot.builtKm != null ? (
+            <>
+              <dt className="text-muted">{t.detail.builtDist}</dt>
+              <dd>
+                {km(plot.builtKm)} {plot.builtSrc === 1 ? <span className="text-xs text-muted">{t.detail.builtFromSector}</span> : null}
+              </dd>
+            </>
+          ) : null}
+          {ex?.n != null ? (
+            <>
+              <dt className="text-muted">{t.detail.neighbours}</dt>
+              <dd>{pct(ex.n)}</dd>
+            </>
+          ) : null}
+          {plot.externalPlotId ? (
+            <>
+              <dt className="text-muted">{t.detail.nucaId}</dt>
+              <dd>{plot.externalPlotId}</dd>
+            </>
+          ) : null}
+          {plot.latitude != null ? (
+            <>
+              <dt className="text-muted">{t.detail.location}</dt>
+              <dd>
+                <a className="text-accent hover:underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${plot.latitude},${plot.longitude}`}>
+                  {t.detail.map}
+                </a>
+              </dd>
+            </>
+          ) : null}
         </dl>
       </Card>
 
-      <Card>
-        <h2 className="font-bold">🏗️ {t.rules.title}</h2>
-        {plot.rules ? (
-          <>
-            <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
-              <div>
-                <dt className="text-muted">{t.rules.ratio}</dt>
-                <dd className="font-semibold">{plot.rules.ratio ?? "مش معروف"}</dd>
+      {rules.length ? (
+        <Card>
+          <h2 className="font-bold">🏗️ {t.rules.title}</h2>
+          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
+            {rules.map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-muted">{label}</dt>
+                <dd className="font-semibold">{value}</dd>
               </div>
-              <div>
-                <dt className="text-muted">{t.rules.floors}</dt>
-                <dd className="font-semibold">{plot.rules.floors ?? "مش معروف"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted">{t.rules.setbacks}</dt>
-                <dd className="font-semibold">{plot.rules.setbacks ?? "مش معروف"}</dd>
-              </div>
-            </dl>
-            <p className="mt-2 text-xs text-muted">{t.rules.note}</p>
-          </>
-        ) : (
-          <p className="mt-2 text-sm text-muted">
-            {t.rules.none}{" "}
-            <a className="text-accent hover:underline" href="https://lands.nuca.gov.eg/ar/Conditions.aspx" target="_blank" rel="noreferrer">
-              {t.disclaimer.official} ↗
-            </a>
-          </p>
-        )}
-      </Card>
+            ))}
+          </dl>
+          <p className="mt-2 text-xs text-muted">{t.rules.note}</p>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
