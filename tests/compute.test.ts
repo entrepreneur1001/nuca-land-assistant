@@ -27,6 +27,7 @@ function snapshot(): Snapshot {
     bookingDate: i < 120 ? new Date(NOW - (i % 7) * 86_400_000).toISOString() : null,
     builtKm: (i % 10) / 2,
     builtSrc: 0,
+    rules: null,
   }));
   return {
     meta: {

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/components/app-state";
+import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
 import { t } from "@/i18n/ar";
 
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AppProvider>
           <Nav />
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-16 pt-4">{children}</main>
+          <Footer />
         </AppProvider>
       </body>
     </html>

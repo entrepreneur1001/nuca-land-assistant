@@ -7,6 +7,16 @@
 export const SCHEMA_VERSION = 1;
 export const CHUNK_COUNT = 8;
 
+/** الاشتراطات البنائية per district, as published by the source (free text from NUCA brochures). */
+export interface BuildingRules {
+  /** نسبة البناء, e.g. "50 %" */
+  ratio: string | null;
+  /** الارتفاع المسموح, e.g. "بدروم + أرضي + دورين" */
+  floors: string | null;
+  /** الردود, e.g. "3م امامي - 5م خلفي - 3م جانبي" */
+  setbacks: string | null;
+}
+
 export interface MetaDoc {
   schema: number;
   dataVersion: string;
@@ -21,7 +31,7 @@ export interface MetaDoc {
   market: { total: number; booked: number; available: number; allocatedCodes: number | null; sourceLastUpdate: string | null };
   allocations: { id: string; d: string; c: number; b: number | null }[];
   cities: string[];
-  sectors: { id: string; name: string; city: number; hot: boolean }[];
+  sectors: { id: string; name: string; city: number; hot: boolean; rules?: BuildingRules | null }[];
   zones: string[];
   chunks: { id: string; v: string; n: number }[];
 }
@@ -72,6 +82,8 @@ export interface Plot {
   builtKm: number | null;
   /** 0 = measured from the plot, 1 = from its sector's centre, 2 = unknown */
   builtSrc: 0 | 1 | 2;
+  /** Building regulations of the plot's district; null when the source doesn't publish them. */
+  rules: BuildingRules | null;
 }
 
 export interface Snapshot {
@@ -102,6 +114,7 @@ export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sector
     bookingDate: t[16] ? new Date(t[16]).toISOString() : null,
     builtKm: t[17],
     builtSrc: t[18],
+    rules: sector?.rules ?? null,
   };
 }
 

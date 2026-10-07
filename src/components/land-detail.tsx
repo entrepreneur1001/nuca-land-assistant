@@ -82,6 +82,36 @@ export function LandDetail() {
         </dl>
       </Card>
 
+      <Card>
+        <h2 className="font-bold">🏗️ {t.rules.title}</h2>
+        {plot.rules ? (
+          <>
+            <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-muted">{t.rules.ratio}</dt>
+                <dd className="font-semibold">{plot.rules.ratio ?? "مش معروف"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">{t.rules.floors}</dt>
+                <dd className="font-semibold">{plot.rules.floors ?? "مش معروف"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">{t.rules.setbacks}</dt>
+                <dd className="font-semibold">{plot.rules.setbacks ?? "مش معروف"}</dd>
+              </div>
+            </dl>
+            <p className="mt-2 text-xs text-muted">{t.rules.note}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-muted">
+            {t.rules.none}{" "}
+            <a className="text-accent hover:underline" href="https://lands.nuca.gov.eg/ar/Conditions.aspx" target="_blank" rel="noreferrer">
+              {t.disclaimer.official} ↗
+            </a>
+          </p>
+        )}
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <h2 className="font-bold">{t.detail.breakdown}</h2>

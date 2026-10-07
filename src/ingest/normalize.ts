@@ -70,6 +70,9 @@ export const sectorSchema = z.object({
   cityId: z.string().nullish(),
   isHot: z.boolean().nullish(),
   isFullyBooked: z.boolean().nullish(),
+  buildingRatio: z.string().nullish().catch(null),
+  allowedFloors: z.string().nullish().catch(null),
+  setbacks: z.string().nullish().catch(null),
 });
 
 const SOURCE_TZ = process.env.SOURCE_TIMEZONE ?? "Africa/Cairo";

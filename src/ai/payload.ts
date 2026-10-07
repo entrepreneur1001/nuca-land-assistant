@@ -58,6 +58,7 @@ export function buildPayload(d: Dashboard, ranked: RankedLand[], profile: Profil
         extra_needed_usd: Math.round(r.extraNeeded),
         garden: r.hasGarden,
         corner: r.hasCorner,
+        building_rules: r.rules ? { coverage: r.rules.ratio ?? "unknown", floors: r.rules.floors ?? "unknown", setbacks: r.rules.setbacks ?? "unknown" } : "unknown",
         km_to_existing_buildings: r.builtKm == null ? "unknown" : Number(r.builtKm.toFixed(2)),
         share_of_neighbours_booked: r.neighbourShare == null ? "unknown" : Number(r.neighbourShare.toFixed(2)),
         survival_probability: Number(r.survival.mid.toFixed(2)),

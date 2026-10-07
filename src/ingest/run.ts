@@ -7,6 +7,7 @@ import {
   packTuples,
   round,
   unpackTuples,
+  type BuildingRules,
   type MetaDoc,
   type PlotTuple,
 } from "@/data/snapshot";
@@ -175,14 +176,19 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       })
       .sort((x, y) => x.d.localeCompare(y.d));
     const hot = new Set<string>();
+    const rules = new Map<string, BuildingRules>(prev.sectors.flatMap((x) => (x.rules ? [[x.id, x.rules] as const] : [])));
     try {
       const sec = await fetchAllPaged(fetchJson, "/api/app/sector", 1000, "", sleep);
+      const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim().replace(/\s+/g, " ") : null);
       for (const i of sec.items) {
         const r = sectorSchema.safeParse(i);
-        if (r.success && r.data.isHot) hot.add(r.data.id);
+        if (!r.success) continue;
+        if (r.data.isHot) hot.add(r.data.id);
+        const rr = { ratio: clean(r.data.buildingRatio), floors: clean(r.data.allowedFloors), setbacks: clean(r.data.setbacks) };
+        if (rr.ratio || rr.floors || rr.setbacks) rules.set(r.data.id, rr);
       }
     } catch {
-      /* optional */
+      /* optional: keep previous rules */
     }
 
     // 3. all plots
@@ -247,7 +253,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     const tuples: PlotTuple[] = sorted.map((p: NormalizedPlot) => {
       const c = idx(cityIdx, p.cityName, () => cities.push(p.cityName));
       const sct = p.projectId
-        ? idx(sectorIdx, p.projectId, () => sectors.push({ id: p.projectId!, name: p.projectName ?? "", city: c, hot: hot.has(p.projectId!) }))
+        ? idx(sectorIdx, p.projectId, () => sectors.push({ id: p.projectId!, name: p.projectName ?? "", city: c, hot: hot.has(p.projectId!), rules: rules.get(p.projectId!) ?? null }))
         : -1;
       const z = p.zoneName ? idx(zoneIdx, p.zoneName, () => zones.push(p.zoneName!)) : -1;
       const b = built.get(p.id) ?? (prevById.has(p.id) ? { km: prevById.get(p.id)![17], src: prevById.get(p.id)![18] } : { km: null, src: 2 as const });

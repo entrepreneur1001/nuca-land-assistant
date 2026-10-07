@@ -54,7 +54,7 @@ function fakeSource(n: number, bookedIds: Set<number>, opts: { failPage?: boolea
     if (path.startsWith("/api/app/dashboard/allocation-statistics")) return [{ allocationId: "a1", issueDate: "2026-10-05T00:00:00", totalCodesIssued: 300, plotsBooked: 200 }];
     if (path.startsWith("/api/app/booking-allocation"))
       return { totalCount: 2, items: [{ id: "a1", issueDate: "2026-10-05T00:00:00", totalCodes: 300 }, { id: "a2", issueDate: "2026-10-06T00:00:00", totalCodes: 300 }] };
-    if (path.startsWith("/api/app/sector")) return { totalCount: 1, items: [{ id: "s1", name: "حي 1", isHot: true }] };
+    if (path.startsWith("/api/app/sector")) return { totalCount: 1, items: [{ id: "s1", name: "حي 1", isHot: true, buildingRatio: "50 %", allowedFloors: "بدروم + أرضي + دورين", setbacks: "3م امامي -  5م خلفي" }] };
     if (path.startsWith("/api/app/land-plot")) {
       const skip = Number(/SkipCount=(\d+)/.exec(path)![1]);
       const max = Number(/MaxResultCount=(\d+)/.exec(path)![1]);
@@ -91,6 +91,11 @@ describe("sync runner", () => {
     expect(tuples.every((x) => x[17] != null)).toBe(true);
     expect(m.meta!.allocations.map((a) => a.c)).toEqual([300, 300]);
     expect(m.meta!.sectors.find((s) => s.id === "s1")?.hot).toBe(true);
+    // building regulations travel with the district and reach every plot in it
+    expect(m.meta!.sectors.find((s) => s.id === "s1")?.rules).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: "3م امامي - 5م خلفي" });
+    expect(m.meta!.sectors.find((s) => s.id === "s2")?.rules).toBeNull();
+    const plotInS1 = tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s1")!;
+    expect(tupleToPlot(plotInS1, m.meta!).rules?.floors).toBe("بدروم + أرضي + دورين");
 
     const before = m.writes;
     const r2 = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:15:00Z") });

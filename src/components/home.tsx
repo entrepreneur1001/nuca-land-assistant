@@ -27,6 +27,7 @@ export function Home() {
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">{t.tagline}</p>
+      <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn">{t.disclaimer.short}</p>
       <ProfileCard profile={profile} setProfile={setProfile} cities={snapshot?.meta.cities ?? []} />
       {!result ? (
         <div className="py-12 text-center text-muted">{t.loading}</div>
@@ -165,6 +166,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 <dt className="text-muted">{t.card.price}</dt>
                 <dd>{usd(l.totalPrice)}</dd>
               </dl>
+              {l.rules?.floors ? <div className="mt-1 truncate text-xs text-muted" title={l.rules.floors}>🏗️ {l.rules.floors}</div> : null}
               <div className="mt-2 flex items-center justify-between">
                 <SurvivalBar {...l.survival} />
                 <span className="text-sm font-bold">{num(l.score)}</span>
