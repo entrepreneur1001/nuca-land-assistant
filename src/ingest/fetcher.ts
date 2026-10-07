@@ -1,4 +1,4 @@
-import { config } from "@/lib/config";
+import { SOURCE } from "./source";
 
 export class FetchError extends Error {
   constructor(
@@ -24,7 +24,7 @@ export interface FetchOptions {
  */
 export async function fetchJson(pathOrUrl: string, opts: FetchOptions = {}): Promise<unknown> {
   const { retries = 4, timeoutMs = 30_000, baseDelayMs = 1000, fetchImpl = fetch } = opts;
-  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${config.sourceApiUrl}${pathOrUrl}`;
+  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${SOURCE.apiUrl}${pathOrUrl}`;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {

@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
+// Static export: Firebase Hosting (Spark/free plan) serves plain files; all logic runs in the browser.
 const nextConfig: NextConfig = {
-  cacheComponents: true,
-  partialPrefetching: true,
-  serverExternalPackages: ["@electric-sql/pglite", "pg"],
+  output: "export",
+  images: { unoptimized: true },
   turbopack: {
     rules: {
       "*.css": {

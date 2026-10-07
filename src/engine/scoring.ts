@@ -1,5 +1,7 @@
 import { DEFAULT_PREMIUM_VALUES, DEFAULT_WEIGHTS, MODEL, type PremiumValues, type Weights } from "./config";
 import { featureKey, type Survival } from "./depletion";
+import { NEAR_BUILT, nearBuiltFactor } from "./nearbuilt";
+import { km as fmtKm, t } from "@/i18n/ar";
 
 export type FeatureMode = "ignore" | "prefer" | "require";
 
@@ -19,6 +21,7 @@ export interface Profile {
   preferences?: {
     garden?: FeatureMode;
     corner?: FeatureMode;
+    nearBuilt?: FeatureMode;
     onlyPreferredCities?: boolean;
     premiumValues?: Partial<PremiumValues>;
   } | null;
@@ -39,6 +42,7 @@ export interface ScorableLand {
   seaPct: number;
   status: string;
   latitude: number | null;
+  builtKm?: number | null;
 }
 
 export type Recommendation = "STRONG_BUY" | "GOOD" | "WATCH" | "SKIP";
@@ -46,12 +50,12 @@ export type ReachLabel = "REACHABLE" | "RISKY" | "UNLIKELY" | "BOOKED";
 
 export interface Factors {
   reachability: number;
+  nearBuilt: number;
+  premium: number;
   budget: number;
+  location: number;
   value: number;
   area: number;
-  location: number;
-  premium: number;
-  confidence: number;
 }
 
 export interface ScoredLand {
@@ -63,6 +67,9 @@ export interface ScoredLand {
   recommendation: Recommendation;
   hasGarden: boolean;
   hasCorner: boolean;
+  /** Within NEAR_BUILT.badgeKm of existing buildings. */
+  isNearBuilt: boolean;
+  neighbourShare: number | null;
   /** Extra money needed beyond what was already paid to cover the down payment. */
   extraNeeded: number;
   reasons: string[];
@@ -75,6 +82,8 @@ export interface ExclusionStats {
   featureRequired: number;
   city: number;
 }
+
+export const isNearBuilt = (builtKm: number | null | undefined) => builtKm != null && builtKm <= NEAR_BUILT.badgeKm;
 
 export function budgetLimit(p: Profile) {
   return p.moneyPaid + Math.max(0, p.maxAdditional || 0);
@@ -110,6 +119,7 @@ export function exclusionReason(l: ScorableLand, p: Profile): keyof ExclusionSta
   if (p.maxArea != null && l.area > p.maxArea) return "areaOrPrice";
   if (p.preferences?.garden === "require" && !(l.gardenPct > 0)) return "featureRequired";
   if (p.preferences?.corner === "require" && !(l.cornerPct > 0)) return "featureRequired";
+  if (p.preferences?.nearBuilt === "require" && !isNearBuilt(l.builtKm)) return "featureRequired";
   if (p.preferences?.onlyPreferredCities && p.preferredCities.length && !p.preferredCities.includes(l.cityName))
     return "city";
   return null;
@@ -119,8 +129,8 @@ export interface ScoreContext {
   survival: Map<string, Survival>;
   /** City popularity 0–1 (share of bookings normalised to the most popular city). */
   cityPopularity: Map<string, number>;
-  /** 0–1 data confidence (1 = fresh). */
-  dataConfidence: number;
+  /** Share of neighbouring plots already booked (null = unknown). */
+  neighbourShare?: Map<string, number | null>;
 }
 
 /**
@@ -162,6 +172,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
   const wsum = Object.values(weights).reduce((a, b) => a + Math.max(0, b), 0) || 1;
   const gardenMode = profile.preferences?.garden ?? "prefer";
   const cornerMode = profile.preferences?.corner ?? "prefer";
+  const nearMode = profile.preferences?.nearBuilt ?? "prefer";
 
   const scored: ScoredLand[] = eligible.map((l) => {
     const s = ctx.survival.get(l.id) ?? { low: 0, mid: 0, high: 0 };
@@ -203,32 +214,35 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
               : premiumValues.none;
     if (gardenMode === "ignore" && cornerMode === "ignore") premium = 0.5;
 
-    const confidence = clamp01(ctx.dataConfidence * (l.latitude == null ? 0.9 : 1));
+    const neighbourShare = ctx.neighbourShare?.get(l.id) ?? null;
+    const near = nearMode === "ignore" ? 0.5 : nearBuiltFactor(l.builtKm ?? null, neighbourShare);
     const factors: Factors = {
       reachability: s.mid,
+      nearBuilt: clamp01(near),
+      premium: clamp01(premium),
       budget: clamp01(budgetF),
+      location: clamp01(location),
       value,
       area: areaF,
-      location: clamp01(location),
-      premium: clamp01(premium),
-      confidence,
     };
     const score =
       (100 *
         (Object.keys(weights) as (keyof Weights)[]).reduce((a, k) => a + Math.max(0, weights[k]) * factors[k], 0)) /
       wsum;
 
+    const R = t.reasons;
     const reasons: string[] = [];
-    if (hasGarden && hasCorner) reasons.push("Garden view + corner (حديقة + ناصية)");
-    else if (hasGarden) reasons.push("Garden view (حديقة)");
-    else if (hasCorner) reasons.push("Corner plot (ناصية)");
-    if (extraNeeded <= 0) reasons.push("Down payment fully covered by what you paid");
-    else reasons.push(`Needs ${Math.round(extraNeeded).toLocaleString("en-US")} USD extra for the down payment`);
-    if (s.mid >= MODEL.reachableAt) reasons.push(`High chance (${Math.round(s.mid * 100)}%) it is still free at your turn`);
-    else if (s.mid >= MODEL.riskyAt) reasons.push(`Moderate chance (${Math.round(s.mid * 100)}%) it survives until your turn`);
-    else reasons.push(`Low chance (${Math.round(s.mid * 100)}%) it survives until your turn`);
-    if (value >= 0.6) reasons.push("Cheaper per m² than similar plots in the city");
-    if (ci >= 0 || pi >= 0) reasons.push("In your preferred locations");
+    if (hasGarden && hasCorner) reasons.push(R.gardenCorner);
+    else if (hasGarden) reasons.push(R.garden);
+    else if (hasCorner) reasons.push(R.corner);
+    if (isNearBuilt(l.builtKm)) reasons.push(R.nearBuilt(fmtKm(l.builtKm)));
+    if (neighbourShare != null && neighbourShare >= 0.4) reasons.push(R.neighbours);
+    if (extraNeeded <= 0) reasons.push(R.covered);
+    else reasons.push(R.extra(Math.round(extraNeeded)));
+    const p100 = Math.round(s.mid * 100);
+    reasons.push(s.mid >= MODEL.reachableAt ? R.high(p100) : s.mid >= MODEL.riskyAt ? R.mid(p100) : R.low(p100));
+    if (value >= 0.6) reasons.push(R.cheap);
+    if (ci >= 0 || pi >= 0) reasons.push(R.preferred);
 
     return {
       id: l.id,
@@ -239,6 +253,8 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       recommendation: band(score, s.mid),
       hasGarden,
       hasCorner,
+      isNearBuilt: isNearBuilt(l.builtKm),
+      neighbourShare,
       extraNeeded,
       reasons,
     };

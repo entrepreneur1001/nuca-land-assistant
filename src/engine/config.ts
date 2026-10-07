@@ -4,13 +4,13 @@
  */
 
 export const DEFAULT_WEIGHTS = {
-  reachability: 25,
-  budget: 15,
-  value: 10,
-  area: 10,
-  location: 15,
+  reachability: 20,
+  nearBuilt: 20,
   premium: 20,
-  confidence: 5,
+  budget: 15,
+  location: 10,
+  value: 10,
+  area: 5,
 } as const;
 export type Weights = Record<keyof typeof DEFAULT_WEIGHTS, number>;
 

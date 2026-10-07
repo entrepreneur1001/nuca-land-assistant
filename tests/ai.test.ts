@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { parseAiResponse } from "@/ai/schema";
-import { refreshReasons } from "@/ai/service";
 
 const valid = (ids: string[]) =>
   JSON.stringify({
@@ -34,22 +33,5 @@ describe("Gemini response handling", () => {
 
   it("accepts JSON wrapped in a markdown fence", () => {
     expect(parseAiResponse("```json\n" + valid(["a"]) + "\n```", new Set(["a"])).ok).toBe(true);
-  });
-});
-
-describe("AI refresh policy", () => {
-  const now = Date.parse("2026-10-07T12:00:00Z");
-  const cached = { createdAt: new Date(now - 10 * 60_000), profileHash: "p", candidateIds: ["a", "b", "c"], topIds: ["a"] };
-  const base = { currentProfileHash: "p", currentCandidateIds: ["a", "b", "c"], availableIds: new Set(["a", "b", "c"]), now, ttlMs: 3600_000 };
-
-  it("does not refresh when nothing significant changed", () => {
-    expect(refreshReasons({ ...base, cached })).toEqual([]);
-  });
-  it("refreshes when preferences change, a top pick is booked, inventory shifts, or TTL passes", () => {
-    expect(refreshReasons({ ...base, cached, currentProfileHash: "q" })).toContain("your preferences changed");
-    expect(refreshReasons({ ...base, cached, availableIds: new Set(["b", "c"]) })).toContain("a previously recommended plot is no longer available or eligible");
-    expect(refreshReasons({ ...base, cached, currentCandidateIds: ["a", "b", "z"] })).toContain("candidate inventory changed ≥5%");
-    expect(refreshReasons({ ...base, cached, now: now + 2 * 3600_000 })).toContain("analysis is older than the refresh interval");
-    expect(refreshReasons({ ...base, cached: null })).toEqual(["no analysis yet"]);
   });
 });

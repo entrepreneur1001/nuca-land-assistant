@@ -1,0 +1,35 @@
+name: Sync NUCA data
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Force full plot sync"
+        type: boolean
+        default: false
+      osm:
+        description: "Force OpenStreetMap refresh"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Sync into Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: npx tsx scripts/ingest.mts ${{ inputs.full && '--full' || '' }} ${{ inputs.osm && '--osm' || '' }}

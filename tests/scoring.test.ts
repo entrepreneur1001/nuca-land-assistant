@@ -37,7 +37,7 @@ const land = (id: string, o: Partial<ScorableLand> = {}): ScorableLand => ({
 const ctx = (ids: string[], s = 0.9) => ({
   survival: new Map(ids.map((id) => [id, { low: s - 0.1, mid: s, high: s + 0.05 }])),
   cityPopularity: new Map([["City", 1]]),
-  dataConfidence: 1,
+  neighbourShare: new Map<string, number | null>(),
 });
 
 describe("budget", () => {
@@ -72,7 +72,7 @@ describe("garden + corner priority", () => {
     const r = scoreLands(lands, profile, ctx(["plain", "gc"]));
     expect(r.scored[0].id).toBe("gc");
     expect(r.scored[0].hasGarden && r.scored[0].hasCorner).toBe(true);
-    expect(r.scored[0].reasons[0]).toContain("Garden view + corner");
+    expect(r.scored[0].reasons[0]).toBe("حديقة + ناصية");
   });
 
   it("'require garden' filters out non-garden plots", () => {
@@ -93,5 +93,34 @@ describe("reachability gate", () => {
     const dream = r.scored.find((s) => s.id === "dream")!;
     expect(["WATCH", "SKIP"]).toContain(dream.recommendation);
     expect(dream.reach).toBe("UNLIKELY");
+  });
+});
+
+describe("near already-built places", () => {
+  it("a plot near existing buildings with booked neighbours outranks an identical far one", () => {
+    const lands = [land("far", { builtKm: 8 }), land("near", { builtKm: 0.4 })];
+    const c = ctx(["far", "near"]);
+    c.neighbourShare = new Map([["near", 0.6], ["far", 0]]);
+    const r = scoreLands(lands, profile, c);
+    expect(r.scored[0].id).toBe("near");
+    expect(r.scored[0].isNearBuilt).toBe(true);
+    expect(r.scored[0].factors.nearBuilt).toBeGreaterThan(r.scored[1].factors.nearBuilt);
+    expect(r.scored[0].reasons.some((x) => x.includes("قريبة من مباني قائمة"))).toBe(true);
+  });
+
+  it("garden + corner + near built beats each alone", () => {
+    const lands = [
+      land("gc-far", { gardenPct: 5, cornerPct: 10, builtKm: 9 }),
+      land("plain-near", { builtKm: 0.3 }),
+      land("gc-near", { gardenPct: 5, cornerPct: 10, builtKm: 0.3 }),
+    ];
+    const r = scoreLands(lands, profile, ctx(["gc-far", "plain-near", "gc-near"]));
+    expect(r.scored[0].id).toBe("gc-near");
+  });
+
+  it("'require near built' filters out far and unknown plots", () => {
+    const lands = [land("far", { builtKm: 4 }), land("unknown", { builtKm: null }), land("near", { builtKm: 1 })];
+    const r = scoreLands(lands, { ...profile, preferences: { nearBuilt: "require" } }, ctx(["far", "unknown", "near"]));
+    expect(r.scored.map((s) => s.id)).toEqual(["near"]);
   });
 });

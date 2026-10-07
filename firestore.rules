@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Public, read-only market data. Written only by the sync job (Admin SDK bypasses rules).
+    match /meta/{doc} { allow read: if true; allow write: if false; }
+    match /plots/{chunk} { allow read: if true; allow write: if false; }
+
+    // Shared cache of validated AI analyses, keyed by hash(profile + data version + model).
+    // Anyone may read; signed-in (anonymous) visitors may create once. No updates or deletes.
+    match /ai_cache/{key} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && key.size() <= 16
+        && request.resource.data.keys().hasOnly(['response', 'model', 'dataVersion', 'createdAt'])
+        && request.resource.data.response is map
+        && request.resource.data.response.recommendations is list
+        && request.resource.data.response.recommendations.size() <= 20
+        && request.resource.data.model is string && request.resource.data.model.size() < 64
+        && request.resource.data.dataVersion is string && request.resource.data.dataVersion.size() < 32
+        && request.resource.data.createdAt is string && request.resource.data.createdAt.size() < 40;
+      allow update, delete: if false;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

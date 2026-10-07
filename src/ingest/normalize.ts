@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { NewLand } from "@/db/schema";
-import { config } from "@/lib/config";
+import { SOURCE } from "./source";
 
 const numish = z.union([z.number(), z.string().transform(Number)]).pipe(z.number().finite());
 const optNum = numish.nullish().catch(null);
@@ -130,7 +129,36 @@ export function parseGeometry(geoJson: string | null | undefined): {
   }
 }
 
-export function normalizePlot(p: SourcePlot): Omit<NewLand, "firstSeenAt" | "lastSeenAt" | "updatedAt"> {
+export interface NormalizedPlot {
+  id: string;
+  externalPlotId: string | null;
+  cityId: string | null;
+  cityName: string;
+  projectId: string | null;
+  projectName: string | null;
+  zoneId: string | null;
+  zoneName: string | null;
+  square: string | null;
+  plotNumber: string;
+  area: number;
+  basePricePerMeter: number | null;
+  pricePerMeter: number;
+  totalPrice: number;
+  downPayment: number;
+  cornerPct: number;
+  gardenPct: number;
+  seaPct: number;
+  latitude: number | null;
+  longitude: number | null;
+  geometry: unknown;
+  status: "available" | "booked";
+  bookingDate: Date | null;
+  source: string;
+  sourceUrl: string;
+  sourceUpdatedAt: Date | null;
+}
+
+export function normalizePlot(p: SourcePlot): NormalizedPlot {
   const { lat, lng, geometry } = parseGeometry(p.geoJson);
   return {
     id: p.id,
@@ -156,8 +184,8 @@ export function normalizePlot(p: SourcePlot): Omit<NewLand, "firstSeenAt" | "las
     geometry,
     status: p.isBooked ? "booked" : "available",
     bookingDate: parseSourceDate(p.bookingDate),
-    source: config.sourceName,
-    sourceUrl: `${config.sourceApiUrl}/api/app/land-plot/${p.id}`,
+    source: SOURCE.name,
+    sourceUrl: `${SOURCE.apiUrl}/api/app/land-plot/${p.id}`,
     sourceUpdatedAt: parseSourceDate(p.lastModificationTime),
   };
 }
