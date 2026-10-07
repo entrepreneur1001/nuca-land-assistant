@@ -1,13 +1,7 @@
 "use client";
 
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  getFirestore,
-  type Firestore,
-} from "firebase/firestore";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
 // Firebase web config is public by design (security comes from Firestore rules / App Check).
 const config = {
@@ -59,15 +53,9 @@ function initAppCheck(a: FirebaseApp) {
   });
 }
 
+/** In-memory Firestore cache only: IndexedDB persistence can corrupt and crash the SDK. Plot chunks are cached by us (lib/data.ts). */
 export function firestore(): Firestore {
-  if (db) return db;
-  try {
-    db = initializeFirestore(firebaseApp(), {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-    });
-  } catch {
-    db = getFirestore(firebaseApp());
-  }
+  db ??= getFirestore(firebaseApp());
   return db;
 }
 

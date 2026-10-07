@@ -85,10 +85,11 @@ export function toQuery(p: Profile): string {
 }
 
 export function fromQuery(q: URLSearchParams): Profile {
+  const n = (k: string, d: number) => (q.has(k) && q.get(k) !== "" ? Number(q.get(k)) : d);
   return sanitize({
-    bookingRank: Number(q.get("r")),
-    moneyPaid: Number(q.get("p")),
-    maxAdditional: Number(q.get("x") ?? 0),
+    bookingRank: n("r", DEFAULT_PROFILE.bookingRank),
+    moneyPaid: n("p", DEFAULT_PROFILE.moneyPaid),
+    maxAdditional: n("x", 0),
     preferredCities: q.get("cities")?.split("|").filter(Boolean) ?? [],
     preferences: {
       garden: q.get("g") as FeatureMode,

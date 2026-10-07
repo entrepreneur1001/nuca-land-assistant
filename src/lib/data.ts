@@ -1,6 +1,6 @@
 "use client";
 
-import { doc, getDoc, getDocFromCache, getDocFromServer, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple, type Snapshot } from "@/data/snapshot";
 import { firestore } from "./firebase";
 
@@ -11,16 +11,35 @@ async function loadChunkLocal(id: string) {
   return (await r.json()) as { version: string; data: string };
 }
 
-async function loadChunkFirestore(id: string, version: string) {
-  const ref = doc(firestore(), "plots", id);
+const LS_PREFIX = "nuca-chunk:";
+
+/** Chunk cache in localStorage keyed by version (~1 MB total). Every access is guarded: storage may be full or blocked. */
+function cachedChunk(id: string, version: string): string | null {
   try {
-    const cached = await getDocFromCache(ref);
-    if (cached.exists() && cached.data().version === version) return cached.data() as { version: string; data: string };
+    const raw = localStorage.getItem(LS_PREFIX + id);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { version: string; data: string };
+    return v.version === version ? v.data : null;
   } catch {
-    /* not cached */
+    return null;
   }
-  const fresh = await getDocFromServer(ref).catch(() => getDoc(ref));
-  return fresh.data() as { version: string; data: string };
+}
+
+function storeChunk(id: string, version: string, data: string) {
+  try {
+    localStorage.setItem(LS_PREFIX + id, JSON.stringify({ version, data }));
+  } catch {
+    /* quota exceeded / private mode: just skip caching */
+  }
+}
+
+async function loadChunkFirestore(id: string, version: string) {
+  const hit = cachedChunk(id, version);
+  if (hit) return { version, data: hit };
+  const snap = await getDoc(doc(firestore(), "plots", id));
+  const d = snap.data() as { version: string; data: string } | undefined;
+  if (d) storeChunk(id, d.version, d.data);
+  return d;
 }
 
 const tupleCache = new Map<string, { version: string; tuples: PlotTuple[] }>();
