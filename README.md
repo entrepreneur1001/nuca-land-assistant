@@ -4,16 +4,18 @@ A public, Arabic (Egyptian), phone-friendly site that answers:
 
 > **With my rank and the money I paid, which NUCA plots can I realistically book, ideally on a garden, a corner (ناصية), and near already-built areas?**
 
-It runs entirely on the **Firebase free (Spark) plan**:
+Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the 15-minute sync.
 
 ```
 baytwaten4all API ─┐
-OpenStreetMap ─────┤→ GitHub Actions (every 15 min) → Firestore (meta + 8 gzipped plot chunks)
-                                                          ↓
-                         Firebase Hosting (static Next.js export) → browser computes everything
-                                                          ↳ Firebase AI Logic (Gemini) on a button
-                                                          ↳ Google Analytics for Firebase
+OpenStreetMap ─────┤→ GitHub Actions (every 15 min) → Firestore (meta + 8 gzipped plot chunks, AI cache)
+                                                          ↓ public read
+          Firebase Hosting (static Next.js export) → the visitor's browser computes the ranking (Web Worker)
+                                                   ↳ Gemini via Firebase AI Logic (App Check / reCAPTCHA v3)
+                                                   ↳ Google Analytics for Firebase
 ```
+
+No Gemini API key is used or stored anywhere. AI Logic calls Gemini on behalf of the Firebase project.
 
 The site is **read-only**. It never logs in to NUCA or books anything. Each visitor's settings (rank, amount paid, preferences) live only in their own browser (localStorage, shareable via a link).
 
@@ -28,25 +30,26 @@ npm test                       # 40 tests
 
 `npm run dev` (without `:local`) reads the live Firestore.
 
-## Firebase setup (one time)
+Seed Firestore from a local snapshot (saves the first OSM runs):
+`GOOGLE_APPLICATION_CREDENTIALS=service-account.json npx tsx scripts/seed-from-local.mts`
 
-Project: **`nuca-lands-assistant`** (already created, web app registered; the config is in `src/lib/firebase.ts`, public by design).
+## Setup (one time)
 
-Console steps (no CLI for these):
-1. **Firestore**: create the database. Or enable the API at
-   https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=nuca-lands-assistant and then run
-   `firebase firestore:databases:create "(default)" --location=eur3`.
-2. **Authentication → Sign-in method → Anonymous: Enable** (used only to write the shared AI cache).
-3. **AI Logic → Get started → Gemini Developer API** (free tier). Then set **per-user rate limit** (e.g. 5 requests/min).
-   Optional: **App Check** with reCAPTCHA v3 to stop abuse.
-4. **Analytics → Enable Google Analytics**. Then put the `measurementId` in `.env.local` as `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-…` before building.
-5. **Project settings → Service accounts → Generate new private key**. This is for the sync job.
+Done already:
+- project `nuca-lands-assistant`, web app, Firestore, Analytics (`G-GBV8B6PJ55`), Anonymous auth, AI Logic (Gemini Developer API)
+- Firestore rules deployed
+- GitHub secret `FIREBASE_SERVICE_ACCOUNT` set
 
-Deploy:
+Remaining:
+1. **reCAPTCHA v3 key for App Check.** App Check is enforced on AI Logic, so without this the AI button fails.
+   1. Create a **v3** key at https://www.google.com/recaptcha/admin/create. Domains: `nuca-lands-assistant.web.app`, `nuca-lands-assistant.firebaseapp.com`, `localhost`.
+   2. In Firebase console → App Check → Apps → web app → **reCAPTCHA v3**, paste the **secret key**.
+   3. Put the **site key** (public) in `.env.local` as `NEXT_PUBLIC_RECAPTCHA_SITE_KEY=…`, then `npm run deploy`.
+2. Optional: AI Logic → Settings → set a per-user rate limit (e.g. 5 requests/min).
 
-```bash
-npm run deploy        # tests + static build + firebase deploy (hosting + firestore rules)
-```
+Local dev: register an App Check *debug token* (Firebase console → App Check → Manage debug tokens) and put it in `.env.local` as `NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN=…`. It is only used by `next dev`.
+
+Deploy: `npm run deploy` (tests, static build, then `firebase deploy` of hosting + Firestore rules).
 
 ## Data sync (GitHub Actions)
 
@@ -60,7 +63,9 @@ gh workflow run sync.yml -f full=true -f osm=true     # first seed
 Each run:
 1. Polls the source's stats (tiny).
 2. If anything changed, or 2 h have passed, re-downloads all plots (16 pages, 1 s apart). The data is validated with zod, and partial snapshots are rejected, so missing plots are never marked booked.
-3. Weekly, or when new plots appear, queries **OpenStreetMap Overpass** per city for existing buildings and developed land. It computes each plot's distance to the nearest one. Plots without coordinates use their district's centre. If a city's query fails, that city keeps its previous distances.
+3. Queries **OpenStreetMap Overpass** for existing buildings and developed land within 5 km of each district centre. It computes each plot's distance to the nearest one. Plots without coordinates use their district's centre.
+   - Each run refreshes at most 3 cities, choosing those whose data is older than 7 days or that gained new plots. That keeps every run short.
+   - If a city's query fails, that city keeps its previous distances.
 4. Writes **only the chunks whose content changed**, plus `meta/current`. That's ~100–300 writes/day.
 
 ## Model
@@ -94,10 +99,12 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
   - Hard filters: booked; down payment > paid + max extra; any feature set to «لازم».
   - Bands: لقطة ≥ 80, كويسة ≥ 65, تحت المراقبة ≥ 50.
   - A plot with < 30% survival is capped at «تحت المراقبة».
-- **AI:**
-  - Gemini runs through Firebase AI Logic, so no API key ships in the site.
+- **AI (Firebase AI Logic):**
+  - The browser sends Gemini the backend-computed candidates through AI Logic, protected by App Check. There is no API key.
   - It receives up to 40 diversified candidates. The answer is JSON in Egyptian Arabic, validated with zod; unknown land ids are dropped.
-  - Results are cached in `ai_cache/{hash(profile+dataVersion+model)}`. There is a 30 s cooldown per browser, plus the AI Logic per-user limit.
+  - Results are cached in `ai_cache/{hash(profile+dataVersion+model)}`.
+  - Limits: 30 s cooldown per browser, plus the AI Logic per-user rate limit and App Check.
+  - Visitors write the cache through anonymous auth. Firestore rules allow create-only, with size and shape checks.
 
 ## Free-tier budget
 

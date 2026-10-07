@@ -93,6 +93,7 @@ describe("reachability gate", () => {
     const dream = r.scored.find((s) => s.id === "dream")!;
     expect(["WATCH", "SKIP"]).toContain(dream.recommendation);
     expect(dream.reach).toBe("UNLIKELY");
+    expect(r.scored[0].id).toBe("reach");
   });
 });
 
@@ -122,5 +123,17 @@ describe("near already-built places", () => {
     const lands = [land("far", { builtKm: 4 }), land("unknown", { builtKm: null }), land("near", { builtKm: 1 })];
     const r = scoreLands(lands, { ...profile, preferences: { nearBuilt: "require" } }, ctx(["far", "unknown", "near"]));
     expect(r.scored.map((s) => s.id)).toEqual(["near"]);
+  });
+});
+
+describe("reachable plots first", () => {
+  it("a lower-scoring reachable plot ranks above a higher-scoring unreachable one", () => {
+    const lands = [land("dream", { gardenPct: 5, cornerPct: 10, builtKm: 0.2 }), land("ok", { builtKm: 6, pricePerMeter: 260 })];
+    const c = ctx(["dream", "ok"]);
+    c.survival.set("dream", { low: 0, mid: 0.01, high: 0.05 });
+    c.survival.set("ok", { low: 0.3, mid: 0.4, high: 0.5 });
+    const r = scoreLands(lands, profile, c);
+    expect(r.scored.find((x) => x.id === "dream")!.score).toBeGreaterThan(r.scored.find((x) => x.id === "ok")!.score);
+    expect(r.scored[0].id).toBe("ok");
   });
 });

@@ -1,5 +1,3 @@
-"use client";
-
 import { DEFAULT_WEIGHTS } from "@/engine/config";
 import type { FeatureMode, Profile } from "@/engine/scoring";
 

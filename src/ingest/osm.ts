@@ -5,19 +5,29 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type BBox = [south: number, west: number, north: number, east: number];
 
-/** Existing buildings and developed land (residential/commercial/industrial) inside a bbox, as centre points. */
-export async function fetchBuiltPoints(bbox: BBox, fetchImpl: typeof fetch = fetch): Promise<LatLng[]> {
-  const b = bbox.map((x) => x.toFixed(5)).join(",");
-  const query = `[out:csv(::lat,::lon;false)][timeout:120];(way["building"](${b});way["landuse"~"^(residential|commercial|retail|industrial)$"](${b}););out center;`;
+/** Search radius: the near-built score is zero beyond 5 km, so nothing farther matters. */
+export const OSM_RADIUS_M = 5000;
+
+/**
+ * Existing buildings and developed land (residential/commercial/industrial) within
+ * `radiusM` of any of the given centres (district centroids), as centre points.
+ */
+export async function fetchBuiltPoints(centers: LatLng[], radiusM = OSM_RADIUS_M, fetchImpl: typeof fetch = fetch): Promise<LatLng[]> {
+  if (!centers.length) return [];
+  const around = centers.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`);
+  const parts = around
+    .map((c) => `way["building"](around:${radiusM},${c});way["landuse"~"^(residential|commercial|retail|industrial)$"](around:${radiusM},${c});`)
+    .join("");
+  const query = `[out:csv(::lat,::lon;false)][timeout:180];(${parts});out center;`;
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const url = ENDPOINTS[attempt % ENDPOINTS.length];
     try {
       const res = await fetchImpl(url, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "nuca-land-assistant/1.0 (personal, read-only)" },
         body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(240_000),
       });
       if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
       const text = await res.text();

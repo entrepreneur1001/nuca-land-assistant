@@ -259,8 +259,9 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       reasons,
     };
   });
-  // Recommendation band first (so unreachable plots never outrank reachable ones), then score.
   const order: Record<Recommendation, number> = { STRONG_BUY: 0, GOOD: 1, WATCH: 2, SKIP: 3 };
-  scored.sort((a, b) => order[a.recommendation] - order[b.recommendation] || b.score - a.score);
+  // Plots you can realistically reach (≥ riskyAt survival) always come first, then band, then score.
+  const reachable = (x: ScoredLand) => (x.survival.mid >= MODEL.riskyAt ? 0 : 1);
+  scored.sort((a, b) => reachable(a) - reachable(b) || order[a.recommendation] - order[b.recommendation] || b.score - a.score);
   return { scored, excluded, weights, eligibleCount: eligible.length };
 }

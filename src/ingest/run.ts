@@ -10,7 +10,7 @@ import {
   type MetaDoc,
   type PlotTuple,
 } from "@/data/snapshot";
-import { computeBuiltDistances, type LatLng } from "@/engine/nearbuilt";
+import { computeBuiltDistances, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
 import { diffSnapshot, type ExistingItem, type LandStatus } from "./diff";
 import { fetchJson as defaultFetchJson } from "./fetcher";
 import {
@@ -24,7 +24,7 @@ import {
   validatePlots,
   type NormalizedPlot,
 } from "./normalize";
-import { bboxOf, buildIndex, fetchBuiltPoints as defaultFetchBuilt, type BBox } from "./osm";
+import { buildIndex, fetchBuiltPoints as defaultFetchBuilt } from "./osm";
 import { SOURCE } from "./source";
 
 export interface ChunkDoc {
@@ -49,8 +49,11 @@ export interface RunOptions {
   /** Re-run a full sync at least this often even if stats look unchanged. */
   maxFullSyncMs?: number;
   osmMaxAgeMs?: number;
+  /** Max cities refreshed from OpenStreetMap per run (keeps every run short). */
+  osmCitiesPerRun?: number;
   fetchJson?: (path: string) => Promise<unknown>;
-  fetchBuiltPoints?: (bbox: BBox) => Promise<LatLng[]>;
+  /** Built points near the given district centres. */
+  fetchBuiltPoints?: (centers: LatLng[]) => Promise<LatLng[]>;
   log?: (...a: unknown[]) => void;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -108,13 +111,16 @@ export async function loadTuples(store: Store, meta: MetaDoc): Promise<PlotTuple
 export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunResult> {
   const now = opts.now ?? new Date();
   const fetchJson = opts.fetchJson ?? ((p: string) => defaultFetchJson(p));
-  const fetchBuilt = opts.fetchBuiltPoints ?? ((b: BBox) => defaultFetchBuilt(b));
+  const fetchBuilt = opts.fetchBuiltPoints ?? ((c: LatLng[]) => defaultFetchBuilt(c));
   const log = opts.log ?? ((...a: unknown[]) => console.log("[ingest]", ...a));
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const maxFullSyncMs = opts.maxFullSyncMs ?? 2 * 3600_000;
   const osmMaxAgeMs = opts.osmMaxAgeMs ?? 7 * 86_400_000;
+  const osmCitiesPerRun = opts.osmCitiesPerRun ?? Number(process.env.OSM_CITIES_PER_RUN ?? 3);
 
   const prev = (await store.getMeta()) ?? emptyMeta();
+  const osmCities: Record<string, string> = { ...(prev.osmCities ?? {}) };
+  const osmStale = (city: string) => !osmCities[city] || now.getTime() - Date.parse(osmCities[city]) >= osmMaxAgeMs;
   const meta: MetaDoc = { ...emptyMeta(), ...prev, schema: SCHEMA_VERSION, source: { name: SOURCE.name, url: SOURCE.apiUrl } };
   const result: RunResult = { mode: "stats", changedChunks: [], newlyBooked: 0, newlyAvailable: 0, inserted: 0, osmRefreshed: false };
 
@@ -136,8 +142,15 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     };
     meta.statsAt = now.toISOString();
 
+    const anyOsmDue = !prev.cities.length || prev.cities.some(osmStale);
     const fullDue =
-      opts.forceFull || !prev.fullSyncAt || !prev.chunks.length || statsChanged || now.getTime() - Date.parse(prev.fullSyncAt) >= maxFullSyncMs;
+      opts.forceFull ||
+      opts.forceOsm ||
+      anyOsmDue ||
+      !prev.fullSyncAt ||
+      !prev.chunks.length ||
+      statsChanged ||
+      now.getTime() - Date.parse(prev.fullSyncAt) >= maxFullSyncMs;
     if (!fullDue) {
       meta.lastError = null;
       await store.putMeta(meta);
@@ -192,20 +205,27 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     result.newlyAvailable = d.newlyAvailable.length;
     result.inserted = d.inserted.length;
 
-    // 4. distance to existing buildings (OpenStreetMap), refreshed weekly or when new plots appear
-    const osmDue = opts.forceOsm || !prev.osmAt || now.getTime() - Date.parse(prev.osmAt) >= osmMaxAgeMs || (d.inserted.length > 0 && prev.chunks.length > 0);
+    // 4. distance to existing buildings (OpenStreetMap): a few stale cities per run, plus cities with new plots
     const built = new Map<string, { km: number | null; src: 0 | 1 | 2 }>();
     for (const t of prevTuples) built.set(t[0], { km: t[17], src: t[18] });
-    if (osmDue) {
-      try {
-        const { distances, failedCities } = await computeOsmDistances(plots, fetchBuilt, log, sleep);
-        for (const [id, v] of distances) built.set(id, v);
-        if (!failedCities.length) meta.osmAt = now.toISOString();
-        result.osmRefreshed = distances.size > 0;
-      } catch (e) {
-        log("OSM refresh failed, keeping previous distances:", e instanceof Error ? e.message : e);
-      }
+    const insertedIds = new Set(d.inserted);
+    const allCities = [...new Set(plots.map((p) => p.cityName))];
+    const citiesWithNew = new Set(prev.chunks.length ? plots.filter((p) => insertedIds.has(p.id)).map((p) => p.cityName) : []);
+    const due = opts.forceOsm
+      ? allCities
+      : allCities
+          .filter((c) => osmStale(c) || citiesWithNew.has(c))
+          .sort((x, y) => (osmCities[x] ?? "").localeCompare(osmCities[y] ?? ""))
+          .slice(0, Math.max(osmCitiesPerRun, citiesWithNew.size));
+    if (due.length) {
+      const dueSet = new Set(due);
+      const { distances, failedCities } = await computeOsmDistances(plots.filter((p) => dueSet.has(p.cityName)), fetchBuilt, log, sleep);
+      for (const [id, v] of distances) built.set(id, v);
+      for (const c of due) if (!failedCities.includes(c)) osmCities[c] = now.toISOString();
+      result.osmRefreshed = distances.size > 0;
+      if (result.osmRefreshed) meta.osmAt = now.toISOString();
     }
+    meta.osmCities = osmCities;
 
     // 5. build tuples + lookup tables
     const cityIdx = new Map<string, number>();
@@ -293,7 +313,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
 
 async function computeOsmDistances(
   plots: NormalizedPlot[],
-  fetchBuilt: (b: BBox) => Promise<LatLng[]>,
+  fetchBuilt: (centers: LatLng[]) => Promise<LatLng[]>,
   log: (...a: unknown[]) => void,
   sleep: (ms: number) => Promise<void>,
 ) {
@@ -306,17 +326,17 @@ async function computeOsmDistances(
   const failedCities: string[] = [];
   let first = true;
   for (const [city, ps] of byCity) {
-    const coords = ps.filter((p) => p.latitude != null && p.longitude != null).map((p) => [p.latitude!, p.longitude!] as LatLng);
-    const bbox = bboxOf(coords);
-    if (!bbox) {
+    const centers = [...sectorCentroids(ps).values()];
+    if (!centers.length) {
       for (const p of ps) out.set(p.id, { km: null, src: 2 });
       continue;
     }
     if (!first) await sleep(5000);
     first = false;
     try {
-      const points = await fetchBuilt(bbox);
-      log(`OSM ${city}: ${points.length} built points`);
+      const t0 = Date.now();
+      const points = await fetchBuilt(centers);
+      log(`OSM ${city}: ${centers.length} district(s), ${points.length} built points, ${Math.round((Date.now() - t0) / 1000)}s`);
       for (const [id, v] of computeBuiltDistances(ps, buildIndex(points))) out.set(id, v);
     } catch (e) {
       // Keep this city's previous distances; retry on the next run.

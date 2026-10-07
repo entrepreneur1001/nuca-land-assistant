@@ -141,4 +141,24 @@ describe("sync runner", () => {
     const after = (await loadTuples(m.store, m.meta!)).map((x) => x[17]);
     expect(after).toEqual(before);
   });
+
+  it("refreshes OpenStreetMap a few cities per run, oldest first", async () => {
+    const m = memStore();
+    const calls: number[] = [];
+    const countingOsm = async (c: [number, number][]) => {
+      calls.push(c.length);
+      return [[30.0002, 31.0002]] as [number, number][];
+    };
+    const src = fakeSource(60, new Set());
+    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:00:00Z") });
+    expect(calls).toHaveLength(1);
+    expect(Object.keys(m.meta!.osmCities!)).toHaveLength(1);
+    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:15:00Z") });
+    expect(calls).toHaveLength(2);
+    expect(Object.keys(m.meta!.osmCities!)).toHaveLength(2);
+    // Everything fresh → a quiet stats-only run, no OSM calls.
+    const r = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:30:00Z") });
+    expect(r.mode).toBe("stats");
+    expect(calls).toHaveLength(2);
+  });
 });

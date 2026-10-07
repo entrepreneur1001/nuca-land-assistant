@@ -169,7 +169,10 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
     .filter((s) => s.affordableAvailable > 0 && s.expectedRemaining === 0 && s.recentBookings > 0)
     .slice(0, 3)
     .map((s) => ({ projectName: s.projectName, cityName: s.cityName, recentBookings: s.recentBookings }));
-  const topChoice = ranked.find((r) => r.recommendation === "STRONG_BUY" || r.recommendation === "GOOD") ?? ranked[0];
+  const topChoice =
+    ranked.find((r) => (r.recommendation === "STRONG_BUY" || r.recommendation === "GOOD") && r.survival.mid >= MODEL.riskyAt) ??
+    ranked.find((r) => r.survival.mid >= MODEL.riskyAt) ??
+    ranked[0];
 
   const dashboard: Dashboard = {
     dataVersion: meta.dataVersion,

@@ -7,6 +7,9 @@
 
 export type LatLng = [lat: number, lng: number];
 
+/** Distances at or beyond this are shown as "5 km or more" (matches the OSM search radius). */
+export const FAR_KM = 5;
+
 const KM_PER_DEG_LAT = 111.32;
 export function distanceKm(a: LatLng, b: LatLng): number {
   const kx = KM_PER_DEG_LAT * Math.cos(((a[0] + b[0]) / 2) * (Math.PI / 180));
@@ -96,9 +99,10 @@ export function computeBuiltDistances(
   built: GridIndex<null>,
 ): Map<string, { km: number | null; src: 0 | 1 | 2 }> {
   const centroids = sectorCentroids(plots);
-  // No mapped buildings at all → unknown (likely a map coverage gap); otherwise cap "far" at 15 km.
+  // No mapped buildings at all → unknown (likely a map coverage gap).
+  // Buildings are only fetched within FAR_KM, so anything beyond is reported as FAR_KM ("5 km or more").
   const hasData = built.size > 0;
-  const near = (q: LatLng) => (hasData ? (built.nearest(q, 15) ?? 15) : null);
+  const near = (q: LatLng) => (hasData ? Math.min(FAR_KM, built.nearest(q, FAR_KM + 1) ?? FAR_KM) : null);
   const sectorKm = new Map<string, number | null>();
   for (const [k, c] of centroids) sectorKm.set(k, near(c));
   const out = new Map<string, { km: number | null; src: 0 | 1 | 2 }>();

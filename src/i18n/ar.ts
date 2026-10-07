@@ -6,7 +6,7 @@ export const num = (n: number | null | undefined, digits = 0) =>
 export const usd = (n: number | null | undefined) => (n == null ? "—" : `${num(n)} دولار`);
 export const pct = (n: number | null | undefined) => (n == null ? "—" : `${num(Math.round(n * 100))}٪`);
 export const km = (n: number | null | undefined) =>
-  n == null ? "مش معروف" : n < 1 ? `${num(Math.round(n * 1000))} متر` : `${num(n, 1)} كم`;
+  n == null ? "مش معروف" : n >= 5 ? "٥ كم أو أكتر" : n < 1 ? `${num(Math.round(n * 1000))} متر` : `${num(n, 1)} كم`;
 export const date = (iso: string | Date | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" }) : "—";
 export const dateTime = (iso: string | Date | null | undefined) =>
@@ -124,6 +124,7 @@ export const t = {
     cooldown: (s: number) => `استنى ${num(s)} ثانية`,
     note: "بيحلّل الأراضي اللي إحنا بعتناها له بس، ومينفعش يخترع أرض مش موجودة.",
     failed: "التحليل مانجحش، الترتيب العادي لسه شغال.",
+    dailyCap: "الذكاء الاصطناعي عليه ضغط دلوقتي، جرّب كمان شوية.",
     cached: "نتيجة محفوظة",
     risks: "مخاطر",
     confidence: "الثقة",

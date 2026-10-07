@@ -1,9 +1,10 @@
 import type { NextConfig } from "next";
 
-// Static export: Firebase Hosting (Spark/free plan) serves plain files; all logic runs in the browser.
+// Static export for Firebase Hosting (free plan). All logic runs in the browser; Gemini via Firebase AI Logic.
 const nextConfig: NextConfig = {
   output: "export",
   images: { unoptimized: true },
+  env: { NEXT_PUBLIC_BUILD_ID: String(Date.now()) },
   turbopack: {
     rules: {
       "*.css": {

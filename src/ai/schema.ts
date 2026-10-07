@@ -26,7 +26,7 @@ export const aiResponseJsonSchema = {
   properties: {
     recommendations: {
       type: "array",
-      maxItems: 10,
+      maxItems: 6,
       items: {
         type: "object",
         properties: {

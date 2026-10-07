@@ -213,7 +213,14 @@ function AiPanel() {
     const r = await analyze(dashboard, ranked, app.profile);
     setBusy(false);
     if (r.ok) setRes({ data: r.data, cached: r.cached, forVersion: dashboard.dataVersion });
-    else setErr(r.error === "cooldown" ? t.ai.cooldown(Math.ceil(cooldownLeft() / 1000)) : t.ai.failed);
+    else
+      setErr(
+        r.error === "cooldown"
+          ? t.ai.cooldown(Math.max(1, Math.ceil(cooldownLeft() / 1000)))
+          : r.error === "daily-cap"
+            ? t.ai.dailyCap
+            : t.ai.failed,
+      );
   };
 
   return (
