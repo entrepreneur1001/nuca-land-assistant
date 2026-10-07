@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { FACTOR, ago, km, num, pct, t, usd } from "@/i18n/ar";
+import { isOnMainRoad } from "@/engine/roads";
+import { unitsPerFloor } from "@/engine/units";
 import { track } from "@/lib/firebase";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
@@ -33,6 +35,9 @@ export function LandDetail() {
     [t.rules.floors, plot.rules?.floors],
     [t.rules.setbacks, plot.rules?.setbacks],
   ].filter((x): x is [string, string] => !!x[1]);
+  // Always known: set by the plot's area under the licensing rule.
+  const units = unitsPerFloor(plot.area);
+  const unitsNote = units === 4 ? t.rules.unitsNote4 : units === 3 ? t.rules.unitsNote3 : null;
 
   return (
     <div className="space-y-4">
@@ -49,7 +54,14 @@ export function LandDetail() {
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {booked ? <Badge tone="bad">{t.detail.booked}</Badge> : <Badge tone="good">{t.detail.available}</Badge>}
           {s ? <RecBadge rec={s.recommendation} /> : null}
-          <FeatureBadges garden={plot.gardenPct > 0} corner={plot.cornerPct > 0} sea={plot.seaPct > 0} nearBuilt={s?.isNearBuilt} />
+          <FeatureBadges
+            garden={plot.gardenPct > 0}
+            corner={plot.cornerPct > 0}
+            street={isOnMainRoad(plot.mainRoadM)}
+            sea={plot.seaPct > 0}
+            nearBuilt={s?.isNearBuilt}
+            units={units}
+          />
           {s ? <span className="text-xs text-muted">{t.detail.rankOf(pos + 1)}</span> : null}
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
@@ -72,6 +84,16 @@ export function LandDetail() {
               <dt className="text-muted">{t.detail.builtDist}</dt>
               <dd>
                 {km(plot.builtKm)} {plot.builtSrc === 1 ? <span className="text-xs text-muted">{t.detail.builtFromSector}</span> : null}
+              </dd>
+            </>
+          ) : null}
+          {/* Only when confirmed: "far" may just be a road missing from the map. */}
+          {isOnMainRoad(plot.mainRoadM) ? (
+            <>
+              <dt className="text-muted">{t.detail.roadDist}</dt>
+              <dd>
+                {km(plot.mainRoadM! / 1000)}{" "}
+                <span className="text-xs text-muted">{t.detail.roadNote}</span>
               </dd>
             </>
           ) : null}
@@ -100,20 +122,24 @@ export function LandDetail() {
         </dl>
       </Card>
 
-      {rules.length ? (
-        <Card>
-          <h2 className="font-bold">🏗️ {t.rules.title}</h2>
-          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
-            {rules.map(([label, value]) => (
-              <div key={label}>
-                <dt className="text-muted">{label}</dt>
-                <dd className="font-semibold">{value}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-2 text-xs text-muted">{t.rules.note}</p>
-        </Card>
-      ) : null}
+      <Card>
+        <h2 className="font-bold">🏗️ {t.rules.title}</h2>
+        <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
+          {rules.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-muted">{label}</dt>
+              <dd className="font-semibold">{value}</dd>
+            </div>
+          ))}
+          <div>
+            <dt className="text-muted">{t.rules.units}</dt>
+            <dd className="font-semibold">{t.rules.unitsValue(units)}</dd>
+            {unitsNote ? <dd className="text-xs text-muted">{unitsNote}</dd> : null}
+          </div>
+        </dl>
+        {rules.length ? <p className="mt-2 text-xs text-muted">{plot.rules?.from === "booklet" ? t.rules.noteBooklet : t.rules.note}</p> : null}
+        <p className="mt-1 text-xs text-muted">{t.rules.unitsBasis}</p>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

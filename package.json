@@ -12,8 +12,8 @@
     "dev:local": "npm run build:worker && NEXT_PUBLIC_DATA=local next dev",
     "sync": "tsx scripts/ingest.mts",
     "sync:local": "tsx scripts/ingest-local.mts",
-    "deploy:rules": "firebase deploy --only firestore:rules",
-    "deploy": "npm test && npm run build && firebase deploy --only hosting,firestore:rules",
+    "deploy:rules": "firebase deploy --project nuca-lands-assistant --only firestore:rules",
+    "deploy": "npm test && npm run build && firebase deploy --project nuca-lands-assistant --only hosting,firestore:rules",
     "build:worker": "esbuild src/lib/engine.worker.ts --bundle --format=esm --minify --target=es2020 --outfile=public/engine.worker.js --log-level=warning"
   },
   "dependencies": {

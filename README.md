@@ -11,7 +11,7 @@ baytwaten4all API ─┐
 OpenStreetMap ─────┤→ GitHub Actions (every 15 min) → Firestore (meta + 8 gzipped plot chunks, AI cache)
                                                           ↓ public read
           Firebase Hosting (static Next.js export) → the visitor's browser computes the ranking (Web Worker)
-                                                   ↳ Gemini via Firebase AI Logic (App Check / reCAPTCHA v3)
+                                                   ↳ Gemini via Firebase AI Logic (App Check / Fraud Defense)
                                                    ↳ Google Analytics for Firebase
 ```
 
@@ -25,7 +25,7 @@ The site is **read-only**. It never logs in to NUCA or books anything. Each visi
 npm install
 npm run sync:local -- --full   # fetch all plots + OSM into public/dev-snapshot (no Firebase needed; first run 10–30 min because of OSM)
 npm run dev:local              # http://localhost:3000 reading the local snapshot
-npm test                       # 40 tests
+npm test                       # 51 tests
 ```
 
 `npm run dev` (without `:local`) reads the live Firestore.
@@ -41,10 +41,10 @@ Done already:
 - GitHub secret `FIREBASE_SERVICE_ACCOUNT` set
 
 Remaining:
-1. **reCAPTCHA v3 key for App Check.** App Check is enforced on AI Logic, so without this the AI button fails.
-   1. Create a **v3** key at https://www.google.com/recaptcha/admin/create. Domains: `nuca-lands-assistant.web.app`, `nuca-lands-assistant.firebaseapp.com`, `localhost`.
-   2. In Firebase console → App Check → Apps → web app → **reCAPTCHA v3**, paste the **secret key**.
-   3. Put the **site key** (public) in `.env.local` as `NEXT_PUBLIC_RECAPTCHA_SITE_KEY=…`, then `npm run deploy`.
+1. **reCAPTCHA key for App Check (Fraud Defense).** App Check is enforced on AI Logic, so without this the AI button fails. Classic reCAPTCHA v3 is deprecated in App Check; the app uses `ReCaptchaEnterpriseProvider`.
+   1. Create (or migrate) a key in Google Cloud → Security → Fraud Defense (reCAPTCHA). Domains: every hosting domain, e.g. `maly-ai.web.app`, `maly-ai.firebaseapp.com`, `nuca-lands-assistant.web.app`, `localhost`.
+   2. In Firebase console → App Check → Apps → web app → **Fraud Defense**, paste the **site key**.
+   3. Put the same **site key** (public) in `.env.local` as `NEXT_PUBLIC_RECAPTCHA_SITE_KEY=…`, then `npm run deploy`.
 2. Optional: AI Logic → Settings → set a per-user rate limit (e.g. 5 requests/min).
 
 Local dev: register an App Check *debug token* (Firebase console → App Check → Manage debug tokens) and put it in `.env.local` as `NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN=…`. It is only used by `next dev`.
@@ -66,7 +66,9 @@ Each run:
 3. Queries **OpenStreetMap Overpass** for existing buildings and developed land within 5 km of each district centre. It computes each plot's distance to the nearest one. Plots without coordinates use their district's centre.
    - Each run refreshes at most 3 cities, choosing those whose data is older than 7 days or that gained new plots. That keeps every run short.
    - If a city's query fails, that city keeps its previous distances.
-4. Writes **only the chunks whose content changed**, plus `meta/current`. That's ~100–300 writes/day.
+   - The same run also fetches main roads (3 km around each district centre) for the plot → main-road distance.
+4. Fills building rules (الاشتراطات البنائية) the source leaves empty from `src/data/building-rules.ts`. That table is copied from NUCA's official 11th-phase terms booklet (lands.nuca.gov.eg/Files/Handbook.pdf). Source values always win, field by field.
+5. Writes **only the chunks whose content changed**, plus `meta/current`. That's ~100–300 writes/day.
 
 ## Model
 
@@ -84,6 +86,13 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
   - Distance score: full credit at ≤ 0.5 km, zero at ≥ 5 km.
   - Booked-neighbour score: share of plots within 400 m (or the same zone) already booked; 50%+ = full.
   - The 🏘️ badge shows at ≤ 1.5 km. "Unknown" → 0.3.
+- **On a main road (على شارع رئيسي):** NUCA doesn't publish this, so it is derived from OpenStreetMap.
+  - Distance from the plot's outline to the nearest motorway/trunk/primary/secondary/tertiary road (`src/engine/roads.ts`).
+  - ≤ 30 m from the road's centreline counts as facing it (🛣️ badge, preference, filter). It adds +0.2 to the garden/corner factor, and «لازم» makes it a hard filter.
+  - Plots without coordinates, or in cities with no mapped main roads, are "unknown" (never treated as on a road).
+- **Apartments per floor (عدد الشقق في الدور):** set by the plot's area under the city authority's licensing rule (`src/engine/units.ts`).
+  - < 730 m² → 2; 730–950 m² → 3 (licensing fee for the 3rd unit); > 950 m² → 4 (fee for the 4th unit + parking requirements).
+  - 3 or 4 units shows the 🏢 badge and adds +0.1 / +0.2 to the garden/corner factor. It has a profile preference and a search filter; «لازم» excludes 2-unit plots.
 - **Score** (weights editable in «بحث متقدم → أوزان الترتيب»):
 
 | Factor | Weight |

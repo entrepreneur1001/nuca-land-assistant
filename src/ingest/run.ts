@@ -11,7 +11,9 @@ import {
   type MetaDoc,
   type PlotTuple,
 } from "@/data/snapshot";
+import { RULES_OVERRIDES } from "@/data/building-rules";
 import { computeBuiltDistances, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
+import { buildRoadIndex, computeRoadDistances, type Segment } from "@/engine/roads";
 import { diffSnapshot, type ExistingItem, type LandStatus } from "./diff";
 import { fetchJson as defaultFetchJson } from "./fetcher";
 import {
@@ -25,7 +27,7 @@ import {
   validatePlots,
   type NormalizedPlot,
 } from "./normalize";
-import { buildIndex, fetchBuiltPoints as defaultFetchBuilt } from "./osm";
+import { buildIndex, fetchBuiltPoints as defaultFetchBuilt, fetchMainRoads as defaultFetchRoads } from "./osm";
 import { SOURCE } from "./source";
 
 export interface ChunkDoc {
@@ -55,6 +57,10 @@ export interface RunOptions {
   fetchJson?: (path: string) => Promise<unknown>;
   /** Built points near the given district centres. */
   fetchBuiltPoints?: (centers: LatLng[]) => Promise<LatLng[]>;
+  /** Main-road segments near the given district centres. */
+  fetchMainRoads?: (centers: LatLng[]) => Promise<Segment[]>;
+  /** Building rules from the NUCA booklet for districts the source leaves empty. */
+  rulesOverrides?: Record<string, BuildingRules>;
   log?: (...a: unknown[]) => void;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -113,6 +119,8 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
   const now = opts.now ?? new Date();
   const fetchJson = opts.fetchJson ?? ((p: string) => defaultFetchJson(p));
   const fetchBuilt = opts.fetchBuiltPoints ?? ((c: LatLng[]) => defaultFetchBuilt(c));
+  // Roads only matter right at the plot, so a smaller radius than for buildings is enough.
+  const fetchRoads = opts.fetchMainRoads ?? ((c: LatLng[]) => defaultFetchRoads(c, 3000));
   const log = opts.log ?? ((...a: unknown[]) => console.log("[ingest]", ...a));
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const maxFullSyncMs = opts.maxFullSyncMs ?? 2 * 3600_000;
@@ -176,7 +184,10 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       })
       .sort((x, y) => x.d.localeCompare(y.d));
     const hot = new Set<string>();
-    const rules = new Map<string, BuildingRules>(prev.sectors.flatMap((x) => (x.rules ? [[x.id, x.rules] as const] : [])));
+    // Source rules (fresh, else last known); missing fields are filled from RULES_OVERRIDES below.
+    const rules = new Map<string, BuildingRules>(
+      prev.sectors.flatMap((x) => (x.rules && x.rules.from !== "booklet" ? [[x.id, x.rules] as const] : [])),
+    );
     try {
       const sec = await fetchAllPaged(fetchJson, "/api/app/sector", 1000, "", sleep);
       const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim().replace(/\s+/g, " ") : null);
@@ -190,6 +201,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     } catch {
       /* optional: keep previous rules */
     }
+    for (const [id, o] of Object.entries(opts.rulesOverrides ?? RULES_OVERRIDES)) rules.set(id, mergeRules(rules.get(id), o));
 
     // 3. all plots
     const fetched = await fetchAllPaged(fetchJson, "/api/app/land-plot", SOURCE.pageSize, "&Sorting=id", sleep);
@@ -213,20 +225,34 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
 
     // 4. distance to existing buildings (OpenStreetMap): a few stale cities per run, plus cities with new plots
     const built = new Map<string, { km: number | null; src: 0 | 1 | 2 }>();
-    for (const t of prevTuples) built.set(t[0], { km: t[17], src: t[18] });
+    const roads = new Map<string, number | null>();
+    // Cities synced before main-road distances existed need a refresh even if their buildings are fresh.
+    const noRoads = new Set<string>();
+    for (const t of prevTuples) {
+      built.set(t[0], { km: t[17], src: t[18] });
+      if (t[19] === undefined) noRoads.add(prev.cities[t[3]]);
+      else roads.set(t[0], t[19]);
+    }
     const insertedIds = new Set(d.inserted);
     const allCities = [...new Set(plots.map((p) => p.cityName))];
     const citiesWithNew = new Set(prev.chunks.length ? plots.filter((p) => insertedIds.has(p.id)).map((p) => p.cityName) : []);
     const due = opts.forceOsm
       ? allCities
       : allCities
-          .filter((c) => osmStale(c) || citiesWithNew.has(c))
+          .filter((c) => osmStale(c) || citiesWithNew.has(c) || noRoads.has(c))
           .sort((x, y) => (osmCities[x] ?? "").localeCompare(osmCities[y] ?? ""))
           .slice(0, Math.max(osmCitiesPerRun, citiesWithNew.size));
     if (due.length) {
       const dueSet = new Set(due);
-      const { distances, failedCities } = await computeOsmDistances(plots.filter((p) => dueSet.has(p.cityName)), fetchBuilt, log, sleep);
+      const { distances, roadDistances, failedCities } = await computeOsmDistances(
+        plots.filter((p) => dueSet.has(p.cityName)),
+        fetchBuilt,
+        fetchRoads,
+        log,
+        sleep,
+      );
       for (const [id, v] of distances) built.set(id, v);
+      for (const [id, v] of roadDistances) roads.set(id, v);
       for (const c of due) if (!failedCities.includes(c)) osmCities[c] = now.toISOString();
       result.osmRefreshed = distances.size > 0;
       if (result.osmRefreshed) meta.osmAt = now.toISOString();
@@ -277,6 +303,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
         p.bookingDate?.getTime() ?? 0,
         round(b.km, 3),
         b.src,
+        roads.get(p.id) ?? null,
       ];
     });
     meta.cities = cities;
@@ -317,9 +344,18 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
   }
 }
 
+/** Source values win; the booklet table only fills fields the source leaves empty. */
+function mergeRules(src: BuildingRules | undefined, booklet: BuildingRules): BuildingRules {
+  if (!src) return { ...booklet, from: "booklet" };
+  const r = { ratio: src.ratio ?? booklet.ratio, floors: src.floors ?? booklet.floors, setbacks: src.setbacks ?? booklet.setbacks };
+  const filled = r.ratio !== src.ratio || r.floors !== src.floors || r.setbacks !== src.setbacks;
+  return { ...r, from: filled ? "booklet" : "source" };
+}
+
 async function computeOsmDistances(
   plots: NormalizedPlot[],
   fetchBuilt: (centers: LatLng[]) => Promise<LatLng[]>,
+  fetchRoads: (centers: LatLng[]) => Promise<Segment[]>,
   log: (...a: unknown[]) => void,
   sleep: (ms: number) => Promise<void>,
 ) {
@@ -329,6 +365,7 @@ async function computeOsmDistances(
     byCity.get(p.cityName)!.push(p);
   }
   const out = new Map<string, { km: number | null; src: 0 | 1 | 2 }>();
+  const roadOut = new Map<string, number | null>();
   const failedCities: string[] = [];
   let first = true;
   for (const [city, ps] of byCity) {
@@ -348,7 +385,17 @@ async function computeOsmDistances(
       // Keep this city's previous distances; retry on the next run.
       failedCities.push(city);
       log(`OSM ${city} failed:`, e instanceof Error ? e.message : e);
+      continue;
+    }
+    await sleep(5000);
+    try {
+      const segs = await fetchRoads(centers);
+      log(`OSM ${city}: ${segs.length} main-road segments`);
+      for (const [id, m] of computeRoadDistances(ps, buildRoadIndex(segs))) roadOut.set(id, m);
+    } catch (e) {
+      failedCities.push(city);
+      log(`OSM roads ${city} failed:`, e instanceof Error ? e.message : e);
     }
   }
-  return { distances: out, failedCities };
+  return { distances: out, roadDistances: roadOut, failedCities };
 }

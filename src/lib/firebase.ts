@@ -34,7 +34,7 @@ export function whenAppCheckReady() {
 
 /**
  * App Check protects Firebase AI Logic from abuse (enforced in the console).
- * Production uses reCAPTCHA v3 (NEXT_PUBLIC_RECAPTCHA_SITE_KEY); local dev can use a registered debug token.
+ * Production uses Fraud Defense / reCAPTCHA Enterprise (NEXT_PUBLIC_RECAPTCHA_SITE_KEY; classic v3 is deprecated in App Check); local dev can use a registered debug token.
  */
 function initAppCheck(a: FirebaseApp) {
   if (typeof window === "undefined") return;
@@ -44,9 +44,9 @@ function initAppCheck(a: FirebaseApp) {
     if (debug) (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string }).FIREBASE_APPCHECK_DEBUG_TOKEN = debug;
   }
   if (!siteKey && process.env.NODE_ENV !== "development") return;
-  appCheckReady = import("firebase/app-check").then(({ initializeAppCheck, ReCaptchaV3Provider }) => {
+  appCheckReady = import("firebase/app-check").then(({ initializeAppCheck, ReCaptchaEnterpriseProvider }) => {
     try {
-      initializeAppCheck(a, { provider: new ReCaptchaV3Provider(siteKey ?? "debug-only"), isTokenAutoRefreshEnabled: true });
+      initializeAppCheck(a, { provider: new ReCaptchaEnterpriseProvider(siteKey ?? "debug-only"), isTokenAutoRefreshEnabled: true });
     } catch {
       /* already initialised */
     }

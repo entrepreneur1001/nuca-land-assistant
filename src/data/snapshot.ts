@@ -15,6 +15,8 @@ export interface BuildingRules {
   floors: string | null;
   /** الردود, e.g. "3م امامي - 5م خلفي - 3م جانبي" */
   setbacks: string | null;
+  /** Where the values came from: the source's district record, or our table from the NUCA terms booklet. */
+  from?: "source" | "booklet";
 }
 
 export interface MetaDoc {
@@ -57,6 +59,8 @@ export type PlotTuple = [
   bookingTs: number,
   builtKm: number | null,
   builtSrc: 0 | 1 | 2,
+  /** Metres to the nearest main road (OpenStreetMap); missing in older chunks. */
+  roadM?: number | null,
 ];
 
 export interface Plot {
@@ -82,6 +86,8 @@ export interface Plot {
   builtKm: number | null;
   /** 0 = measured from the plot, 1 = from its sector's centre, 2 = unknown */
   builtSrc: 0 | 1 | 2;
+  /** Metres from the plot to the nearest main road (OpenStreetMap); null = unknown. */
+  mainRoadM: number | null;
   /** Building regulations of the plot's district; null when the source doesn't publish them. */
   rules: BuildingRules | null;
 }
@@ -114,6 +120,7 @@ export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sector
     bookingDate: t[16] ? new Date(t[16]).toISOString() : null,
     builtKm: t[17],
     builtSrc: t[18],
+    mainRoadM: t[19] ?? null,
     rules: sector?.rules ?? null,
   };
 }

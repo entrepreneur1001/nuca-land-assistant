@@ -65,7 +65,9 @@ function fakeSource(n: number, bookedIds: Set<number>, opts: { failPage?: boolea
   };
 }
 
-const quiet = { log: () => {}, sleep: async () => {} };
+// A main road running north–south along longitude 31.0003 (crosses the first plots).
+const road = [[[29.99, 31.0003], [30.01, 31.0003]]] as [[number, number], [number, number]][];
+const quiet = { log: () => {}, sleep: async () => {}, fetchMainRoads: async () => road };
 const osm = async () => [[30.0002, 31.0002]] as [number, number][];
 
 describe("snapshot packing", () => {
@@ -96,6 +98,10 @@ describe("sync runner", () => {
     expect(m.meta!.sectors.find((s) => s.id === "s2")?.rules).toBeNull();
     const plotInS1 = tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s1")!;
     expect(tupleToPlot(plotInS1, m.meta!).rules?.floors).toBe("بدروم + أرضي + دورين");
+    // main-road distance per plot: plot 0 touches the road, plot 59 is ~570 m east of it (capped at 200)
+    const byNo = new Map(tuples.map((x) => [x[2], x]));
+    expect(byNo.get("0")![19]).toBe(0);
+    expect(byNo.get("59")![19]).toBe(200);
 
     const before = m.writes;
     const r2 = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:15:00Z") });
@@ -165,5 +171,65 @@ describe("sync runner", () => {
     const r = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:30:00Z") });
     expect(r.mode).toBe("stats");
     expect(calls).toHaveLength(2);
+  });
+
+  it("a main-road failure keeps previous road distances", async () => {
+    const m = memStore();
+    await runSync(m.store, { ...quiet, fetchJson: fakeSource(30, new Set()), fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
+    const before = (await loadTuples(m.store, m.meta!)).map((x) => x[19]);
+    expect(before.some((x) => x != null)).toBe(true);
+    await runSync(m.store, {
+      ...quiet,
+      forceFull: true,
+      forceOsm: true,
+      fetchJson: fakeSource(30, new Set()),
+      fetchBuiltPoints: osm,
+      fetchMainRoads: async () => {
+        throw new Error("overpass down");
+      },
+      now: new Date("2026-10-07T11:00:00Z"),
+    });
+    expect((await loadTuples(m.store, m.meta!)).map((x) => x[19])).toEqual(before);
+  });
+
+  it("refreshes cities whose snapshot predates main-road distances", async () => {
+    const m = memStore();
+    const src = fakeSource(30, new Set());
+    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
+    // Simulate an old snapshot: strip index 19 from every tuple.
+    for (const c of m.meta!.chunks) {
+      const doc = (await m.store.getChunk(c.id))!;
+      const old = (await unpackTuples(doc.data)).map((t) => t.slice(0, 19) as PlotTuple);
+      doc.data = await packTuples(old);
+      c.v = `old-${c.v}`;
+    }
+    let roadCalls = 0;
+    await runSync(m.store, {
+      ...quiet,
+      forceFull: true,
+      fetchJson: src,
+      fetchBuiltPoints: osm,
+      fetchMainRoads: async () => (roadCalls++, road),
+      now: new Date("2026-10-07T10:15:00Z"),
+    });
+    expect(roadCalls).toBeGreaterThan(0);
+    expect((await loadTuples(m.store, m.meta!)).every((x) => x[19] !== undefined)).toBe(true);
+  });
+
+  it("booklet rules fill only what the source leaves empty", async () => {
+    const m = memStore();
+    await runSync(m.store, {
+      ...quiet,
+      fetchJson: fakeSource(30, new Set()),
+      fetchBuiltPoints: osm,
+      rulesOverrides: {
+        s1: { ratio: "40 %", floors: "x", setbacks: "y" },
+        s2: { ratio: "50 %", floors: "بدروم + أرضي + 3 أدوار", setbacks: null },
+      },
+      now: new Date("2026-10-07T10:00:00Z"),
+    });
+    const rules = (id: string) => m.meta!.sectors.find((s) => s.id === id)?.rules;
+    expect(rules("s1")).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: "3م امامي - 5م خلفي", from: "source" });
+    expect(rules("s2")).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + 3 أدوار", setbacks: null, from: "booklet" });
   });
 });

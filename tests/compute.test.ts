@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Plot, Snapshot } from "@/data/snapshot";
+import { buildPayload } from "@/ai/payload";
 import { computeDashboard } from "@/engine/compute";
 import { DEFAULT_PROFILE } from "@/lib/profile";
 
@@ -27,6 +28,7 @@ function snapshot(): Snapshot {
     bookingDate: i < 120 ? new Date(NOW - (i % 7) * 86_400_000).toISOString() : null,
     builtKm: (i % 10) / 2,
     builtSrc: 0,
+    mainRoadM: i % 5 === 0 ? 10 : 150,
     rules: null,
   }));
   return {
@@ -72,6 +74,27 @@ describe("browser engine", () => {
     const early = computeDashboard(snapshot(), { ...DEFAULT_PROFILE, bookingRank: 200 }, NOW).dashboard.reachable.expected;
     const late = computeDashboard(snapshot(), { ...DEFAULT_PROFILE, bookingRank: 600 }, NOW).dashboard.reachable.expected;
     expect(late).toBeLessThan(early);
+  });
+});
+
+describe("AI payload", () => {
+  it("omits unknown building rules and sends only the known fields", () => {
+    const snap = snapshot();
+    snap.plots.forEach((p, i) => {
+      if (i % 2) p.rules = { ratio: "50 %", floors: null, setbacks: "3م امامي" };
+    });
+    const { ranked, dashboard } = computeDashboard(snap, { ...DEFAULT_PROFILE, bookingRank: 200, moneyPaid: 60_000 }, NOW);
+    const lands = buildPayload(dashboard, ranked, DEFAULT_PROFILE).payload.lands;
+    expect(lands.length).toBeGreaterThan(0);
+    for (const l of lands) {
+      const p = snap.plots.find((x) => x.id === l.land_id)!;
+      if (p.rules) expect(l.building_rules).toEqual({ coverage: "50 %", setbacks: "3م امامي" });
+      else expect("building_rules" in l).toBe(false);
+      // only sent when confirmed; never "false"/"unknown"
+      if (p.mainRoadM! <= 30) expect(l.on_main_road).toBe(true);
+      else expect("on_main_road" in l).toBe(false);
+    }
+    expect(JSON.stringify(lands)).not.toMatch(/"floors":"unknown"/);
   });
 });
 

@@ -1,6 +1,8 @@
 import { DEFAULT_PREMIUM_VALUES, DEFAULT_WEIGHTS, MODEL, type PremiumValues, type Weights } from "./config";
 import { featureKey, type Survival } from "./depletion";
 import { NEAR_BUILT, nearBuiltFactor } from "./nearbuilt";
+import { isOnMainRoad } from "./roads";
+import { isMultiUnit, unitsPerFloor, type UnitsPerFloor } from "./units";
 import { km as fmtKm, t } from "@/i18n/ar";
 
 export type FeatureMode = "ignore" | "prefer" | "require";
@@ -22,6 +24,10 @@ export interface Profile {
     garden?: FeatureMode;
     corner?: FeatureMode;
     nearBuilt?: FeatureMode;
+    /** على شارع رئيسي */
+    street?: FeatureMode;
+    /** 3+ apartments per floor (عدد الشقق في الدور), from the plot's area. */
+    units?: FeatureMode;
     onlyPreferredCities?: boolean;
     premiumValues?: Partial<PremiumValues>;
   } | null;
@@ -43,6 +49,8 @@ export interface ScorableLand {
   status: string;
   latitude: number | null;
   builtKm?: number | null;
+  /** Metres to the nearest main road; null/undefined = unknown. */
+  mainRoadM?: number | null;
 }
 
 export type Recommendation = "STRONG_BUY" | "GOOD" | "WATCH" | "SKIP";
@@ -67,8 +75,12 @@ export interface ScoredLand {
   recommendation: Recommendation;
   hasGarden: boolean;
   hasCorner: boolean;
+  /** Faces a main road (OpenStreetMap). */
+  hasStreet: boolean;
   /** Within NEAR_BUILT.badgeKm of existing buildings. */
   isNearBuilt: boolean;
+  /** Apartments per floor allowed for the plot's area. */
+  unitsPerFloor: UnitsPerFloor;
   neighbourShare: number | null;
   /** Extra money needed beyond what was already paid to cover the down payment. */
   extraNeeded: number;
@@ -120,6 +132,8 @@ export function exclusionReason(l: ScorableLand, p: Profile): keyof ExclusionSta
   if (p.preferences?.garden === "require" && !(l.gardenPct > 0)) return "featureRequired";
   if (p.preferences?.corner === "require" && !(l.cornerPct > 0)) return "featureRequired";
   if (p.preferences?.nearBuilt === "require" && !isNearBuilt(l.builtKm)) return "featureRequired";
+  if (p.preferences?.street === "require" && !isOnMainRoad(l.mainRoadM)) return "featureRequired";
+  if (p.preferences?.units === "require" && !isMultiUnit(l.area)) return "featureRequired";
   if (p.preferences?.onlyPreferredCities && p.preferredCities.length && !p.preferredCities.includes(l.cityName))
     return "city";
   return null;
@@ -173,11 +187,15 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
   const gardenMode = profile.preferences?.garden ?? "prefer";
   const cornerMode = profile.preferences?.corner ?? "prefer";
   const nearMode = profile.preferences?.nearBuilt ?? "prefer";
+  const streetMode = profile.preferences?.street ?? "prefer";
+  const unitsMode = profile.preferences?.units ?? "prefer";
 
   const scored: ScoredLand[] = eligible.map((l) => {
     const s = ctx.survival.get(l.id) ?? { low: 0, mid: 0, high: 0 };
     const hasGarden = l.gardenPct > 0;
     const hasCorner = l.cornerPct > 0;
+    const hasStreet = isOnMainRoad(l.mainRoadM);
+    const units = unitsPerFloor(l.area);
     const extraNeeded = Math.max(0, l.downPayment - profile.moneyPaid);
 
     // Budget: fully covered by what's paid = 1; needing extra money decays to 0.4 at the limit.
@@ -213,6 +231,8 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
               ? premiumValues.corner
               : premiumValues.none;
     if (gardenMode === "ignore" && cornerMode === "ignore") premium = 0.5;
+    if (hasStreet && streetMode !== "ignore") premium += premiumValues.street;
+    if (unitsMode !== "ignore") premium += units === 4 ? premiumValues.units4 : units === 3 ? premiumValues.units3 : 0;
 
     const neighbourShare = ctx.neighbourShare?.get(l.id) ?? null;
     const near = nearMode === "ignore" ? 0.5 : nearBuiltFactor(l.builtKm ?? null, neighbourShare);
@@ -235,6 +255,8 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     if (hasGarden && hasCorner) reasons.push(R.gardenCorner);
     else if (hasGarden) reasons.push(R.garden);
     else if (hasCorner) reasons.push(R.corner);
+    if (hasStreet) reasons.push(R.street);
+    if (units >= 3) reasons.push(R.units(units));
     if (isNearBuilt(l.builtKm)) reasons.push(R.nearBuilt(fmtKm(l.builtKm)));
     if (neighbourShare != null && neighbourShare >= 0.4) reasons.push(R.neighbours);
     if (extraNeeded <= 0) reasons.push(R.covered);
@@ -253,7 +275,9 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       recommendation: band(score, s.mid),
       hasGarden,
       hasCorner,
+      hasStreet,
       isNearBuilt: isNearBuilt(l.builtKm),
+      unitsPerFloor: units,
       neighbourShare,
       extraNeeded,
       reasons,

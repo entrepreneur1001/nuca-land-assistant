@@ -122,7 +122,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <RecBadge rec={topChoice.recommendation} />
-                  <FeatureBadges garden={topChoice.hasGarden} corner={topChoice.hasCorner} nearBuilt={topChoice.isNearBuilt} />
+                  <FeatureBadges garden={topChoice.hasGarden} corner={topChoice.hasCorner} street={topChoice.hasStreet} nearBuilt={topChoice.isNearBuilt} units={topChoice.unitsPerFloor} />
                   <span className="text-xs">
                     {t.card.score} {num(topChoice.score)}/١٠٠
                   </span>
@@ -156,7 +156,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
               <div className="truncate text-sm" title={l.projectName ?? ""}>{l.projectName}</div>
               <div className="truncate text-xs text-muted">{l.cityName}</div>
               <div className="mt-2">
-                <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} nearBuilt={l.isNearBuilt} sea={l.seaPct > 0} />
+                <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} sea={l.seaPct > 0} />
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs">
                 <dt className="text-muted">{t.card.area}</dt>
@@ -186,6 +186,8 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
             <p>{t.how.queue(q.codesPerBatch.mid, q.batchesPerWeek, q.codesIssued, pct(q.conversion.low), pct(q.conversion.high), pct(q.conversion.mid))}</p>
             <p>{t.how.demand(d.featureWeights.gardenCorner, d.featureWeights.garden, d.featureWeights.corner)}</p>
             <p>{t.how.nearBuilt}</p>
+            <p>{t.how.street}</p>
+            <p>{t.how.units}</p>
             <ul className="list-disc ps-5">
               {t.how.assumptions.map((a, i) => (
                 <li key={i}>{a}</li>
@@ -266,7 +268,7 @@ function AiPanel() {
                         {t.card.plot} {l.plotNumber} · {l.projectName} · {l.cityName}
                       </Link>
                       <RecBadge rec={r.recommendation} />
-                      <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} nearBuilt={l.isNearBuilt} />
+                      <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} />
                       <span className="text-xs text-muted">
                         {t.ai.confidence} {pct(r.confidence)}
                       </span>

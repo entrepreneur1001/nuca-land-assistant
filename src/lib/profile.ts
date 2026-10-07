@@ -16,7 +16,7 @@ export const DEFAULT_PROFILE: Profile = {
   maxPrice: null,
   preferredPricePerMeter: null,
   weights: { ...DEFAULT_WEIGHTS },
-  preferences: { garden: "prefer", corner: "prefer", nearBuilt: "prefer", onlyPreferredCities: false },
+  preferences: { garden: "prefer", corner: "prefer", nearBuilt: "prefer", street: "prefer", units: "prefer", onlyPreferredCities: false },
 };
 
 const modes = new Set<FeatureMode>(["prefer", "require", "ignore"]);
@@ -45,6 +45,8 @@ export function sanitize(p: Partial<Profile> | null | undefined): Profile {
       garden: asMode(prefs.garden, "prefer"),
       corner: asMode(prefs.corner, "prefer"),
       nearBuilt: asMode(prefs.nearBuilt, "prefer"),
+      street: asMode(prefs.street, "prefer"),
+      units: asMode(prefs.units, "prefer"),
       onlyPreferredCities: !!prefs.onlyPreferredCities,
     },
   };
@@ -78,6 +80,8 @@ export function toQuery(p: Profile): string {
     g: p.preferences?.garden ?? "prefer",
     c: p.preferences?.corner ?? "prefer",
     n: p.preferences?.nearBuilt ?? "prefer",
+    st: p.preferences?.street ?? "prefer",
+    un: p.preferences?.units ?? "prefer",
   });
   if (p.preferredCities.length) q.set("cities", p.preferredCities.join("|"));
   if (p.preferences?.onlyPreferredCities) q.set("only", "1");
@@ -95,6 +99,8 @@ export function fromQuery(q: URLSearchParams): Profile {
       garden: q.get("g") as FeatureMode,
       corner: q.get("c") as FeatureMode,
       nearBuilt: q.get("n") as FeatureMode,
+      street: q.get("st") as FeatureMode,
+      units: q.get("un") as FeatureMode,
       onlyPreferredCities: q.get("only") === "1",
     },
   });

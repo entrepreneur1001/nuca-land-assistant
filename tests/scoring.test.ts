@@ -137,3 +137,37 @@ describe("reachable plots first", () => {
     expect(r.scored[0].id).toBe("ok");
   });
 });
+
+describe("main road", () => {
+  it("prefer ranks a main-road plot higher; require excludes the rest; unknown is not on a road", () => {
+    const lands = [land("inner", { mainRoadM: 120 }), land("road", { mainRoadM: 12 }), land("unknown", { mainRoadM: null })];
+    const ids = lands.map((l) => l.id);
+    const r = scoreLands(lands, profile, ctx(ids));
+    const road = r.scored.find((x) => x.id === "road")!;
+    expect(road.hasStreet).toBe(true);
+    expect(road.score).toBeGreaterThan(r.scored.find((x) => x.id === "inner")!.score);
+    expect(r.scored.find((x) => x.id === "unknown")!.hasStreet).toBe(false);
+    const req = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, street: "require" } }, ctx(ids));
+    expect(req.scored.map((x) => x.id)).toEqual(["road"]);
+    expect(req.excluded.featureRequired).toBe(2);
+    const ign = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, street: "ignore" } }, ctx(ids));
+    expect(ign.scored.find((x) => x.id === "road")!.score).toBe(ign.scored.find((x) => x.id === "inner")!.score);
+  });
+});
+
+describe("apartments per floor", () => {
+  it("prefer adds to the premium factor; require excludes 2-unit plots; ignore removes the bonus", () => {
+    const lands = [land("two", { area: 700 }), land("three", { area: 800 }), land("four", { area: 1000 })];
+    const ids = lands.map((l) => l.id);
+    const premium = (r: ReturnType<typeof scoreLands>, id: string) => r.scored.find((x) => x.id === id)!.factors.premium;
+    const r = scoreLands(lands, profile, ctx(ids));
+    expect(r.scored.find((x) => x.id === "four")!.unitsPerFloor).toBe(4);
+    expect(premium(r, "three")).toBeGreaterThan(premium(r, "two"));
+    expect(premium(r, "four")).toBeGreaterThan(premium(r, "three"));
+    const req = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, units: "require" } }, ctx(ids));
+    expect(req.scored.map((x) => x.id).sort()).toEqual(["four", "three"]);
+    expect(req.excluded.featureRequired).toBe(1);
+    const ign = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, units: "ignore" } }, ctx(ids));
+    expect(premium(ign, "four")).toBe(premium(ign, "two"));
+  });
+});

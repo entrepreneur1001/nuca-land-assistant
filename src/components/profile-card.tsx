@@ -43,7 +43,7 @@ function NumberField({ label, value, onCommit }: { label: string; value: number;
 export function ProfileCard({ profile, setProfile, cities }: { profile: Profile; setProfile: (p: Profile) => void; cities: string[] }) {
   const [copied, setCopied] = useState(false);
   const prefs = profile.preferences ?? {};
-  const setPref = (k: "garden" | "corner" | "nearBuilt", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
+  const setPref = (k: "garden" | "corner" | "nearBuilt" | "street" | "units", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
   const share = async () => {
     const url = `${location.origin}${location.pathname}?${toQuery(profile)}`;
     try {
@@ -66,12 +66,14 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
         <NumberField label={t.profile.paid} value={profile.moneyPaid} onCommit={(n) => setProfile({ ...profile, moneyPaid: n })} />
         <NumberField label={t.profile.extra} value={profile.maxAdditional} onCommit={(n) => setProfile({ ...profile, maxAdditional: n })} />
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {(
           [
             ["garden", t.profile.garden],
             ["corner", t.profile.corner],
             ["nearBuilt", t.profile.nearBuilt],
+            ["street", t.profile.street],
+            ["units", t.profile.units],
           ] as const
         ).map(([k, label]) => (
           <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-2">

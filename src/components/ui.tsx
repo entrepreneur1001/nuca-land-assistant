@@ -31,14 +31,33 @@ export function Badge({ children, tone = "muted" }: { children: ReactNode; tone?
 export const recTone = (r: string) => (r === "STRONG_BUY" ? "good" : r === "GOOD" ? "accent" : r === "WATCH" ? "warn" : "bad");
 
 export function RecBadge({ rec }: { rec: string }) {
+  // «تحت المراقبة» isn't shown; such plots just carry no recommendation badge.
+  if (rec === "WATCH") return null;
   return <Badge tone={recTone(rec)}>{REC[rec] ?? rec}</Badge>;
 }
 
-export function FeatureBadges({ garden, corner, sea, nearBuilt }: { garden: boolean; corner: boolean; sea?: boolean; nearBuilt?: boolean }) {
+export function FeatureBadges({
+  garden,
+  corner,
+  sea,
+  nearBuilt,
+  street,
+  units,
+}: {
+  garden: boolean;
+  corner: boolean;
+  sea?: boolean;
+  nearBuilt?: boolean;
+  street?: boolean;
+  /** Apartments per floor; badged when 3 or more. */
+  units?: number;
+}) {
   return (
     <span className="inline-flex flex-wrap gap-1">
       {garden ? <Badge tone="good">{t.badge.garden}</Badge> : null}
       {corner ? <Badge tone="accent">{t.badge.corner}</Badge> : null}
+      {street ? <Badge tone="accent">{t.badge.street}</Badge> : null}
+      {units && units >= 3 ? <Badge tone="good">{t.badge.units(units)}</Badge> : null}
       {nearBuilt ? <Badge tone="warn">{t.badge.nearBuilt}</Badge> : null}
       {sea ? <Badge tone="accent">{t.badge.sea}</Badge> : null}
     </span>
