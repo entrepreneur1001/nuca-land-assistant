@@ -4,8 +4,6 @@ import { scoreLands, type Profile, type ScorableLand } from "@/engine/scoring";
 const profile: Profile = {
   bookingRank: 17000,
   moneyPaid: 39500,
-  moneyAvailable: null,
-  maxAdditional: 0,
   preferredCities: [],
   preferredProjects: [],
   minArea: null,
@@ -48,12 +46,15 @@ describe("budget", () => {
     expect(r.excluded.overBudget).toBe(1);
   });
 
-  it("max additional payment widens the budget", () => {
-    const lands = [land("pricey", { downPayment: 45000 })];
-    const r = scoreLands(lands, { ...profile, maxAdditional: 10000 }, ctx(["pricey"]));
+  it("a down payment exactly equal to the amount paid is eligible", () => {
+    const lands = [land("exact", { downPayment: 39500 })];
+    const r = scoreLands(lands, profile, ctx(["exact"]));
     expect(r.scored).toHaveLength(1);
-    expect(r.scored[0].extraNeeded).toBe(5500);
-    expect(r.scored[0].factors.budget).toBeLessThan(1);
+  });
+
+  it("ignores weights for removed factors in saved profiles", () => {
+    const r = scoreLands([land("a")], { ...profile, weights: { budget: 15 } as Profile["weights"] }, ctx(["a"]));
+    expect(Number.isFinite(r.scored[0].score)).toBe(true);
   });
 });
 
@@ -139,19 +140,14 @@ describe("reachable plots first", () => {
 });
 
 describe("main road", () => {
-  it("prefer ranks a main-road plot higher; require excludes the rest; unknown is not on a road", () => {
+  it("is shown as a flag only: it doesn't change the score or filter anything; unknown is not on a road", () => {
     const lands = [land("inner", { mainRoadM: 120 }), land("road", { mainRoadM: 12 }), land("unknown", { mainRoadM: null })];
-    const ids = lands.map((l) => l.id);
-    const r = scoreLands(lands, profile, ctx(ids));
+    const r = scoreLands(lands, profile, ctx(lands.map((l) => l.id)));
     const road = r.scored.find((x) => x.id === "road")!;
     expect(road.hasStreet).toBe(true);
-    expect(road.score).toBeGreaterThan(r.scored.find((x) => x.id === "inner")!.score);
+    expect(road.score).toBe(r.scored.find((x) => x.id === "inner")!.score);
     expect(r.scored.find((x) => x.id === "unknown")!.hasStreet).toBe(false);
-    const req = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, street: "require" } }, ctx(ids));
-    expect(req.scored.map((x) => x.id)).toEqual(["road"]);
-    expect(req.excluded.featureRequired).toBe(2);
-    const ign = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, street: "ignore" } }, ctx(ids));
-    expect(ign.scored.find((x) => x.id === "road")!.score).toBe(ign.scored.find((x) => x.id === "inner")!.score);
+    expect(r.scored).toHaveLength(3);
   });
 });
 

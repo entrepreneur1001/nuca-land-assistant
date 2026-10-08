@@ -97,7 +97,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
   }
 
   const queue = estimateQueue({
-    rank: profile.bookingRank,
+    rank: profile.bookingRank ?? 1,
     booked,
     available,
     allocations: meta.allocations.map((a) => ({ issueDate: new Date(a.d), totalCodes: a.c, plotsBooked: a.b })),

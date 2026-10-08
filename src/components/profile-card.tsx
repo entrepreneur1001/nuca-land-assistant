@@ -12,17 +12,28 @@ const MODES: { value: FeatureMode; label: string }[] = [
   { value: "ignore", label: t.profile.modes.ignore },
 ];
 
-function NumberField({ label, value, onCommit }: { label: string; value: number; onCommit: (n: number) => void }) {
-  const [text, setText] = useState(String(value));
+function NumberField({
+  label,
+  placeholder,
+  value,
+  onCommit,
+}: {
+  label: string;
+  placeholder: string;
+  value: number | null;
+  onCommit: (n: number | null) => void;
+}) {
+  const [text, setText] = useState(value == null ? "" : String(value));
   const [prev, setPrev] = useState(value);
   if (prev !== value) {
     setPrev(value);
-    setText(String(value));
+    setText(value == null ? "" : String(value));
   }
   const commit = () => {
     const ascii = text.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
-    const n = Number(ascii.replace(/[^\d.]/g, ""));
-    if (Number.isFinite(n) && n !== value) onCommit(n);
+    const digits = ascii.replace(/[^\d.]/g, "");
+    const n = digits ? Number(digits) : null;
+    if ((n == null || Number.isFinite(n)) && n !== value) onCommit(n);
   };
   return (
     <label className="block text-xs text-muted">
@@ -30,7 +41,8 @@ function NumberField({ label, value, onCommit }: { label: string; value: number;
       <input
         inputMode="numeric"
         dir="ltr"
-        className="mt-1 w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-right text-base font-semibold text-text"
+        className="mt-1 w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-right text-base font-semibold text-text placeholder:font-normal placeholder:text-muted"
+        placeholder={placeholder}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
@@ -43,7 +55,7 @@ function NumberField({ label, value, onCommit }: { label: string; value: number;
 export function ProfileCard({ profile, setProfile, cities }: { profile: Profile; setProfile: (p: Profile) => void; cities: string[] }) {
   const [copied, setCopied] = useState(false);
   const prefs = profile.preferences ?? {};
-  const setPref = (k: "garden" | "corner" | "nearBuilt" | "street" | "units", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
+  const setPref = (k: "garden" | "corner" | "nearBuilt" | "units", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
   const share = async () => {
     const url = `${location.origin}${location.pathname}?${toQuery(profile)}`;
     try {
@@ -62,9 +74,18 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
         <span className="text-xs text-muted">{t.profile.hint}</span>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <NumberField label={t.profile.rank} value={profile.bookingRank} onCommit={(n) => setProfile({ ...profile, bookingRank: Math.round(n) })} />
-        <NumberField label={t.profile.paid} value={profile.moneyPaid} onCommit={(n) => setProfile({ ...profile, moneyPaid: n })} />
-        <NumberField label={t.profile.extra} value={profile.maxAdditional} onCommit={(n) => setProfile({ ...profile, maxAdditional: n })} />
+        <NumberField
+          label={t.profile.rank}
+          placeholder={t.profile.rankPlaceholder}
+          value={profile.bookingRank}
+          onCommit={(n) => setProfile({ ...profile, bookingRank: n == null ? null : Math.round(n) })}
+        />
+        <NumberField
+          label={t.profile.paid}
+          placeholder={t.profile.paidPlaceholder}
+          value={profile.moneyPaid}
+          onCommit={(n) => setProfile({ ...profile, moneyPaid: n })}
+        />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {(
@@ -72,7 +93,6 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
             ["garden", t.profile.garden],
             ["corner", t.profile.corner],
             ["nearBuilt", t.profile.nearBuilt],
-            ["street", t.profile.street],
             ["units", t.profile.units],
           ] as const
         ).map(([k, label]) => (

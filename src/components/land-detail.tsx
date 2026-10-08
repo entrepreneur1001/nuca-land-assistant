@@ -25,6 +25,8 @@ export function LandDetail() {
   const { ranked, extras, dashboard } = app.result;
   const pos = ranked.findIndex((r) => r.id === id);
   const s = pos >= 0 ? ranked[pos] : null;
+  // Recommendation and rank are personal; hide them until the user enters their rank and payment.
+  const personal = app.profile.bookingRank != null && app.profile.moneyPaid != null;
   const ex = extras[id];
   const sectorKey = plot.projectId ?? `city:${plot.cityName}`;
   const sector = dashboard.sectors.find((x) => x.key === sectorKey);
@@ -53,7 +55,7 @@ export function LandDetail() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {booked ? <Badge tone="bad">{t.detail.booked}</Badge> : <Badge tone="good">{t.detail.available}</Badge>}
-          {s ? <RecBadge rec={s.recommendation} /> : null}
+          {s && personal ? <RecBadge rec={s.recommendation} /> : null}
           <FeatureBadges
             garden={plot.gardenPct > 0}
             corner={plot.cornerPct > 0}
@@ -62,7 +64,7 @@ export function LandDetail() {
             nearBuilt={s?.isNearBuilt}
             units={units}
           />
-          {s ? <span className="text-xs text-muted">{t.detail.rankOf(pos + 1)}</span> : null}
+          {s && personal ? <span className="text-xs text-muted">{t.detail.rankOf(pos + 1)}</span> : null}
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
           <dt className="text-muted">{t.card.area}</dt>

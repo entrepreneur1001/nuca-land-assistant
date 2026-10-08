@@ -20,7 +20,7 @@ const parseNum = (s: string) => {
 export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; cities: string[] }) {
   const app = useApp()!;
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ city: "", project: "", minArea: "", maxArea: "", maxDp: "", minReach: "", garden: false, corner: false, street: false, near: false, units: false });
+  const [f, setF] = useState({ city: "", project: "", minArea: "", maxArea: "", maxDp: "", minReach: "", garden: false, corner: false, near: false, units: false });
   const [sort, setSort] = useState<Sort>("score");
   const [page, setPage] = useState(0);
 
@@ -39,7 +39,6 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
         (minReach == null || r.survival.mid * 100 >= minReach) &&
         (!f.garden || r.hasGarden) &&
         (!f.corner || r.hasCorner) &&
-        (!f.street || r.hasStreet) &&
         (!f.near || r.isNearBuilt) &&
         (!f.units || r.unitsPerFloor >= 3),
     );
@@ -115,7 +114,6 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
               [
                 ["garden", `🌳 ${t.search.garden}`],
                 ["corner", `📐 ${t.search.corner}`],
-                ["street", `🛣️ ${t.search.street}`],
                 ["near", `🏘️ ${t.search.nearBuilt}`],
                 ["units", `🏢 ${t.search.units}`],
               ] as const
@@ -133,10 +131,10 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                 <Link href={`/land?id=${l.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold">
-                      {t.card.plot} {l.plotNumber} · <span className="font-normal">{l.projectName}</span>
+                      {t.card.plot} {l.plotNumber} · <span className="font-normal">{l.projectName}</span> · <span className="text-accent">{l.cityName}</span>
                     </div>
                     <div className="text-xs text-muted">
-                      {l.cityName} · {num(l.area)} {t.card.m2} · {t.card.dp} {usd(l.downPayment)} · 🏘️ {km(l.builtKm)}
+                      {num(l.area)} {t.card.m2} · {t.card.dp} {usd(l.downPayment)} · 🏘️ {km(l.builtKm)}
                     </div>
                   </div>
                   <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} />

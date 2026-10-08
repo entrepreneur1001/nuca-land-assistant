@@ -29,7 +29,9 @@ export function Home() {
       <p className="text-sm text-muted">{t.tagline}</p>
       <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn">{t.disclaimer.short}</p>
       <ProfileCard profile={profile} setProfile={setProfile} cities={snapshot?.meta.cities ?? []} />
-      {!result ? (
+      {profile.bookingRank == null || profile.moneyPaid == null ? (
+        <Card className="text-center text-muted">{t.profile.missing}</Card>
+      ) : !result ? (
         <div className="py-12 text-center text-muted">{t.loading}</div>
       ) : (
         <Results now={now} computing={computing} />
@@ -193,7 +195,6 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 <li key={i}>{a}</li>
               ))}
             </ul>
-            <p>{t.how.source(app.snapshot?.meta.source.name ?? "")}</p>
           </div>
         </details>
       </Card>
@@ -240,7 +241,6 @@ function AiPanel() {
           {busy ? t.ai.running : left > 0 ? t.ai.cooldown(Math.ceil(left / 1000)) : res ? t.ai.again : t.ai.button}
         </button>
       </div>
-      <p className="mt-1 text-xs text-muted">{t.ai.note}</p>
       {err ? <p className="mt-2 text-sm text-bad">{err}</p> : null}
       {res ? (
         <div className="mt-3 space-y-3 text-sm">

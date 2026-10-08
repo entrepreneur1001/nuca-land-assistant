@@ -7,7 +7,6 @@ export const DEFAULT_WEIGHTS = {
   reachability: 20,
   nearBuilt: 20,
   premium: 20,
-  budget: 15,
   location: 10,
   value: 10,
   area: 5,
@@ -21,8 +20,6 @@ export const DEFAULT_PREMIUM_VALUES = {
   corner: 0.6,
   seaOnly: 0.4,
   none: 0,
-  /** Added on top of the above for a plot on a main road (OpenStreetMap; not a NUCA premium). */
-  street: 0.2,
   /** Added on top for 3 / 4 apartments per floor (area licensing rule, see engine/units.ts; not a NUCA premium). */
   units3: 0.1,
   units4: 0.2,

@@ -39,6 +39,13 @@
           }
         ]
       }
+    ],
+    "redirects": [
+      {
+        "source": "/phase-11",
+        "destination": "/",
+        "type": 301
+      }
     ]
   }
 }

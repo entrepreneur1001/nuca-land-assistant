@@ -19,16 +19,25 @@ let appCheckReady: Promise<void> = Promise.resolve();
 let db: Firestore | null = null;
 
 export function firebaseApp(): FirebaseApp {
-  if (!app) {
-    app = getApps().length ? getApp() : initializeApp(config);
-    initAppCheck(app);
-  }
+  app ??= getApps().length ? getApp() : initializeApp(config);
   return app;
+}
+
+let appCheckStarted = false;
+
+/** The app with App Check started. Only Firestore / AI Logic need it, so pages that just log analytics never load reCAPTCHA. */
+function checkedApp(): FirebaseApp {
+  const a = firebaseApp();
+  if (!appCheckStarted) {
+    appCheckStarted = true;
+    initAppCheck(a);
+  }
+  return a;
 }
 
 /** Resolves once App Check is set up (AI Logic calls need its token). */
 export function whenAppCheckReady() {
-  firebaseApp();
+  checkedApp();
   return appCheckReady;
 }
 
@@ -55,8 +64,19 @@ function initAppCheck(a: FirebaseApp) {
 
 /** In-memory Firestore cache only: IndexedDB persistence can corrupt and crash the SDK. Plot chunks are cached by us (lib/data.ts). */
 export function firestore(): Firestore {
-  db ??= getFirestore(firebaseApp());
+  db ??= getFirestore(checkedApp());
   return db;
+}
+
+/** Starts Google Analytics (GA4), which logs the landing page_view itself. Later client-side navigations are logged by <Analytics />. */
+export async function initAnalytics() {
+  try {
+    if (!config.measurementId) return;
+    const { getAnalytics, isSupported } = await import("firebase/analytics");
+    if (await isSupported()) getAnalytics(firebaseApp());
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Fire-and-forget analytics event; silently does nothing when unsupported/blocked. */

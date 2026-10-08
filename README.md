@@ -100,12 +100,11 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 | reachability (فرصة إنك تلحقها) | 20 |
 | near built (قربها من العمار) | 20 |
 | garden/corner (حديقة/ناصية) | 20 |
-| budget (مناسبة لميزانيتك) | 15 |
 | preferred location | 10 |
 | price/m² vs similar | 10 |
 | area | 5 |
 
-  - Hard filters: booked; down payment > paid + max extra; any feature set to «لازم».
+  - Hard filters: booked; down payment > amount paid; any feature set to «لازم».
   - Bands: لقطة ≥ 80, كويسة ≥ 65, تحت المراقبة ≥ 50.
   - A plot with < 30% survival is capped at «تحت المراقبة».
 - **AI (Firebase AI Logic):**

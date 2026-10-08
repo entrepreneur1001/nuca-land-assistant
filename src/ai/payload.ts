@@ -6,7 +6,7 @@ import type { Profile } from "@/engine/scoring";
 export const AI_CANDIDATES = 20;
 export const AI_PER_SECTOR = 4;
 /** Bump when the prompt or payload shape changes, so cached answers built on the old one are dropped. */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 export const AI_SYSTEM = `إنت محلل بيساعد مشتري في طرح "بيت الوطن" بتاع هيئة المجتمعات العمرانية في مصر (الأسعار بالدولار).
 القواعد:
@@ -15,8 +15,8 @@ export const AI_SYSTEM = `إنت محلل بيساعد مشتري في طرح "�
 - أي land_id تكتبه لازم يكون منسوخ بالظبط من قايمة lands.
 - لو معلومة مش موجودة قول إنها مش معروفة.
 - الأرقام والاحتمالات محسوبة عندنا، اعتبرها هي الصح. شغلتك تقارن الاختيارات المتشابهة، توضح المميزات والعيوب، وتدي خطة واضحة.
-- المشتري بيفضل الأراضي اللي على حديقة واللي ناصية واللي على شارع رئيسي (on_main_road) واللي قريبة من مباني قائمة (العمار).
-- on_main_road محسوبة من الخرايط ومش تميّز رسمي من الهيئة، وبتتبعت بس للأراضي اللي متأكدين إنها على شارع رئيسي. لو مش موجودة متقولش إن الأرض مش على شارع.
+- المشتري بيفضل الأراضي اللي على حديقة واللي ناصية واللي قريبة من مباني قائمة (العمار).
+- on_main_road معلومة إضافية بس (مش تفضيل للمشتري)، محسوبة من الخرايط ومش تميّز رسمي من الهيئة، وبتتبعت بس للأراضي اللي متأكدين إنها على شارع رئيسي. لو مش موجودة متقولش إن الأرض مش على شارع.
 - corner (ناصية) معناها إن الأرض على شارعين، ودي من بيانات الهيئة.
 - building_rules فيها الاشتراطات البنائية المعروفة بس. لو مش موجودة لأرض أو ناقص منها حاجة، متتكلمش عن ده خالص ومتقولش إنها مش معروفة.
 - الاحتمالات تقديرية، وضّح ده لما يكون مهم.
@@ -34,12 +34,10 @@ export function buildPayload(d: Dashboard, ranked: RankedLand[], profile: Profil
       user: {
         rank: profile.bookingRank,
         money_paid_usd: profile.moneyPaid,
-        max_additional_usd: profile.maxAdditional,
         preferred_cities: profile.preferredCities,
         garden: profile.preferences?.garden ?? "prefer",
         corner: profile.preferences?.corner ?? "prefer",
         near_built: profile.preferences?.nearBuilt ?? "prefer",
-        main_road: profile.preferences?.street ?? "prefer",
         multi_unit: profile.preferences?.units ?? "prefer",
       },
       market: {
@@ -63,7 +61,6 @@ export function buildPayload(d: Dashboard, ranked: RankedLand[], profile: Profil
         area_m2: r.area,
         total_price_usd: r.totalPrice,
         down_payment_usd: r.downPayment,
-        extra_needed_usd: Math.round(r.extraNeeded),
         garden: r.hasGarden,
         corner: r.hasCorner,
         ...(r.hasStreet ? { on_main_road: true } : {}),

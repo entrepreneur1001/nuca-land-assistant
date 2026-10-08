@@ -70,7 +70,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const clean = sanitize(p);
     setProfileState(clean);
     saveProfile(clean);
-    void track("profile_updated", { rank: clean.bookingRank, paid: clean.moneyPaid });
+    void track("profile_updated", { rank: clean.bookingRank ?? "", paid: clean.moneyPaid ?? "" });
   }, []);
 
   const value = useMemo<AppState | null>(

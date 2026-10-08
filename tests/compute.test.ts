@@ -99,11 +99,11 @@ describe("AI payload", () => {
 });
 
 describe("shared settings links", () => {
-  it("missing parameters fall back to defaults instead of zero", async () => {
+  it("missing parameters stay empty instead of zero", async () => {
     const { fromQuery, toQuery, DEFAULT_PROFILE: D } = await import("@/lib/profile");
     const p = fromQuery(new URLSearchParams("r=5000"));
     expect(p.bookingRank).toBe(5000);
-    expect(p.moneyPaid).toBe(D.moneyPaid);
+    expect(p.moneyPaid).toBeNull();
     const round = fromQuery(new URLSearchParams(toQuery({ ...D, bookingRank: 9000, moneyPaid: 50000, preferredCities: ["بدر"] })));
     expect(round).toMatchObject({ bookingRank: 9000, moneyPaid: 50000, preferredCities: ["بدر"] });
   });
