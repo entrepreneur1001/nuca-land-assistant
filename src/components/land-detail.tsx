@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { FACTOR, ago, km, num, pct, t, usd } from "@/i18n/ar";
+import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
 import { unitsPerFloor } from "@/engine/units";
 import { track } from "@/lib/firebase";
@@ -111,16 +112,15 @@ export function LandDetail() {
               <dd>{plot.externalPlotId}</dd>
             </>
           ) : null}
-          {plot.latitude != null ? (
-            <>
-              <dt className="text-muted">{t.detail.location}</dt>
-              <dd>
-                <a className="text-accent hover:underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${plot.latitude},${plot.longitude}`}>
-                  {t.detail.map}
-                </a>
-              </dd>
-            </>
-          ) : null}
+          <dt className="text-muted">{t.detail.location}</dt>
+          <dd>
+            <a className="text-accent hover:underline" target="_blank" rel="noreferrer" href={mapLink(plot)}>
+              {t.detail.map}
+            </a>
+            {plot.latitude == null ? (
+              <span className="text-muted text-xs"> {plot.approxLoc ? t.detail.approxSector : t.detail.approxCity}</span>
+            ) : null}
+          </dd>
         </dl>
       </Card>
 
@@ -193,4 +193,11 @@ export function LandDetail() {
       </div>
     </div>
   );
+}
+
+/** Google Maps link: the plot itself, else its district's centre, else its city by name. */
+function mapLink(plot: Plot): string {
+  if (plot.latitude != null && plot.longitude != null) return `https://www.google.com/maps?q=${plot.latitude},${plot.longitude}`;
+  if (plot.approxLoc) return `https://www.google.com/maps?q=${plot.approxLoc.lat},${plot.approxLoc.lng}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${plot.cityName}، مصر`)}`;
 }

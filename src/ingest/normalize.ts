@@ -73,6 +73,11 @@ export const sectorSchema = z.object({
   buildingRatio: z.string().nullish().catch(null),
   allowedFloors: z.string().nullish().catch(null),
   setbacks: z.string().nullish().catch(null),
+  // Bounds of the sector's map tiles (the source's hand-drawn plan); a location hint when no plot has geometry.
+  tileMinLng: z.number().nullish().catch(null),
+  tileMinLat: z.number().nullish().catch(null),
+  tileMaxLng: z.number().nullish().catch(null),
+  tileMaxLat: z.number().nullish().catch(null),
 });
 
 const SOURCE_TZ = process.env.SOURCE_TIMEZONE ?? "Africa/Cairo";

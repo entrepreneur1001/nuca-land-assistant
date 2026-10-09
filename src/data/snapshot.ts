@@ -33,7 +33,15 @@ export interface MetaDoc {
   market: { total: number; booked: number; available: number; allocatedCodes: number | null; sourceLastUpdate: string | null };
   allocations: { id: string; d: string; c: number; b: number | null }[];
   cities: string[];
-  sectors: { id: string; name: string; city: number; hot: boolean; rules?: BuildingRules | null }[];
+  sectors: {
+    id: string;
+    name: string;
+    city: number;
+    hot: boolean;
+    rules?: BuildingRules | null;
+    /** Approximate centre [lat, lng]: mean of located plots, else the source's tile bounds; missing when unknown. */
+    c?: [number, number] | null;
+  }[];
   zones: string[];
   chunks: { id: string; v: string; n: number }[];
 }
@@ -80,6 +88,8 @@ export interface Plot {
   seaPct: number;
   latitude: number | null;
   longitude: number | null;
+  /** Approximate position (its sector's centre) for plots without coordinates; null when unknown. */
+  approxLoc: { lat: number; lng: number } | null;
   status: "available" | "booked";
   bookingDate: string | null;
   /** km to the nearest existing building (OpenStreetMap); null = unknown */
@@ -116,6 +126,7 @@ export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sector
     seaPct: t[12],
     latitude: t[13],
     longitude: t[14],
+    approxLoc: sector?.c ? { lat: sector.c[0], lng: sector.c[1] } : null,
     status: t[15] ? "booked" : "available",
     bookingDate: t[16] ? new Date(t[16]).toISOString() : null,
     builtKm: t[17],

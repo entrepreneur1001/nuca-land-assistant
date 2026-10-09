@@ -24,6 +24,7 @@ function snapshot(): Snapshot {
     seaPct: 0,
     latitude: 30 + i / 1e4,
     longitude: 31,
+    approxLoc: null,
     status: i < 120 ? "booked" : "available",
     bookingDate: i < 120 ? new Date(NOW - (i % 7) * 86_400_000).toISOString() : null,
     builtKm: (i % 10) / 2,

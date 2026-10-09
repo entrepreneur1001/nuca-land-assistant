@@ -232,4 +232,24 @@ describe("sync runner", () => {
     expect(rules("s1")).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: "3م امامي - 5م خلفي", from: "source" });
     expect(rules("s2")).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + 3 أدوار", setbacks: null, from: "booklet" });
   });
+  it("sectors get an approximate centre: located plots first, else the source's tile bounds", async () => {
+    const m = memStore();
+    const base = fakeSource(40, new Set());
+    // s1 and s3 plots have no geometry; only s1 publishes tile bounds.
+    const src = async (path: string) => {
+      const r = (await base(path)) as { items?: Record<string, unknown>[] };
+      if (path.startsWith("/api/app/sector")) r.items![0] = { ...r.items![0], tileMinLng: 31.5, tileMinLat: 30.2, tileMaxLng: 31.6, tileMaxLat: 30.3 };
+      if (path.startsWith("/api/app/land-plot")) r.items = r.items!.map((p) => (p.sectorId === "s1" || p.sectorId === "s3" ? { ...p, geoJson: null } : p));
+      return r;
+    };
+    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
+    const c = (id: string) => m.meta!.sectors.find((s) => s.id === id)?.c;
+    expect(c("s1")).toEqual([30.25, 31.55]);
+    expect(c("s2")![0]).toBeCloseTo(30.000125, 5);
+    expect(c("s3")).toBeUndefined();
+    const tuples = await loadTuples(m.store, m.meta!);
+    const inS1 = tupleToPlot(tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s1")!, m.meta!);
+    expect(inS1.latitude).toBeNull();
+    expect(inS1.approxLoc).toEqual({ lat: 30.25, lng: 31.55 });
+  });
 });

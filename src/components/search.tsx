@@ -17,6 +17,8 @@ const parseNum = (s: string) => {
   return s.trim() === "" || !Number.isFinite(n) ? null : n;
 };
 
+const premiumPct = (r: RankedLand) => r.cornerPct + r.gardenPct + r.seaPct;
+
 export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; cities: string[] }) {
   const app = useApp()!;
   const [open, setOpen] = useState(false);
@@ -46,7 +48,9 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
       score: () => 0,
       reach: (a, b) => b.survival.mid - a.survival.mid,
       nearBuilt: (a, b) => (a.builtKm ?? 99) - (b.builtKm ?? 99),
+      premium: (a, b) => premiumPct(b) - premiumPct(a) || b.score - a.score,
       price: (a, b) => a.totalPrice - b.totalPrice,
+      ppm: (a, b) => a.pricePerMeter - b.pricePerMeter,
       area: (a, b) => b.area - a.area,
     };
     return sort === "score" ? out : [...out].sort(by[sort]);
@@ -102,7 +106,10 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
             ))}
             <label className="text-xs text-muted">
               {t.search.sort}
-              <select className={input} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+              <select className={input} value={sort} onChange={(e) => {
+                setSort(e.target.value as Sort);
+                setPage(0);
+              }}>
                 {(Object.keys(t.search.sorts) as Sort[]).map((k) => (
                   <option key={k} value={k}>{t.search.sorts[k]}</option>
                 ))}

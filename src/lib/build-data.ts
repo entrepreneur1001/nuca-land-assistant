@@ -117,7 +117,7 @@ export interface DistrictInfo {
   hot: boolean;
   rules: BuildingRules | null;
   stats: AreaStats;
-  /** Median plot coordinates, for a map link; null when the source has none. */
+  /** Median plot coordinates (else the sector's approximate centre), for a map link; null when the source has none. */
   center: { lat: number; lng: number } | null;
 }
 
@@ -150,7 +150,7 @@ export function getCities(): Promise<CityInfo[]> {
             hot: s.hot,
             rules: s.rules ?? null,
             stats: stats(bySector.get(s.id)!),
-            center: center(bySector.get(s.id)!),
+            center: center(bySector.get(s.id)!) ?? (s.c ? { lat: s.c[0], lng: s.c[1] } : null),
           }))
           .sort((a, b) => b.stats.available - a.stats.available);
         return { name, slug, stats: stats(byCity.get(name)!), districts };

@@ -184,6 +184,8 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       })
       .sort((x, y) => x.d.localeCompare(y.d));
     const hot = new Set<string>();
+    // Tile-bounds midpoints: the sector's location when none of its plots has geometry.
+    const tileCentres = new Map<string, LatLng>();
     // Source rules (fresh, else last known); missing fields are filled from RULES_OVERRIDES below.
     const rules = new Map<string, BuildingRules>(
       prev.sectors.flatMap((x) => (x.rules && x.rules.from !== "booklet" ? [[x.id, x.rules] as const] : [])),
@@ -195,11 +197,14 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
         const r = sectorSchema.safeParse(i);
         if (!r.success) continue;
         if (r.data.isHot) hot.add(r.data.id);
+        const { tileMinLat: s0, tileMinLng: w0, tileMaxLat: n0, tileMaxLng: e0 } = r.data;
+        if (s0 != null && w0 != null && n0 != null && e0 != null) tileCentres.set(r.data.id, [(s0 + n0) / 2, (w0 + e0) / 2]);
         const rr = { ratio: clean(r.data.buildingRatio), floors: clean(r.data.allowedFloors), setbacks: clean(r.data.setbacks) };
         if (rr.ratio || rr.floors || rr.setbacks) rules.set(r.data.id, rr);
       }
     } catch {
-      /* optional: keep previous rules */
+      /* optional: keep previous rules and centres */
+      for (const x of prev.sectors) if (x.c) tileCentres.set(x.id, x.c);
     }
     for (const [id, o] of Object.entries(opts.rulesOverrides ?? RULES_OVERRIDES)) rules.set(id, mergeRules(rules.get(id), o));
 
@@ -306,6 +311,11 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
         roads.get(p.id) ?? null,
       ];
     });
+    const plotCentres = sectorCentroids(plots);
+    for (const x of sectors) {
+      const ll = plotCentres.get(x.id) ?? tileCentres.get(x.id);
+      if (ll) x.c = [round(ll[0], 5)!, round(ll[1], 5)!];
+    }
     meta.cities = cities;
     meta.sectors = sectors;
     meta.zones = zones;
