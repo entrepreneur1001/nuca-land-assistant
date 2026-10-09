@@ -29,13 +29,20 @@ export type PremiumValues = typeof DEFAULT_PREMIUM_VALUES;
 export const MODEL = {
   /** Fallback booking conversion (codes → bookings) when allocation history is missing. */
   defaultConversion: 0.7,
-  /** Fallback codes per batch / batches per week. */
+  /** Fallback codes per batch when there is no allocation history (NUCA sends 300 a day since 1 Oct 2026). */
   defaultCodesPerBatch: 300,
-  defaultBatchesPerWeek: 5,
+  /** Booking codes go out one batch per working day; Friday and Saturday (Cairo time) are off. */
+  batchWeekdays: [0, 1, 2, 3, 4],
+  batchTimeZone: "Africa/Cairo",
+  /**
+   * Code holders from earlier batches who haven't booked may still book later (low / mid / high share).
+   * The source shows no late bookings so far, so the expected case is small and the worst case is wider.
+   */
+  lateBookingShare: { low: 0, mid: 0.1, high: 0.25 },
   /** How many most recent completed batches feed the rate/conversion estimate. */
   recentBatches: 6,
-  /** Optimistic scenario: NUCA enlarges daily batches by this factor. */
-  optimisticBatchGrowth: 1.33,
+  /** Optimistic scenario: NUCA enlarges daily batches by this factor (300 → 400). Batches never shrink below the latest size. */
+  optimisticBatchGrowth: 4 / 3,
   /** Max plots from the same sector in the Top-5 list (diversity). */
   topPerSector: 2,
   /** Days of booking history used for sector demand shares. */

@@ -23,7 +23,11 @@ export interface QueueEstimate {
   /** Calendar days until the user's batch is issued. low = fastest. */
   daysToTurn: Range;
   eta: { best: Date | null; expected: Date | null; worst: Date | null };
-  /** Bookings expected to happen before the user's turn. */
+  /** Code holders already called (earlier batches) who haven't booked yet. */
+  unbookedCodes: number;
+  /** Bookings still expected from people already called: today's batch finishing + late bookers from earlier batches. */
+  pendingBookings: Range;
+  /** Bookings expected to happen before the user's turn (people ahead + pending). */
   bookingsAhead: Range;
   /** Market-wide inventory left when the user's turn arrives (high = optimistic). */
   remainingAtTurn: Range;
@@ -31,14 +35,22 @@ export interface QueueEstimate {
   assumptions: string[];
 }
 
-const median = (xs: number[]) => {
-  if (!xs.length) return NaN;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 const DAY = 86_400_000;
+
+const cairoDate = new Intl.DateTimeFormat("en-CA", { timeZone: MODEL.batchTimeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+/** The Cairo calendar day of `d`, as UTC noon of that day (safe for day arithmetic and getUTCDay()). */
+function cairoDay(d: Date): number {
+  const [y, m, dd] = cairoDate.format(d).split("-").map(Number);
+  return Date.UTC(y, m - 1, dd, 12);
+}
+const isBatchDay = (day: number) => (MODEL.batchWeekdays as readonly number[]).includes(new Date(day).getUTCDay());
+
+/** Cairo day of the n-th batch (n ≥ 1) issued after `lastBatchDay`, never earlier than `today`. Skips Friday/Saturday. */
+function nthBatchDay(lastBatchDay: number, today: number, n: number): number {
+  let day = Math.max(lastBatchDay + DAY, today);
+  for (let seen = 0; ; day += DAY) if (isBatchDay(day) && ++seen >= n) return day;
+}
 
 /**
  * Queue model. NUCA issues daily batches of booking codes to the next ranks;
@@ -56,10 +68,10 @@ export function estimateQueue(input: {
   const now = input.now ?? new Date();
   const assumptions: string[] = [];
   const batches = [...(input.allocations ?? [])].sort((a, b) => a.issueDate.getTime() - b.issueDate.getTime());
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  // A batch issued today is still in progress; its conversion is not final.
-  const completed = batches.filter((b) => b.issueDate.getTime() < startOfToday.getTime());
+  const today = cairoDay(now);
+  // A batch issued today (Cairo time) is still in progress; its conversion is not final.
+  const completed = batches.filter((b) => cairoDay(b.issueDate) < today);
+  const inProgress = batches.filter((b) => cairoDay(b.issueDate) >= today);
   const recent = completed.slice(-MODEL.recentBatches);
 
   // Conversion: share of code holders who actually booked, per completed batch.
@@ -93,36 +105,42 @@ export function estimateQueue(input: {
     assumptions.push("Codes issued estimated as booked ÷ conversion.");
   }
   assumptions.push("A1: booking codes are issued in rank order, so ranks ≤ codes issued have been served.");
-  assumptions.push(`Best case assumes batch size grows ×${MODEL.optimisticBatchGrowth}; worst case uses the smallest recent batch.`);
+  assumptions.push(`Best case assumes batch size grows ×${MODEL.optimisticBatchGrowth.toFixed(2)}; expected and worst case keep the latest batch size.`);
   assumptions.push("A2: future batches convert to bookings at the recent per-batch rate.");
 
   const peopleAhead = Math.max(0, input.rank - codesIssued);
 
-  const sizes = (recent.length ? recent : batches.slice(-MODEL.recentBatches)).map((b) => b.totalCodes);
-  // Optimistic case allows NUCA to enlarge batches again (it already went 200 → 300).
-  const codesPerBatch: Range = sizes.length
-    ? { low: Math.min(...sizes), mid: median(sizes), high: Math.max(Math.max(...sizes), median(sizes) * MODEL.optimisticBatchGrowth) }
-    : { low: MODEL.defaultCodesPerBatch * 0.67, mid: MODEL.defaultCodesPerBatch, high: MODEL.defaultCodesPerBatch * 1.33 };
+  // NUCA sends one batch per working day (Sun–Thu) and only ever grew it (200 → 300 on 1 Oct 2026), so the latest batch
+  // size is both the expected and the worst case; the best case allows it to grow again.
+  const latest = batches.at(-1)?.totalCodes ?? MODEL.defaultCodesPerBatch;
+  const codesPerBatch: Range = { low: latest, mid: latest, high: Math.round(latest * MODEL.optimisticBatchGrowth) };
+  const batchesPerWeek = MODEL.batchWeekdays.length;
+  assumptions.push("A3: one batch per working day; Friday and Saturday are off (public holidays are not modelled).");
 
-  // Batches per week from the last 14 days of issue dates (NUCA skips some days, e.g. Fri/Sat).
-  const twoWeeksAgo = now.getTime() - 14 * DAY;
-  const lastTwoWeeks = batches.filter((b) => b.issueDate.getTime() >= twoWeeksAgo).length;
-  const spanDays = batches.length ? Math.min(14, (now.getTime() - batches[0].issueDate.getTime()) / DAY + 1) : 0;
-  const batchesPerWeek =
-    lastTwoWeeks >= 3 && spanDays >= 5 ? clamp((lastTwoWeeks / spanDays) * 7, 1, 7) : MODEL.defaultBatchesPerWeek;
-
-  const perDay = (codes: number) => (codes * batchesPerWeek) / 7;
-  const daysToTurn: Range = {
-    low: peopleAhead / perDay(codesPerBatch.high),
-    mid: peopleAhead / perDay(codesPerBatch.mid),
-    high: peopleAhead / perDay(codesPerBatch.low),
+  const lastBatchDay = batches.length ? cairoDay(batches.at(-1)!.issueDate) : today - DAY;
+  const turn = (perBatch: number) => {
+    if (peopleAhead <= 0) return { days: 0, date: now };
+    const day = nthBatchDay(lastBatchDay, today, Math.ceil(peopleAhead / perBatch));
+    return { days: Math.max(0, (day - now.getTime()) / DAY), date: new Date(day) };
   };
-  const at = (d: number) => (Number.isFinite(d) ? new Date(now.getTime() + d * DAY) : null);
+  const fast = turn(codesPerBatch.high);
+  const mid = turn(codesPerBatch.mid);
+  const slow = turn(codesPerBatch.low);
+  const daysToTurn: Range = { low: fast.days, mid: mid.days, high: slow.days };
+
+  // People already called who haven't booked still compete: today's batch is still booking, and earlier code holders may book late.
+  const openCodes = inProgress.reduce((a, b) => a + b.totalCodes, 0);
+  const openBooked = inProgress.reduce((a, b) => a + (b.plotsBooked ?? 0), 0);
+  const unbookedCodes = Math.max(0, codesIssued - openCodes - Math.max(0, input.booked - openBooked));
+  const late = MODEL.lateBookingShare;
+  const pending = (k: keyof Range) => Math.max(0, openCodes * conversion[k] - openBooked) + unbookedCodes * late[k];
+  const pendingBookings: Range = { low: pending("low"), mid: pending("mid"), high: pending("high") };
+  if (unbookedCodes > 0) assumptions.push(`A4: ${Math.round(late.mid * 100)}% (up to ${Math.round(late.high * 100)}%) of the ${unbookedCodes} earlier code holders who haven't booked may still book.`);
 
   const bookingsAhead: Range = {
-    low: peopleAhead * conversion.low,
-    mid: peopleAhead * conversion.mid,
-    high: peopleAhead * conversion.high,
+    low: peopleAhead * conversion.low + pendingBookings.low,
+    mid: peopleAhead * conversion.mid + pendingBookings.mid,
+    high: peopleAhead * conversion.high + pendingBookings.high,
   };
   const remainingAtTurn: Range = {
     low: Math.max(0, input.available - bookingsAhead.high),
@@ -141,7 +159,9 @@ export function estimateQueue(input: {
     codesPerBatch,
     batchesPerWeek,
     daysToTurn,
-    eta: { best: at(daysToTurn.low), expected: at(daysToTurn.mid), worst: at(daysToTurn.high) },
+    eta: { best: fast.date, expected: mid.date, worst: slow.date },
+    unbookedCodes,
+    pendingBookings,
     bookingsAhead,
     remainingAtTurn,
     aggregateLevel,

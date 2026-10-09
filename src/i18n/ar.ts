@@ -267,8 +267,8 @@ export const t = {
     title: "تعمل إيه دلوقتي؟",
     turn: "دورك غالباً هييجي",
     turnRange: (best: string, worst: string) => `(بدري: ${best} — متأخر: ${worst})`,
-    ahead: (ahead: number, before: number, lo: number, hi: number, left: number) =>
-      `قدامك حوالي ${num(ahead)} واحد. متوقع ${num(before)} منهم يحجزوا قبلك (ما بين ${num(lo)} و ${num(hi)})، ويفضل في السوق كله حوالي ${num(left)} أرض.`,
+    ahead: (ahead: number, pending: number, before: number, lo: number, hi: number, left: number) =>
+      `قدامك حوالي ${num(ahead)} واحد لسه مااتندهوش، وكمان حوالي ${num(pending)} حجز متوقع من ناس اتندهوا قبلك ولسه ماحجزوش. يعني متوقع ${num(before)} حجز قبل دورك (ما بين ${num(lo)} و ${num(hi)})، ويفضل في السوق كله حوالي ${num(left)} أرض.`,
     high: (n: number) => `${num(n)} اختيار فرصته عالية`,
     medium: (n: number) => `${num(n)} اختيار فرصته متوسطة`,
     featureReach: (gc: number, nb: number) => `🌳📐 حوالي ${num(gc)} حديقة+ناصية · 🏘️ حوالي ${num(nb)} قريبة من العمار هتلحقهم`,
@@ -332,7 +332,9 @@ export const t = {
   how: {
     title: "إزاي بنحسب؟",
     queue: (perBatch: number, perWeek: number, codes: number, lo: string, hi: string, mid: string) =>
-      `هيئة المجتمعات بتبعت أكواد الحجز على دفعات (آخر الدفعات ${num(perBatch)} كود، حوالي ${num(perWeek, 1)} دفعات في الأسبوع). اتبعت ${num(codes)} كود لحد دلوقتي، يعني اللي ترتيبهم لحد ${num(codes)} اتنادوا. نسبة اللي بيحجز فعلاً من كل دفعة ما بين ${lo} و ${hi} (المتوسط ${mid}).`,
+      `هيئة المجتمعات بتبعت دفعة أكواد حجز كل يوم عمل (${num(perWeek)} أيام في الأسبوع من الحد للخميس، والجمعة والسبت إجازة)، وآخر دفعة كانت ${num(perBatch)} كود وممكن تزيد. اتبعت ${num(codes)} كود لحد دلوقتي، يعني اللي ترتيبهم لحد ${num(codes)} اتنادوا. نسبة اللي بيحجز فعلاً من كل دفعة ما بين ${lo} و ${hi} (المتوسط ${mid}).`,
+    late: (unbooked: number, mid: string, hi: string) =>
+      `فيه حوالي ${num(unbooked)} واحد خدوا كود قبل كده ولسه ماحجزوش. لو لسه يقدروا يحجزوا، بنفترض إن ${mid} منهم هيحجزوا قبلك (وفي أسوأ حالة ${hi}).`,
     demand: (gc: number, g: number, c: number) =>
       `الحجوزات الجاية بتتوزع على المناطق حسب الطلب في آخر أسبوع، ولما منطقة تخلص الطلب بيروح لغيرها. جوه كل منطقة، الحديقة+الناصية بتتحجز أسرع ${num(gc, 1)} مرة، الحديقة ${num(g, 1)} مرة، والناصية ${num(c, 1)} مرة من الأرض العادية (من الحجوزات اللي حصلت فعلاً).`,
     nearBuilt:
@@ -401,7 +403,7 @@ export const t = {
     days: "فاضل كام يوم على دورك",
     daysSub: (lo: number, hi: number) => `ما بين ${num(lo)} و ${num(hi)} يوم`,
     eta: "إمتى كود الحجز بتاعك هييجي؟",
-    etaNote: "دي تقديرات مش مضمونة، وبتعتمد على إن الهيئة تفضل بنفس حجم الدفعات ومواعيدها.",
+    etaNote: "دفعة كل يوم عمل من الحد للخميس (الجمعة والسبت إجازة، والإجازات الرسمية مش محسوبة). دي تقديرات مش مضمونة، وبتعتمد على إن الهيئة تفضل بنفس حجم الدفعات أو تزوّدها.",
     best: "بدري",
     expected: "المتوقع",
     worst: "متأخر",
@@ -422,7 +424,8 @@ export const t = {
     col7d: "أسبوع",
     colLeft: "فاضل",
     colBooked: "اتحجز",
+    colPct: "نسبة المحجوز",
     colSellOut: "هتخلص في",
-    days_: (n: number) => `~${num(n)} يوم`,
+    days_: (n: number) => (n < 1 ? "أقل من يوم" : `~${num(Math.round(n))} يوم`),
   },
 };

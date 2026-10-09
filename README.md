@@ -75,9 +75,10 @@ Each run:
 All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 
 - **Queue:**
-  - People ahead = rank − booking codes issued (codes go out in daily batches of ~300, about 5 batches a week).
+  - People ahead = rank − booking codes issued. Codes go out in one batch per working day, Sunday–Thursday in Cairo time (Friday and Saturday are off; public holidays are not modelled). Batches are 300 codes since 1 Oct 2026.
   - Conversion = booked ÷ codes for recently completed batches (~60–71%).
-  - The ETA comes in best/expected/worst cases.
+  - Bookings before your turn = people ahead × conversion, plus pending bookings from people already called: today's batch still booking, and a share (10% expected, 25% worst) of earlier code holders who haven't booked and may book late (`MODEL.lateBookingShare`).
+  - The ETA walks the working-day calendar. The expected and worst cases keep the latest batch size; the best case assumes NUCA grows batches by a third (300 → 400).
 - **Depletion:**
   - Future bookings are spread across districts by last-week demand (25% smoothed toward inventory). A district that sells out spills its demand over to the others.
   - Inside a district, plots are picked using weights learned from what was already booked: garden+corner ≈3.2×, garden ≈1.9×, corner ≈1.6×.

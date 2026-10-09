@@ -12,7 +12,9 @@ describe("queue / reachability", () => {
     expect(q.codesIssuedSource).toBe("estimated-from-booked");
     expect(q.codesIssued).toBe(Math.round(2200 / 0.7));
     expect(q.peopleAhead).toBe(17000 - q.codesIssued);
-    expect(q.bookingsAhead.mid).toBeCloseTo(q.peopleAhead * 0.7, 5);
+    // Called-but-unbooked holders (codes − booked) may still book: 10% expected.
+    expect(q.unbookedCodes).toBe(q.codesIssued - 2200);
+    expect(q.bookingsAhead.mid).toBeCloseTo(q.peopleAhead * 0.7 + q.unbookedCodes * 0.1, 5);
     // ~9,700 bookings ahead vs 3,500 available → nothing left in any scenario.
     expect(q.remainingAtTurn).toEqual({ low: 0, mid: 0, high: 0 });
     expect(q.aggregateLevel).toBe("LOW");
@@ -33,8 +35,11 @@ describe("queue / reachability", () => {
     expect(q.codesIssued).toBe(3300);
     expect(q.peopleAhead).toBe(13700); // not 17000 − 2138
     expect(q.conversion.mid).toBeCloseTo(0.7, 5); // today's partial batch is excluded
-    expect(q.bookingsAhead.mid).toBeCloseTo(9590, 0);
-    expect(q.remainingAtTurn.mid).toBeCloseTo(13409 - 9590, 0);
+    // Today's batch still books (300 × 70% − 2 already = 208), and 10% of the 864 earlier non-bookers may book late.
+    expect(q.unbookedCodes).toBe(3300 - 300 - (2138 - 2));
+    expect(q.pendingBookings.mid).toBeCloseTo(208 + 86.4, 5);
+    expect(q.bookingsAhead.mid).toBeCloseTo(9590 + 294.4, 0);
+    expect(q.remainingAtTurn.mid).toBeCloseTo(13409 - 9884.4, 0);
     expect(q.daysToTurn.low).toBeLessThanOrEqual(q.daysToTurn.mid);
     expect(q.daysToTurn.mid).toBeLessThanOrEqual(q.daysToTurn.high);
     expect(q.eta.expected!.getTime()).toBeGreaterThan(NOW.getTime());
@@ -43,8 +48,39 @@ describe("queue / reachability", () => {
   it("someone already called has nobody ahead and full availability", () => {
     const q = estimateQueue({ rank: 100, booked: 2000, available: 5000, allocatedCodes: 3300, now: NOW });
     expect(q.peopleAhead).toBe(0);
-    expect(q.remainingAtTurn.mid).toBe(5000);
+    expect(q.daysToTurn.mid).toBe(0);
+    // Only the late share of the 1,300 called-but-unbooked holders competes.
+    expect(q.remainingAtTurn.mid).toBeCloseTo(5000 - 130, 5);
     expect(q.aggregateLevel).toBe("HIGH");
+  });
+});
+
+describe("batch schedule (one batch per working day, Fri/Sat off)", () => {
+  // Wed 7 Oct 2026, 15:00 Cairo; today's 300-code batch is already out.
+  const allocations = [
+    { issueDate: new Date("2026-10-05T21:00:00Z"), totalCodes: 300, plotsBooked: 200 }, // Tue 6 Oct Cairo
+    { issueDate: new Date("2026-10-06T21:00:00Z"), totalCodes: 300, plotsBooked: 50 }, // Wed 7 Oct Cairo (today)
+  ];
+  const turnDay = (rank: number) => {
+    const q = estimateQueue({ rank, booked: 250, available: 10000, allocations, now: NOW });
+    return { q, day: new Date(q.eta.expected!).toISOString().slice(0, 10) };
+  };
+
+  it("the next batch is tomorrow (Thursday)", () => {
+    expect(turnDay(600 + 300).day).toBe("2026-10-08");
+  });
+
+  it("skips Friday and Saturday", () => {
+    expect(turnDay(600 + 301).day).toBe("2026-10-11"); // second batch → Sunday
+    const { q } = turnDay(600 + 300 * 7);
+    for (const d of [q.eta.best, q.eta.expected, q.eta.worst]) expect([5, 6]).not.toContain(new Date(d!).getUTCDay());
+  });
+
+  it("uses the latest batch size; only the best case grows", () => {
+    const { q } = turnDay(5000);
+    expect(q.codesPerBatch).toEqual({ low: 300, mid: 300, high: 400 });
+    expect(q.batchesPerWeek).toBe(5);
+    expect(q.daysToTurn.low).toBeLessThanOrEqual(q.daysToTurn.mid);
   });
 });
 

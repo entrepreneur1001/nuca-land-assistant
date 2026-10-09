@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { AiResponse } from "@/ai/schema";
+import { MODEL } from "@/engine/config";
 import { ago, date, num, pct, t, usd } from "@/i18n/ar";
 import { analyze, cooldownLeft } from "@/lib/ai";
 import { useNow } from "@/lib/use-now";
@@ -86,7 +87,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
         </div>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <div className="space-y-3 text-sm">
-            <p>{t.now.ahead(q.peopleAhead, q.bookingsAhead.mid, q.bookingsAhead.low, q.bookingsAhead.high, q.remainingAtTurn.mid)}</p>
+            <p>{t.now.ahead(q.peopleAhead, q.pendingBookings.mid, q.bookingsAhead.mid, q.bookingsAhead.low, q.bookingsAhead.high, q.remainingAtTurn.mid)}</p>
             <div className="flex flex-wrap gap-2">
               <Badge tone="good">{t.now.high(d.strategy.highConfidence)}</Badge>
               <Badge tone="warn">{t.now.medium(d.strategy.mediumConfidence)}</Badge>
@@ -186,6 +187,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
           <summary className="cursor-pointer text-sm font-semibold">{t.how.title}</summary>
           <div className="mt-2 space-y-2 text-sm text-muted">
             <p>{t.how.queue(q.codesPerBatch.mid, q.batchesPerWeek, q.codesIssued, pct(q.conversion.low), pct(q.conversion.high), pct(q.conversion.mid))}</p>
+            {q.unbookedCodes > 0 ? <p>{t.how.late(q.unbookedCodes, pct(MODEL.lateBookingShare.mid), pct(MODEL.lateBookingShare.high))}</p> : null}
             <p>{t.how.demand(d.featureWeights.gardenCorner, d.featureWeights.garden, d.featureWeights.corner)}</p>
             <p>{t.how.nearBuilt}</p>
             <p>{t.how.street}</p>

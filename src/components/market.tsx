@@ -200,13 +200,14 @@ function ProjectTable({ title, rows }: { title: string; rows: ReturnType<typeof 
     <Card>
       <h3 className="font-bold">{title}</h3>
       <div className="-mx-4 mt-2 overflow-x-auto px-4">
-        <table className="w-full min-w-[440px] text-sm">
+        <table className="w-full min-w-[520px] text-sm">
           <thead className="text-right text-xs text-muted">
             <tr className="border-b border-border">
               <th className="py-1.5">{t.market.colProject}</th>
               <th>{t.market.col7d}</th>
-              <th>{t.market.colLeft}</th>
               <th>{t.market.colBooked}</th>
+              <th>{t.market.colLeft}</th>
+              <th>{t.market.colPct}</th>
               <th>{t.market.colSellOut}</th>
             </tr>
           </thead>
@@ -218,6 +219,7 @@ function ProjectTable({ title, rows }: { title: string; rows: ReturnType<typeof 
                   <div className="truncate text-xs text-muted">{p.cityName}</div>
                 </td>
                 <td>{num(p.last7d)}</td>
+                <td>{num(p.booked)}</td>
                 <td>{num(p.available)}</td>
                 <td>{pct(p.bookedPct)}</td>
                 <td>{p.daysToSellOut == null ? "—" : t.market.days_(p.daysToSellOut)}</td>
