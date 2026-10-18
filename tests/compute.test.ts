@@ -61,7 +61,7 @@ describe("browser engine", () => {
     const { ranked, dashboard } = computeDashboard(snapshot(), { ...DEFAULT_PROFILE, bookingRank: 300, moneyPaid: 35_000 }, NOW);
     expect(ranked.length).toBeGreaterThan(0);
     expect(ranked.every((r) => r.status === "available" && r.downPayment <= 35_000)).toBe(true);
-    expect(dashboard.top.length).toBeLessThanOrEqual(5);
+    expect(dashboard.top.length).toBeLessThanOrEqual(10);
     expect(dashboard.queue.peopleAhead).toBe(300 - 180);
     expect(dashboard.freshness.stale).toBe(false);
   });

@@ -3,9 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Snapshot } from "@/data/snapshot";
 import type { Profile } from "@/engine/scoring";
-import { subscribeSnapshot } from "@/lib/data";
 import { Engine, type EngineResult } from "@/lib/engine-client";
 import { track } from "@/lib/firebase";
+import { useLive } from "@/lib/live";
 import { loadProfile, sanitize, saveProfile } from "@/lib/profile";
 
 interface AppState {
@@ -19,13 +19,18 @@ interface AppState {
 
 const Ctx = createContext<AppState | null>(null);
 
+const RECOMPUTE_MS = 5 * 60_000;
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const engine = useRef<Engine | null>(null);
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const live = useLive();
+  const snapshot = live.snapshot;
   const [result, setResult] = useState<EngineResult | null>(null);
   const [profile, setProfileState] = useState<Profile | null>(null);
   const [computing, setComputing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [computeError, setComputeError] = useState<string | null>(null);
+  // Bumped periodically so time-dependent estimates (queue batches, booking pace) move on even when the data doesn't.
+  const [tick, setTick] = useState(0);
   const job = useRef(0);
 
   // Load the visitor's profile (URL > localStorage > defaults) after mount.
@@ -36,19 +41,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     engine.current = new Engine();
-    const unsub = subscribeSnapshot(
-      (s) => {
-        engine.current?.setSnapshot(s);
-        setSnapshot(s);
-        setError(null);
-      },
-      (e) => setError(/quota|resource-exhausted/i.test(e.message) ? "quota" : e.message === "no-data" ? "no-data" : "load"),
-    );
+    return () => engine.current?.dispose();
+  }, []);
+
+  useEffect(() => {
+    const bump = () => document.visibilityState === "visible" && setTick((n) => n + 1);
+    const t = setInterval(bump, RECOMPUTE_MS);
+    document.addEventListener("visibilitychange", bump);
     return () => {
-      unsub();
-      engine.current?.dispose();
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", bump);
     };
   }, []);
+
+  useEffect(() => {
+    if (snapshot) engine.current?.setSnapshot(snapshot);
+  }, [snapshot]);
 
   useEffect(() => {
     if (!snapshot || !profile || !engine.current) return;
@@ -58,13 +66,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       engine.current!
         .compute(profile)
         .then((r) => {
-          if (my === job.current) setResult(r);
+          if (my === job.current) {
+            setResult(r);
+            setComputeError(null);
+          }
         })
-        .catch((e) => setError(String(e)))
+        .catch((e) => setComputeError(String(e)))
         .finally(() => my === job.current && setComputing(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [snapshot, profile]);
+  }, [snapshot, profile, tick]);
+
+  const error = live.error ?? computeError;
 
   const setProfile = useCallback((p: Profile) => {
     const clean = sanitize(p);

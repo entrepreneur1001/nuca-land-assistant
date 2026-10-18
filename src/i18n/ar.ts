@@ -7,8 +7,9 @@ export const usd = (n: number | null | undefined) => (n == null ? "—" : `${num
 export const pct = (n: number | null | undefined) => (n == null ? "—" : `${num(Math.round(n * 100))}٪`);
 export const km = (n: number | null | undefined) =>
   n == null ? "مش معروف" : n >= 5 ? "٥ كم أو أكتر" : n < 1 ? `${num(Math.round(n * 1000))} متر` : `${num(n, 1)} كم`;
+/** Calendar date in Cairo time, so the build server and every visitor's browser print the same day. */
 export const date = (iso: string | Date | null | undefined) =>
-  iso ? new Date(iso).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" }) : "—";
+  iso ? new Date(iso).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Cairo" }) : "—";
 export const dateTime = (iso: string | Date | null | undefined) =>
   iso ? new Date(iso).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
 
@@ -282,7 +283,7 @@ export const t = {
     why: "ليه؟",
     none: "مفيش أراضي مناسبة لميزانيتك وفلاترك. جرّب تخفّف الفلاتر.",
   },
-  top5: "أحسن ٥ أراضي ليك",
+  top10: "أحسن ١٠ أراضي ليك",
   card: {
     plot: "قطعة",
     area: "المساحة",
@@ -380,6 +381,13 @@ export const t = {
     location: "المكان",
     approxSector: "(تقريبي: مكان المنطقة، الهيئة منشرتش مكان القطعة)",
     approxCity: "(تقريبي: المدينة بس، الهيئة منشرتش مكان المنطقة)",
+    mapTitle: "مكان القطعة",
+    thisPlot: (n: string) => `قطعة ${n}`,
+    approxArea: "القطعة في المنطقة دي تقريبًا",
+    legendThis: "القطعة دي",
+    legendAvailable: "متاحة",
+    legendBooked: "اتحجزت",
+    mapNote: "النقط هي باقي قطع المنطقة. دوس على أي نقطة تفتحها.",
     builtDist: "أقرب مباني قائمة",
     builtFromSector: "(محسوبة من نص المنطقة)",
     roadDist: "على شارع رئيسي",

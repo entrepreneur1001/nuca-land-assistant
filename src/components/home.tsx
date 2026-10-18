@@ -145,7 +145,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
       </Card>
 
       <div>
-        <h2 className="mb-2 text-lg font-bold">{t.top5}</h2>
+        <h2 className="mb-2 text-lg font-bold">{t.top10}</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {top.map((l, i) => (
             <Link key={l.id} href={`/land?id=${l.id}`} className="block rounded-2xl border border-border bg-surface p-3 hover:border-accent">

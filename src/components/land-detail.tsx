@@ -10,6 +10,7 @@ import { unitsPerFloor } from "@/engine/units";
 import { track } from "@/lib/firebase";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
+import { PlotMap } from "./plot-map";
 import { Badge, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
 
 export function LandDetail() {
@@ -124,6 +125,27 @@ export function LandDetail() {
         </dl>
       </Card>
 
+      {plot.latitude != null || plot.approxLoc ? (
+        <Card>
+          <h2 className="font-bold">📍 {t.detail.mapTitle}</h2>
+          <div className="mt-2">
+            <PlotMap plot={plot} plots={app.snapshot.plots} />
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+            <Legend className="bg-accent" label={t.detail.legendThis} />
+            <Legend className="bg-good" label={t.detail.legendAvailable} />
+            <Legend className="bg-muted" label={t.detail.legendBooked} />
+            <a className="ms-auto text-accent hover:underline" target="_blank" rel="noreferrer" href={mapLink(plot)}>
+              {t.detail.map}
+            </a>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            {plot.latitude == null ? `${t.detail.approxSector} ` : ""}
+            {t.detail.mapNote}
+          </p>
+        </Card>
+      ) : null}
+
       <Card>
         <h2 className="font-bold">🏗️ {t.rules.title}</h2>
         <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
@@ -192,6 +214,15 @@ export function LandDetail() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function Legend({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-block h-2.5 w-2.5 rounded-full ${className}`} />
+      {label}
+    </span>
   );
 }
 

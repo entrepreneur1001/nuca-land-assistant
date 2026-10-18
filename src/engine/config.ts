@@ -43,7 +43,7 @@ export const MODEL = {
   recentBatches: 6,
   /** Optimistic scenario: NUCA enlarges daily batches by this factor (300 → 400). Batches never shrink below the latest size. */
   optimisticBatchGrowth: 4 / 3,
-  /** Max plots from the same sector in the Top-5 list (diversity). */
+  /** Max plots from the same sector in the Top-10 list (diversity). */
   topPerSector: 2,
   /** Days of booking history used for sector demand shares. */
   demandWindowDays: 7,

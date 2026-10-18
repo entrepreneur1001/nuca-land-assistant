@@ -1,13 +1,14 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { BuildingRules } from "@/data/snapshot";
-import { date, num, t, usd } from "@/i18n/ar";
-import type { AreaStats, CityInfo } from "@/lib/build-data";
+import { num, t, usd } from "@/i18n/ar";
+import type { AreaStats, CityInfo } from "@/lib/area-stats";
 import { OFFICIAL, phasePath, type Phase } from "@/lib/phases";
 import { SITE_URL } from "@/lib/site";
 import { JsonLd, breadcrumbs } from "./json-ld";
 import { Card, Stat } from "./ui";
 
-/** Server-rendered building blocks for the static phase pages (/[phase]/…). */
+/** Building blocks for the static phase pages (/[phase]/…); the live versions in live-blocks.tsx reuse them in the browser. */
 
 const s = t.seo;
 
@@ -100,12 +101,22 @@ export function Faq({ items }: { items: { q: string; a: string }[] }) {
   );
 }
 
+/** FAQ for a city page from its stats (`at` is the formatted data date). */
+export function cityFaq(phase: Phase, city: CityInfo, at: string) {
+  const f = s.faq;
+  const st = city.stats;
+  const items = [{ q: f.availQ(phase, city.name), a: f.availA(st.available, st.total, at) }];
+  if (st.ppmMin != null) items.unshift({ q: f.ppmQ(phase, city.name), a: f.ppmA(city.name, usd(st.ppmMin), usd(st.ppmMax)) });
+  if (st.dpMin != null && st.available) items.push({ q: f.dpQ(city.name), a: f.dpA(usd(st.dpMin), usd(st.totalMin)) });
+  return items;
+}
+
 /** Where the numbers come from, how fresh they are, and what is computed vs published. */
-export function DataNote({ phase, at, calc = true }: { phase: Phase; at: string | null; calc?: boolean }) {
+export function DataNote({ phase, asOf, calc = true }: { phase: Phase; asOf: ReactNode; calc?: boolean }) {
   return (
     <section className="space-y-1 rounded-2xl bg-surface-2 px-4 py-3 text-xs leading-6 text-muted">
       <h2 className="text-sm font-semibold text-text">{s.sourceH}</h2>
-      <p>{s.asOf(date(at))}</p>
+      <p>{asOf}</p>
       {calc ? <p>{s.calcNote}</p> : null}
       <p>
         {s.officialNote}{" "}

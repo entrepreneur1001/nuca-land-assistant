@@ -62,15 +62,21 @@ export async function buildSnapshot(meta: MetaDoc): Promise<Snapshot> {
 /** Subscribe to the live meta doc; calls back with a fresh snapshot whenever data changes. */
 export function subscribeSnapshot(onData: (s: Snapshot) => void, onError: (e: Error) => void): () => void {
   let lastMeta = "";
+  let seq = 0;
   const handle = async (meta: MetaDoc | null) => {
     if (!meta || !meta.chunks?.length) return onError(new Error("no-data"));
     const sig = `${meta.dataVersion}|${meta.statsAt}|${meta.lastError}`;
     if (sig === lastMeta) return;
     lastMeta = sig;
+    const my = ++seq;
     try {
-      // Unchanged chunks come from the in-memory/IndexedDB cache, so this only downloads what changed.
-      onData(await buildSnapshot(meta));
+      // Unchanged chunks come from the in-memory/localStorage cache, so this only downloads what changed.
+      const snap = await buildSnapshot(meta);
+      // A newer meta arrived while this one was loading: drop the older snapshot.
+      if (my === seq) onData(snap);
     } catch (e) {
+      if (my !== seq) return;
+      lastMeta = ""; // retry this same meta on the next update / poll
       onError(e instanceof Error ? e : new Error(String(e)));
     }
   };

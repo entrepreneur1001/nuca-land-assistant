@@ -192,7 +192,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
     featureWeights,
     excluded,
     strategy: { highConfidence: high.length, mediumConfidence: medium.length, targets, avoid, topChoiceId: topChoice?.id ?? null },
-    top: diversify(ranked, 5, MODEL.topPerSector),
+    top: diversify(ranked, 10, MODEL.topPerSector),
     sectors,
   };
   return { dashboard, ranked, byId };
