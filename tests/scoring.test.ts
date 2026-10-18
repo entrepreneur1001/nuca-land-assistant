@@ -167,3 +167,21 @@ describe("apartments per floor", () => {
     expect(premium(ign, "four")).toBe(premium(ign, "two"));
   });
 });
+
+describe("booking speed", () => {
+  const lands = [land("fast", { projectId: "fast" }), land("slow", { projectId: "slow" })];
+  const demand = new Map([["fast", 1], ["slow", 0.1]]);
+
+  it("favours fast-selling districts when the user's turn is near", () => {
+    const r = scoreLands(lands, profile, { ...ctx(["fast", "slow"]), demand, nearness: 1 });
+    expect(r.scored.map((s) => s.id)).toEqual(["fast", "slow"]);
+    expect(r.scored[0].score).toBeGreaterThan(r.scored[1].score);
+    expect(r.scored[0].reasons).toContain("🔥 المنطقة دي بتتحجز بسرعة الأيام دي");
+  });
+
+  it("doesn't change anything when the turn is far", () => {
+    const r = scoreLands(lands, profile, { ...ctx(["fast", "slow"]), demand, nearness: 0 });
+    expect(r.scored[0].score).toBe(r.scored[1].score);
+    expect(r.scored[0].score).toBe(scoreLands(lands, profile, ctx(["fast", "slow"])).scored[0].score);
+  });
+});

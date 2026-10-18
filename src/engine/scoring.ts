@@ -1,4 +1,5 @@
 import { DEFAULT_PREMIUM_VALUES, DEFAULT_WEIGHTS, MODEL, type PremiumValues, type Weights } from "./config";
+import { sectorKey } from "./demand";
 import { featureKey, type Survival } from "./depletion";
 import { NEAR_BUILT, nearBuiltFactor } from "./nearbuilt";
 import { isOnMainRoad } from "./roads";
@@ -60,6 +61,7 @@ export interface Factors {
   location: number;
   value: number;
   area: number;
+  demand: number;
 }
 
 export interface ScoredLand {
@@ -137,6 +139,10 @@ export interface ScoreContext {
   survival: Map<string, Survival>;
   /** City popularity 0–1 (share of bookings normalised to the most popular city). */
   cityPopularity: Map<string, number>;
+  /** District booking speed 0–1 by sector key (engine/demand.ts). */
+  demand?: Map<string, number>;
+  /** 0–1: how much booking speed counts, from how near the user's turn is. */
+  nearness?: number;
   /** Share of neighbouring plots already booked (null = unknown). */
   neighbourShare?: Map<string, number | null>;
 }
@@ -179,7 +185,10 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     }
     return lo / (areas.length - 1);
   };
-  const wsum = Object.values(weights).reduce((a, b) => a + Math.max(0, b), 0) || 1;
+  // Booking speed only matters when the user's turn is near; far ranks score exactly as without it.
+  const nearness = ctx.nearness ?? 0;
+  const effective: Weights = { ...weights, demand: weights.demand * nearness };
+  const wsum = Object.values(effective).reduce((a, b) => a + Math.max(0, b), 0) || 1;
   const gardenMode = profile.preferences?.garden ?? "prefer";
   const cornerMode = profile.preferences?.corner ?? "prefer";
   const nearMode = profile.preferences?.nearBuilt ?? "prefer";
@@ -232,10 +241,11 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       location: clamp01(location),
       value,
       area: areaF,
+      demand: ctx.demand?.get(sectorKey(l)) ?? 0,
     };
     const score =
       (100 *
-        (Object.keys(weights) as (keyof Weights)[]).reduce((a, k) => a + Math.max(0, weights[k]) * factors[k], 0)) /
+        (Object.keys(effective) as (keyof Weights)[]).reduce((a, k) => a + Math.max(0, effective[k]) * factors[k], 0)) /
       wsum;
 
     const R = t.reasons;
@@ -250,6 +260,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     const p100 = Math.round(s.mid * 100);
     reasons.push(s.mid >= MODEL.reachableAt ? R.high(p100) : s.mid >= MODEL.riskyAt ? R.mid(p100) : R.low(p100));
     if (value >= 0.6) reasons.push(R.cheap);
+    if (nearness > 0 && factors.demand >= MODEL.fastSellingAt) reasons.push(R.fastSelling);
     if (ci >= 0 || pi >= 0) reasons.push(R.preferred);
 
     return {

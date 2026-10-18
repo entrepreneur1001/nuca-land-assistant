@@ -1,6 +1,7 @@
 import type { Plot, Snapshot } from "@/data/snapshot";
 import { computeFreshness, type Freshness } from "@/lib/freshness";
 import { MODEL } from "./config";
+import { sectorDemand, sectorKey, turnNearness } from "./demand";
 import { computeSurvival, learnFeatureWeights, type FeatureKey, type Survival } from "./depletion";
 import { neighbourBookedShare } from "./nearbuilt";
 import { estimateQueue, type QueueEstimate } from "./queue";
@@ -34,6 +35,8 @@ export interface Dashboard {
   market: { total: number; booked: number; available: number; bookedLast24h: number; bookedLast7d: number };
   budgetLimit: number;
   queue: QueueEstimate;
+  /** 0–1: how much district booking speed counts in the score (1 = the user's turn is days away). */
+  demandNearness: number;
   reachable: { expected: number; low: number; high: number; eligible: number; gardenCorner: number; nearBuilt: number };
   featureWeights: Record<FeatureKey, number>;
   excluded: ExclusionStats;
@@ -52,7 +55,6 @@ export interface Computed {
 export const FRESHNESS = { staleAfterMs: 45 * 60_000, maxFullSyncMs: 2 * 3600_000 };
 
 const DAY = 86_400_000;
-const sectorKey = (p: { projectId: string | null; cityName: string }) => p.projectId ?? `city:${p.cityName}`;
 
 /** Top-N with at most `perSector` plots from the same sector, so the shortlist shows real alternatives. */
 export function diversify<T extends { projectId: string | null; cityName: string }>(xs: T[], n: number, perSector: number): T[] {
@@ -125,7 +127,9 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
   const maxRate = Math.max(0.0001, ...rates.values());
   const cityPopularity = new Map([...rates].map(([k, r]) => [k, r / maxRate]));
 
-  const { scored, excluded } = scoreLands(plots, profile, { survival, cityPopularity, neighbourShare });
+  const demand = sectorDemand(plots, nowMs);
+  const nearness = turnNearness(queue.daysToTurn.mid);
+  const { scored, excluded } = scoreLands(plots, profile, { survival, cityPopularity, neighbourShare, demand, nearness });
   const plotById = new Map(plots.map((p) => [p.id, p]));
   const ranked: RankedLand[] = scored.map((s) => ({ ...plotById.get(s.id)!, ...s }));
   const scoredById = new Map(scored.map((s) => [s.id, s]));
@@ -181,6 +185,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
     market: { total: plots.length, booked, available, bookedLast24h, bookedLast7d },
     budgetLimit: budgetLimit(profile),
     queue,
+    demandNearness: nearness,
     reachable: {
       expected: Math.round(sum("mid")),
       low: Math.round(sum("low")),

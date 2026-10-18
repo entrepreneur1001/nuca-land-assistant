@@ -88,6 +88,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <div className="space-y-3 text-sm">
             <p>{t.now.ahead(q.peopleAhead, q.pendingBookings.mid, q.bookingsAhead.mid, q.bookingsAhead.low, q.bookingsAhead.high, q.remainingAtTurn.mid)}</p>
+            {d.demandNearness > 0 ? <p className="text-xs text-accent">{t.now.demand}</p> : null}
             <div className="flex flex-wrap gap-2">
               <Badge tone="good">{t.now.high(d.strategy.highConfidence)}</Badge>
               <Badge tone="warn">{t.now.medium(d.strategy.mediumConfidence)}</Badge>
@@ -170,9 +171,13 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 <dd>{usd(l.totalPrice)}</dd>
               </dl>
               {l.rules?.floors ? <div className="mt-1 truncate text-xs text-muted" title={l.rules.floors}>🏗️ {l.rules.floors}</div> : null}
-              <div className="mt-2 flex items-center justify-between">
-                <SurvivalBar {...l.survival} />
-                <span className="text-sm font-bold">{num(l.score)}</span>
+              <div className="mt-2 flex items-end justify-between">
+                <SurvivalBar {...l.survival} label />
+                <div className="text-end" title={t.card.scoreHint}>
+                  <div className="text-[10px] text-muted">{t.card.score}</div>
+                  <span className="text-sm font-bold">{num(l.score)}</span>
+                  <span className="text-[10px] text-muted">/١٠٠</span>
+                </div>
               </div>
             </Link>
           ))}
@@ -208,7 +213,7 @@ function AiPanel() {
   const app = useApp()!;
   const { dashboard, ranked } = app.result!;
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<{ data: AiResponse; cached: boolean; forVersion: string } | null>(null);
+  const [res, setRes] = useState<{ data: AiResponse; cached: boolean; forVersion: string; forProfile: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const now = useNow();
   const left = now ? cooldownLeft() : 0;
@@ -217,9 +222,10 @@ function AiPanel() {
   const run = async () => {
     setBusy(true);
     setErr(null);
+    const forProfile = JSON.stringify(app.profile);
     const r = await analyze(dashboard, ranked, app.profile);
     setBusy(false);
-    if (r.ok) setRes({ data: r.data, cached: r.cached, forVersion: dashboard.dataVersion });
+    if (r.ok) setRes({ data: r.data, cached: r.cached, forVersion: dashboard.dataVersion, forProfile });
     else
       setErr(
         r.error === "cooldown"
@@ -244,7 +250,9 @@ function AiPanel() {
         </button>
       </div>
       {err ? <p className="mt-2 text-sm text-bad">{err}</p> : null}
-      {res ? (
+      {res && res.forProfile !== JSON.stringify(app.profile) ? (
+        <p className="mt-2 text-sm text-warn">{t.ai.outdated}</p>
+      ) : res ? (
         <div className="mt-3 space-y-3 text-sm">
           {res.cached ? <Badge>{t.ai.cached}</Badge> : null}
           <p className="font-medium">{res.data.strategy}</p>

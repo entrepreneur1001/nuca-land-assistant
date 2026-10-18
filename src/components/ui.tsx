@@ -65,15 +65,23 @@ export function FeatureBadges({
 }
 
 /** Pessimistic–optimistic band with the expected value marked. Fills right-to-left in RTL. */
-export function SurvivalBar({ low, mid, high }: { low: number; mid: number; high: number }) {
+export function SurvivalBar({ low, mid, high, label }: { low: number; mid: number; high: number; label?: boolean }) {
   const tone = mid >= 0.7 ? "var(--good)" : mid >= 0.3 ? "var(--warn)" : "var(--bad)";
-  return (
-    <div className="flex items-center gap-2" title={`${num(Math.round(low * 100))}٪ – ${num(Math.round(high * 100))}٪`}>
+  const title = `${t.card.chanceHint} (${num(Math.round(low * 100))}٪ – ${num(Math.round(high * 100))}٪)`;
+  const bar = (
+    <div className="flex items-center gap-2" title={title}>
       <div className="relative h-2 w-20 rounded-full bg-surface-2">
         <div className="absolute h-2 rounded-full opacity-35" style={{ insetInlineStart: `${low * 100}%`, width: `${Math.max(2, (high - low) * 100)}%`, background: tone }} />
         <div className="absolute -top-0.5 h-3 w-1 rounded" style={{ insetInlineStart: `calc(${mid * 100}% - 2px)`, background: tone }} />
       </div>
       <span className="text-xs font-semibold">{num(Math.round(mid * 100))}٪</span>
+    </div>
+  );
+  if (!label) return bar;
+  return (
+    <div title={title}>
+      <div className="text-[10px] text-muted">{t.card.chance}</div>
+      {bar}
     </div>
   );
 }

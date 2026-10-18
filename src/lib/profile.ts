@@ -58,7 +58,14 @@ export function sanitize(p: Partial<Profile> | null | undefined): Profile {
 export function loadProfile(): Profile {
   try {
     const url = new URL(window.location.href);
-    if (url.searchParams.has("r") || url.searchParams.has("p")) return fromQuery(url.searchParams);
+    if (url.searchParams.has("r") || url.searchParams.has("p")) {
+      // A shared link seeds the profile once; drop it from the URL so later edits survive a reload.
+      const p = fromQuery(url.searchParams);
+      saveProfile(p);
+      for (const k of QUERY_KEYS) url.searchParams.delete(k);
+      history.replaceState(history.state, "", url.pathname + (url.search || "") + url.hash);
+      return p;
+    }
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const saved = JSON.parse(raw);
@@ -81,6 +88,8 @@ export function saveProfile(p: Profile) {
     /* private mode etc. */
   }
 }
+
+const QUERY_KEYS = ["r", "p", "g", "c", "n", "un", "cities", "only"];
 
 export function toQuery(p: Profile): string {
   const q = new URLSearchParams({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FeatureMode, Profile } from "@/engine/scoring";
 import { num, t } from "@/i18n/ar";
 import { DEFAULT_PROFILE, toQuery } from "@/lib/profile";
@@ -35,6 +35,14 @@ function NumberField({
     const n = digits ? Number(digits) : null;
     if ((n == null || Number.isFinite(n)) && n !== value) onCommit(n);
   };
+  // Apply shortly after typing stops, so results update without leaving the field (phones rarely blur).
+  // Clearing waits for blur, so retyping a number doesn't flash the "enter your rank" card.
+  useEffect(() => {
+    if (!/[\d٠-٩]/.test(text)) return;
+    const id = setTimeout(commit, 600);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
   return (
     <label className="block text-xs text-muted">
       {label}

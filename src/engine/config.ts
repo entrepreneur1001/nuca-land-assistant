@@ -10,6 +10,8 @@ export const DEFAULT_WEIGHTS = {
   location: 10,
   value: 10,
   area: 5,
+  /** How fast the plot's district is selling now; only counts when the user's turn is near (see engine/demand.ts). */
+  demand: 15,
 } as const;
 export type Weights = Record<keyof typeof DEFAULT_WEIGHTS, number>;
 
@@ -47,6 +49,14 @@ export const MODEL = {
   topPerSector: 2,
   /** Days of booking history used for sector demand shares. */
   demandWindowDays: 7,
+  /** Booking speed counts fully when the user's turn is this many days away or less… */
+  demandNearTurnDays: 3,
+  /** …and not at all from this many days. */
+  demandFadeDays: 21,
+  /** Recent bookings a district needs before its own speed is trusted over its city's. */
+  demandMinBookings: 5,
+  /** Districts at or above this booking speed (0–1) are called fast-selling. */
+  fastSellingAt: 0.6,
   /** Share of future demand spread by inventory share instead of recent popularity (smoothing). */
   demandSmoothing: 0.25,
   /** Simulation resolution (steps). */

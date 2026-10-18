@@ -104,6 +104,10 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 | preferred location | 10 |
 | price/m² vs similar | 10 |
 | area | 5 |
+| booking speed (بتتحجز بسرعة دلوقتي) | 15, only near your turn |
+
+  - Booking speed (`engine/demand.ts`) is the share of a district's inventory booked in the last 7 days, blended 70/30 with its city's share and scaled 0–1. A district with fewer than 5 recent bookings leans on its city's figure. Where people are booking now is a crowd signal that the place is good.
+  - It counts fully when your turn is ≤ 3 days away and fades to 0 at 21 days. Far ranks score as if it weren't there, because fast-selling districts will be gone by then, which survival already covers.
 
   - Hard filters: booked; down payment > amount paid; any feature set to «لازم».
   - Bands: لقطة ≥ 80, كويسة ≥ 65, تحت المراقبة ≥ 50.

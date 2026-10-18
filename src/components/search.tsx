@@ -146,7 +146,10 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                   </div>
                   <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} />
                   <SurvivalBar {...l.survival} />
-                  <span className="w-8 text-center font-bold">{num(l.score)}</span>
+                  <span className="text-center" title={t.card.scoreHint}>
+                    <span className="font-bold">{num(l.score)}</span>
+                    <span className="text-[10px] text-muted">/١٠٠</span>
+                  </span>
                   <RecBadge rec={l.recommendation} />
                 </Link>
               </li>

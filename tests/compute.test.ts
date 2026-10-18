@@ -76,6 +76,15 @@ describe("browser engine", () => {
     const late = computeDashboard(snapshot(), { ...DEFAULT_PROFILE, bookingRank: 600 }, NOW).dashboard.reachable.expected;
     expect(late).toBeLessThan(early);
   });
+
+  it("a different rank changes the suggestions, and booking speed only counts near the turn", () => {
+    const run = (rank: number) => computeDashboard(snapshot(), { ...DEFAULT_PROFILE, bookingRank: rank, moneyPaid: 60_000 }, NOW).dashboard;
+    const near = run(150);
+    const far = run(5000);
+    expect(near.demandNearness).toBe(1);
+    expect(far.demandNearness).toBe(0);
+    expect(near.top.map((x) => x.survival.mid)).not.toEqual(far.top.map((x) => x.survival.mid));
+  });
 });
 
 describe("AI payload", () => {
