@@ -35,6 +35,9 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // Sync job's source credentials (Admin SDK only).
+    match /private/{doc} { allow read, write: if false; }
+
     match /{document=**} { allow read, write: if false; }
   }
 }
