@@ -2,9 +2,9 @@ import type { BuildingRules } from "./snapshot";
 
 /**
  * الاشتراطات البنائية for districts whose record on the source leaves them empty, copied from the
- * official NUCA terms booklet (كراسة الشروط). Keyed by the source's sector id. The sync merges these
- * per field and the source always wins, so an entry here never overrides published data.
- * Add an entry only when it was read from the booklet itself, with the page in a comment.
+ * official NUCA terms booklet (كراسة الشروط) or the district's official NUCA brochure. Keyed by the source's
+ * sector id. The sync merges these per field and the source always wins, so an entry here never overrides
+ * published data. Add an entry only when it was read from one of those documents, cited in a comment.
  *
  * Source: «كراسة شروط المصريين بالخارج – المرحلة الحادية عشر (قطع أراضي سكنية)», يونيو 2026,
  * https://lands.nuca.gov.eg/Files/Handbook.pdf, table «الاشتراطات البنائية» on printed pages 4–5.
@@ -40,6 +40,8 @@ export const RULES_OVERRIDES: Record<string, BuildingRules> = {
   "e1d30b53-a489-5853-9a12-3a23a0a90854": r("50 %", "أرضي + 3 أدوار", "3م امامي - 5م خلفي - 3م جانبي"),
   // p. 4 — السادات: الحى المتميز
   "9dc0dfeb-cd34-fce3-75a1-3a23a0a90f95": r("50 %", "أرضي + 3 أدوار", "3م امامي - 5م خلفي - 3م جانبي"),
+  // NUCA district brochure «المرحلة الحادية عشر - المحور المركزي - السادات» (المحور المركزى الثانى, مناطق B–E)
+  "9a02c998-6d3c-ec69-0d9e-3a21bf7fa3e8": r("50 %", "بدروم + أرضي + 3 أدوار", "3م امامي - 5م خلفي - 3م جانبي"),
   // p. 5 — سفنكس الجديدة: شمال السليمانية منطقة 145 فدان
   "b57727f8-4fe8-8b34-3a30-3a21bf901617": r("50 %", "أرضي + دورين", "3م امامي - 5م خلفي - 3م جانبي"),
   // p. 5 — العبور الجديدة: الحى الرابع والعشرون - مناطق TF-TG-TH-TL

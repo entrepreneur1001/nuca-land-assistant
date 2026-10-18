@@ -76,7 +76,10 @@ export interface CityInfo {
   districts: DistrictInfo[];
 }
 
-/** Every city that has plots, with its districts; cities and districts are sorted by available plots. */
+const bookedShare = (s: AreaStats) => (s.total ? s.booked / s.total : 0);
+
+/** Every city that has plots, with its districts. Cities are sorted by available plots; districts by demand
+ *  (marked hot, then share already booked), then available plots, so in-demand districts aren't buried. */
 export function citiesOf({ meta, plots }: Snapshot): CityInfo[] {
   const byCity = Map.groupBy(plots, (p) => p.cityName);
   const bySector = Map.groupBy(plots, (p) => p.projectId ?? "");
@@ -96,10 +99,19 @@ export function citiesOf({ meta, plots }: Snapshot): CityInfo[] {
           stats: statsOf(bySector.get(s.id)!),
           center: center(bySector.get(s.id)!) ?? (s.c ? { lat: s.c[0], lng: s.c[1] } : null),
         }))
-        .sort((a, b) => b.stats.available - a.stats.available);
+        .sort((a, b) => Number(b.hot) - Number(a.hot) || bookedShare(b.stats) - bookedShare(a.stats) || b.stats.available - a.stats.available);
       return { name, slug, stats: statsOf(byCity.get(name)!), districts };
     })
     .sort((a, b) => b.stats.available - a.stats.available);
+}
+
+/** Ids of the districts with the city's lowest price/m² and lowest down payment (only when there's a choice). */
+export function cityBests(districts: DistrictInfo[]): { cheapest: string | null; lowestDp: string | null } {
+  const open = districts.filter((d) => d.stats.available > 0);
+  if (open.length < 2) return { cheapest: null, lowestDp: null };
+  const best = (f: (s: AreaStats) => number | null) =>
+    open.reduce<DistrictInfo | null>((b, d) => (f(d.stats) != null && (b == null || f(d.stats)! < f(b.stats)!) ? d : b), null)?.id ?? null;
+  return { cheapest: best((s) => s.ppmMin), lowestDp: best((s) => s.dpMin) };
 }
 
 /** When the plot data was last refreshed by the sync job. */

@@ -97,8 +97,10 @@ export function sectorCentroids(plots: Locatable[]): Map<string, LatLng> {
 export function computeBuiltDistances(
   plots: Locatable[],
   built: GridIndex<null>,
+  /** Sector centres from elsewhere (e.g. the source's map view) for sectors without located plots. */
+  extraCentroids?: Map<string, LatLng>,
 ): Map<string, { km: number | null; src: 0 | 1 | 2 }> {
-  const centroids = sectorCentroids(plots);
+  const centroids = new Map([...(extraCentroids ?? []), ...sectorCentroids(plots)]);
   // No mapped buildings at all → unknown (likely a map coverage gap).
   // Buildings are only fetched within FAR_KM, so anything beyond is reported as FAR_KM ("5 km or more").
   const hasData = built.size > 0;

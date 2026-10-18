@@ -43,6 +43,18 @@ describe("near-built factor", () => {
     expect(empty.get("a")).toEqual({ km: null, src: 2 });
   });
 
+  it("falls back to an extra sector centre when no plot in the sector is located", () => {
+    const plots = [P("a", 30.0, 31.0), P("d", null, null, { projectId: "other" })];
+    const g = new GridIndex<null>(0.01);
+    g.add([30.5, 30.5], null);
+    const extra = new Map<string, [number, number]>([["other", [30.5, 30.501]], ["s1", [0, 0]]]);
+    const d = computeBuiltDistances(plots, g, extra);
+    expect(d.get("d")!.src).toBe(1);
+    expect(d.get("d")!.km).toBeLessThan(0.2);
+    // A located sector keeps its own centroid even if an extra centre is given.
+    expect(d.get("a")!.src).toBe(0);
+  });
+
   it("neighbour share counts booked plots within 400 m (excluding the plot itself)", () => {
     const plots = [
       P("x", 30, 31),

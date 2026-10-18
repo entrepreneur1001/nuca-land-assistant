@@ -216,6 +216,25 @@ describe("sync runner", () => {
     expect((await loadTuples(m.store, m.meta!)).every((x) => x[19] !== undefined)).toBe(true);
   });
 
+  it("refreshes distances right away for plots the source places on the map", async () => {
+    const m = memStore();
+    const base = fakeSource(30, new Set());
+    let located = false;
+    // s1 plots start without geometry, then the source draws them.
+    const src = async (path: string) => {
+      const r = (await base(path)) as { items?: Record<string, unknown>[] };
+      if (!located && path.startsWith("/api/app/land-plot")) r.items = r.items!.map((p) => (p.sectorId === "s1" ? { ...p, geoJson: null } : p));
+      return r;
+    };
+    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
+    const inS1 = async () => (await loadTuples(m.store, m.meta!)).filter((x) => m.meta!.sectors[x[4]]?.id === "s1");
+    expect((await inS1()).every((x) => x[13] === null && x[18] !== 0)).toBe(true);
+    located = true;
+    // Cities are fresh, so only the moved plots make OSM due.
+    await runSync(m.store, { ...quiet, forceFull: true, fetchJson: src, fetchBuiltPoints: osm, osmCitiesPerRun: 0, now: new Date("2026-10-07T10:15:00Z") });
+    expect((await inS1()).every((x) => x[13] !== null && x[18] === 0)).toBe(true);
+  });
+
   it("booklet rules fill only what the source leaves empty", async () => {
     const m = memStore();
     await runSync(m.store, {

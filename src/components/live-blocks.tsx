@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { Snapshot } from "@/data/snapshot";
 import { date, num, pct, t, usd } from "@/i18n/ar";
-import { citiesOf, dataDateOf, statsOf, type AreaStats, type CityInfo } from "@/lib/area-stats";
+import { cityBests, citiesOf, dataDateOf, statsOf, type AreaStats, type CityInfo } from "@/lib/area-stats";
 import { useLive } from "@/lib/live";
 import { phasePath, type Phase } from "@/lib/phases";
 import { CityLinks, Faq, RulesList, StatsGrid, cityFaq, ruleSource } from "./phase-blocks";
@@ -134,6 +134,7 @@ export function LiveCityFaq({ phase, initial, initialAt }: { phase: Phase; initi
 
 export function LiveDistricts({ initial }: { initial: CityInfo }) {
   const city = useCity(initial);
+  const best = cityBests(city.districts);
   return city.districts.map((d) => {
     const st = d.stats;
     const src = ruleSource(d.rules);
@@ -142,6 +143,8 @@ export function LiveDistricts({ initial }: { initial: CityInfo }) {
         <h3 className="flex flex-wrap items-center gap-2 text-lg font-bold">
           {d.name}
           {d.hot ? <Badge tone="warn">{s.hot}</Badge> : null}
+          {best.cheapest === d.id ? <Badge tone="good">{s.cheapest}</Badge> : null}
+          {best.lowestDp === d.id ? <Badge tone="good">{s.lowestDp}</Badge> : null}
         </h3>
         <p className="text-sm leading-7 text-muted">
           {s.stat.available}: <b className="text-text">{num(st.available)}</b> / {num(st.total)} ·{" "}

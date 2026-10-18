@@ -12,6 +12,7 @@ import {
   type PlotTuple,
 } from "@/data/snapshot";
 import { RULES_OVERRIDES } from "@/data/building-rules";
+import { SECTOR_VIEWS, viewCentres, type SectorView } from "@/data/sector-views";
 import { computeBuiltDistances, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
 import { buildRoadIndex, computeRoadDistances, type Segment } from "@/engine/roads";
 import { diffSnapshot, type ExistingItem, type LandStatus } from "./diff";
@@ -61,6 +62,8 @@ export interface RunOptions {
   fetchMainRoads?: (centers: LatLng[]) => Promise<Segment[]>;
   /** Building rules from the NUCA booklet for districts the source leaves empty. */
   rulesOverrides?: Record<string, BuildingRules>;
+  /** The source's map view per district, for districts whose plots have no coordinates. */
+  sectorViews?: Record<string, SectorView>;
   log?: (...a: unknown[]) => void;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -123,6 +126,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
   const fetchRoads = opts.fetchMainRoads ?? ((c: LatLng[]) => defaultFetchRoads(c, 3000));
   const log = opts.log ?? ((...a: unknown[]) => console.log("[ingest]", ...a));
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const views = viewCentres(opts.sectorViews ?? SECTOR_VIEWS);
   const maxFullSyncMs = opts.maxFullSyncMs ?? 2 * 3600_000;
   const osmMaxAgeMs = opts.osmMaxAgeMs ?? 7 * 86_400_000;
   const osmCitiesPerRun = opts.osmCitiesPerRun ?? Number(process.env.OSM_CITIES_PER_RUN ?? 3);
@@ -240,7 +244,12 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     }
     const insertedIds = new Set(d.inserted);
     const allCities = [...new Set(plots.map((p) => p.cityName))];
-    const citiesWithNew = new Set(prev.chunks.length ? plots.filter((p) => insertedIds.has(p.id)).map((p) => p.cityName) : []);
+    // New plots, and plots the source placed or moved since last run, need distances from their own location.
+    const moved = (p: NormalizedPlot) => {
+      const t = prevById.get(p.id);
+      return !!t && (round(p.latitude, 6) !== t[13] || round(p.longitude, 6) !== t[14]);
+    };
+    const citiesWithNew = new Set(prev.chunks.length ? plots.filter((p) => insertedIds.has(p.id) || moved(p)).map((p) => p.cityName) : []);
     const due = opts.forceOsm
       ? allCities
       : allCities
@@ -255,6 +264,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
         fetchRoads,
         log,
         sleep,
+        views,
       );
       for (const [id, v] of distances) built.set(id, v);
       for (const [id, v] of roadDistances) roads.set(id, v);
@@ -313,7 +323,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     });
     const plotCentres = sectorCentroids(plots);
     for (const x of sectors) {
-      const ll = plotCentres.get(x.id) ?? tileCentres.get(x.id);
+      const ll = plotCentres.get(x.id) ?? views.get(x.id) ?? tileCentres.get(x.id);
       if (ll) x.c = [round(ll[0], 5)!, round(ll[1], 5)!];
     }
     meta.cities = cities;
@@ -368,6 +378,7 @@ async function computeOsmDistances(
   fetchRoads: (centers: LatLng[]) => Promise<Segment[]>,
   log: (...a: unknown[]) => void,
   sleep: (ms: number) => Promise<void>,
+  views: Map<string, LatLng>,
 ) {
   const byCity = new Map<string, NormalizedPlot[]>();
   for (const p of plots) {
@@ -379,7 +390,11 @@ async function computeOsmDistances(
   const failedCities: string[] = [];
   let first = true;
   for (const [city, ps] of byCity) {
-    const centers = [...sectorCentroids(ps).values()];
+    // Plot centroids first; the source's map view fills sectors with no located plots.
+    const sectorIds = new Set(ps.map((p) => p.projectId));
+    const centres = new Map([...views].filter(([id]) => sectorIds.has(id)));
+    for (const [id, c] of sectorCentroids(ps)) centres.set(id, c);
+    const centers = [...centres.values()];
     if (!centers.length) {
       for (const p of ps) out.set(p.id, { km: null, src: 2 });
       continue;
@@ -390,7 +405,7 @@ async function computeOsmDistances(
       const t0 = Date.now();
       const points = await fetchBuilt(centers);
       log(`OSM ${city}: ${centers.length} district(s), ${points.length} built points, ${Math.round((Date.now() - t0) / 1000)}s`);
-      for (const [id, v] of computeBuiltDistances(ps, buildIndex(points))) out.set(id, v);
+      for (const [id, v] of computeBuiltDistances(ps, buildIndex(points), centres)) out.set(id, v);
     } catch (e) {
       // Keep this city's previous distances; retry on the next run.
       failedCities.push(city);
