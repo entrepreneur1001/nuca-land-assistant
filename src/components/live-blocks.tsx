@@ -7,7 +7,7 @@ import { cityBests, citiesOf, dataDateOf, statsOf, type AreaStats, type CityInfo
 import { useLive } from "@/lib/live";
 import { phasePath, type Phase } from "@/lib/phases";
 import { CityLinks, Faq, RulesList, StatsGrid, cityFaq, ruleSource } from "./phase-blocks";
-import { Badge, Card } from "./ui";
+import { AreaLink, Badge, Card } from "./ui";
 
 /**
  * Live versions of the static phase-page blocks. The server renders them with the build-time numbers (SEO, first
@@ -141,7 +141,7 @@ export function LiveDistricts({ initial }: { initial: CityInfo }) {
     return (
       <Card key={d.id} className="space-y-3">
         <h3 className="flex flex-wrap items-center gap-2 text-lg font-bold">
-          {d.name}
+          <AreaLink city={d.city} district={d.id}>{d.name}</AreaLink>
           {d.hot ? <Badge tone="warn">{s.hot}</Badge> : null}
           {best.cheapest === d.id ? <Badge tone="good">{s.cheapest}</Badge> : null}
           {best.lowestDp === d.id ? <Badge tone="good">{s.lowestDp}</Badge> : null}
@@ -182,7 +182,10 @@ export function LiveRulesByCity({ phase, initial }: { phase: Phase; initial: Cit
   return cities.map((c) => (
     <div key={c.slug} className="space-y-2">
       <h3 className="text-lg font-bold">
-        <Link href={phasePath.city(phase, c.slug)} className="hover:text-accent hover:underline">{c.name}</Link>
+        <AreaLink city={c.name}>{c.name}</AreaLink>
+        <Link href={phasePath.city(phase, c.slug)} className="ms-3 text-sm font-normal text-muted hover:text-accent hover:underline">
+          {s.rulesPage.cityPage}
+        </Link>
       </h3>
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
         <table className="w-full min-w-[34rem] text-sm">
@@ -200,7 +203,7 @@ export function LiveRulesByCity({ phase, initial }: { phase: Phase; initial: Cit
               return (
                 <tr key={d.id} className="border-t border-border">
                   <th scope="row" className={`${td} text-start font-semibold`}>
-                    {d.name}
+                    <AreaLink city={c.name} district={d.id}>{d.name}</AreaLink>
                     {src ? <div className="text-xs font-normal text-muted">{src}</div> : null}
                   </th>
                   <td className={td}>{d.rules?.ratio ?? "—"}</td>

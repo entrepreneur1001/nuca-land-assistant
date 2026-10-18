@@ -11,7 +11,7 @@ import { track } from "@/lib/firebase";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
 import { PlotMap } from "./plot-map";
-import { Badge, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
+import { AreaLink, Badge, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
 
 export function LandDetail() {
   const id = useSearchParams().get("id") ?? "";
@@ -50,9 +50,11 @@ export function LandDetail() {
         <h1 className="text-xl font-bold">
           {t.card.plot} {plot.plotNumber}
         </h1>
-        <div>{plot.projectName}</div>
+        <div>
+          <AreaLink city={plot.cityName} district={plot.projectId}>{plot.projectName}</AreaLink>
+        </div>
         <div className="text-sm text-muted">
-          {plot.cityName}
+          <AreaLink city={plot.cityName}>{plot.cityName}</AreaLink>
           {plot.zoneName ? ` · ${plot.zoneName}` : ""}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">

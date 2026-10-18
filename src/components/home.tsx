@@ -10,7 +10,7 @@ import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
 import { ProfileCard } from "./profile-card";
 import { AdvancedSearch } from "./search";
-import { Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
+import { AreaLink, Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
 
 export function Home() {
   const app = useApp();
@@ -100,13 +100,15 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 <ol className="mt-1 list-decimal space-y-1 ps-5">
                   {d.strategy.targets.map((x, i) => (
                     <li key={i}>
-                      {i === 0 ? t.now.target : t.now.backup}: <b>{x.projectName}</b> · {x.cityName}{" "}
+                      {i === 0 ? t.now.target : t.now.backup}: <AreaLink city={x.cityName} district={x.projectId} className="font-bold">{x.projectName}</AreaLink> ·{" "}
+                      <AreaLink city={x.cityName}>{x.cityName}</AreaLink>{" "}
                       <span className="text-muted">{t.now.targetDetail(x.count, x.bestScore)}</span>
                     </li>
                   ))}
                   {d.strategy.avoid.map((x, i) => (
                     <li key={`a${i}`} className="text-bad">
-                      {t.now.avoid}: <b>{x.projectName}</b> · {x.cityName}. <span className="opacity-80">{t.now.avoidReason(x.recentBookings)}</span>
+                      {t.now.avoid}: <AreaLink city={x.cityName} district={x.projectId} className="font-bold">{x.projectName}</AreaLink> ·{" "}
+                      <AreaLink city={x.cityName}>{x.cityName}</AreaLink>. <span className="opacity-80">{t.now.avoidReason(x.recentBookings)}</span>
                     </li>
                   ))}
                 </ol>
@@ -117,11 +119,14 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
             {topChoice ? (
               <>
                 <div className="text-xs text-muted">{t.now.top}</div>
-                <Link href={`/land?id=${topChoice.id}`} className="mt-1 block text-base font-bold hover:underline">
-                  {t.card.plot} {topChoice.plotNumber} · {topChoice.projectName}
-                </Link>
+                <div className="mt-1 text-base font-bold">
+                  <Link href={`/land?id=${topChoice.id}`} className="hover:underline">
+                    {t.card.plot} {topChoice.plotNumber}
+                  </Link>{" "}
+                  · <AreaLink city={topChoice.cityName} district={topChoice.projectId}>{topChoice.projectName}</AreaLink>
+                </div>
                 <div className="text-muted">
-                  {topChoice.cityName}
+                  <AreaLink city={topChoice.cityName}>{topChoice.cityName}</AreaLink>
                   {topChoice.zoneName ? ` · ${topChoice.zoneName}` : ""}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -149,16 +154,21 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
         <h2 className="mb-2 text-lg font-bold">{t.top10}</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {top.map((l, i) => (
-            <Link key={l.id} href={`/land?id=${l.id}`} className="block rounded-2xl border border-border bg-surface p-3 hover:border-accent">
+            <div key={l.id} className="relative rounded-2xl border border-border bg-surface p-3 hover:border-accent">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">#{num(i + 1)}</span>
                 <RecBadge rec={l.recommendation} />
               </div>
-              <div className="mt-1 font-bold">
+              {/* Stretched over the whole card; the area names sit above it. */}
+              <Link href={`/land?id=${l.id}`} className="mt-1 block font-bold after:absolute after:inset-0 after:rounded-2xl">
                 {t.card.plot} {l.plotNumber}
+              </Link>
+              <div className="truncate text-sm" title={l.projectName ?? ""}>
+                <AreaLink city={l.cityName} district={l.projectId}>{l.projectName}</AreaLink>
               </div>
-              <div className="truncate text-sm" title={l.projectName ?? ""}>{l.projectName}</div>
-              <div className="truncate text-xs text-muted">{l.cityName}</div>
+              <div className="truncate text-xs">
+                <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
+              </div>
               <div className="mt-2">
                 <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} sea={l.seaPct > 0} />
               </div>
@@ -179,7 +189,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                   <span className="text-[10px] text-muted">/١٠٠</span>
                 </div>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       </div>
@@ -274,9 +284,12 @@ function AiPanel() {
                   <li key={r.land_id} className="rounded-xl bg-surface-2 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold">#{num(r.rank)}</span>
-                      <Link href={`/land?id=${l.id}`} className="font-semibold hover:underline">
-                        {t.card.plot} {l.plotNumber} · {l.projectName} · {l.cityName}
-                      </Link>
+                      <span className="font-semibold">
+                        <Link href={`/land?id=${l.id}`} className="hover:underline">
+                          {t.card.plot} {l.plotNumber}
+                        </Link>{" "}
+                        · <AreaLink city={l.cityName} district={l.projectId}>{l.projectName}</AreaLink> · <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
+                      </span>
                       <RecBadge rec={r.recommendation} />
                       <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} />
                       <span className="text-xs text-muted">

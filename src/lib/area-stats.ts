@@ -116,3 +116,53 @@ export function cityBests(districts: DistrictInfo[]): { cheapest: string | null;
 
 /** When the plot data was last refreshed by the sync job. */
 export const dataDateOf = (meta: MetaDoc) => meta.statsAt ?? meta.fullSyncAt;
+
+export interface AreaDistrict {
+  /** Source sector id; null for plots the source left without a district. */
+  id: string | null;
+  name: string;
+  hot: boolean;
+  total: number;
+  available: number;
+  /** Plots without coordinates, drawn as one approximate circle at the district's centre. */
+  unlocated: number;
+  unlocatedAvailable: number;
+  /** The district's approximate centre (source map view / tile bounds / plot average). */
+  centre: { lat: number; lng: number } | null;
+}
+
+export interface AreaPlots {
+  city: string;
+  /** Selected district (null = the whole city). */
+  district: AreaDistrict | null;
+  districts: AreaDistrict[];
+  /** Every plot in scope, booked and available. */
+  plots: Plot[];
+  stats: AreaStats;
+}
+
+/** The plots of a city, or of one district in it, with per-district counts for the area page. Null when the city has no plots. */
+export function areaPlots({ meta, plots }: Snapshot, city: string, districtId?: string | null): AreaPlots | null {
+  const inCity = plots.filter((p) => p.cityName === city);
+  if (!inCity.length) return null;
+  const sectors = new Map(meta.sectors.map((s) => [s.id, s]));
+  const districts = [...Map.groupBy(inCity, (p) => p.projectId).entries()]
+    .map(([id, ps]): AreaDistrict => {
+      const s = id ? sectors.get(id) : undefined;
+      const unlocated = ps.filter((p) => p.latitude == null || p.longitude == null);
+      return {
+        id,
+        name: s?.name || ps[0].projectName || city,
+        hot: !!s?.hot,
+        total: ps.length,
+        available: ps.filter((p) => p.status === "available").length,
+        unlocated: unlocated.length,
+        unlocatedAvailable: unlocated.filter((p) => p.status === "available").length,
+        centre: s?.c ? { lat: s.c[0], lng: s.c[1] } : null,
+      };
+    })
+    .sort((a, b) => b.available - a.available);
+  const district = districtId ? (districts.find((d) => d.id === districtId) ?? null) : null;
+  const scoped = district ? inCity.filter((p) => p.projectId === district.id) : inCity;
+  return { city, district, districts, plots: scoped, stats: statsOf(scoped) };
+}

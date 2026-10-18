@@ -23,8 +23,8 @@ export interface SectorOutlook {
 export interface Strategy {
   highConfidence: number;
   mediumConfidence: number;
-  targets: { projectName: string | null; cityName: string; count: number; bestScore: number }[];
-  avoid: { projectName: string | null; cityName: string; recentBookings: number }[];
+  targets: { projectId: string | null; projectName: string | null; cityName: string; count: number; bestScore: number }[];
+  avoid: { projectId: string | null; projectName: string | null; cityName: string; recentBookings: number }[];
   topChoiceId: string | null;
 }
 
@@ -163,7 +163,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
   const medium = ranked.filter((r) => !highIds.has(r.id) && r.survival.mid >= MODEL.riskyAt && r.score >= MODEL.bands.WATCH);
   const projAgg = new Map<string, Strategy["targets"][0]>();
   for (const r of [...high, ...medium]) {
-    const a = projAgg.get(sectorKey(r)) ?? { projectName: r.projectName, cityName: r.cityName, count: 0, bestScore: 0 };
+    const a = projAgg.get(sectorKey(r)) ?? { projectId: r.projectId, projectName: r.projectName, cityName: r.cityName, count: 0, bestScore: 0 };
     a.count++;
     a.bestScore = Math.max(a.bestScore, r.score);
     projAgg.set(sectorKey(r), a);
@@ -172,7 +172,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
   const avoid = sectors
     .filter((s) => s.affordableAvailable > 0 && s.expectedRemaining === 0 && s.recentBookings > 0)
     .slice(0, 3)
-    .map((s) => ({ projectName: s.projectName, cityName: s.cityName, recentBookings: s.recentBookings }));
+    .map((s) => ({ projectId: s.key.startsWith("city:") ? null : s.key, projectName: s.projectName, cityName: s.cityName, recentBookings: s.recentBookings }));
   const topChoice =
     ranked.find((r) => (r.recommendation === "STRONG_BUY" || r.recommendation === "GOOD") && r.survival.mid >= MODEL.riskyAt) ??
     ranked.find((r) => r.survival.mid >= MODEL.riskyAt) ??

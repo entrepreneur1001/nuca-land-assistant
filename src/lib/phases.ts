@@ -42,6 +42,13 @@ export const phasePath = {
   city: (p: Phase, citySlug: string) => `/${p.slug}/${citySlug}`,
 };
 
+/** The app's live page for a city, or one district (sector id) in it: its available plots and a map. */
+export function areaHref(city: string, districtId?: string | null): string {
+  const q = new URLSearchParams({ city });
+  if (districtId) q.set("d", districtId);
+  return `/area?${q}`;
+}
+
 /** The official sites people should verify against. */
 export const OFFICIAL = {
   portal: "https://lands.nuca.gov.eg/",

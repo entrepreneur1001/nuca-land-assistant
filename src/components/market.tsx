@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContai
 import type { Plot } from "@/data/snapshot";
 import { date, num, pct, t } from "@/i18n/ar";
 import { useApp } from "./app-state";
-import { Card, Stat } from "./ui";
+import { AreaLink, Card, Stat } from "./ui";
 
 const TZ = "Africa/Cairo";
 const dayKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ });
@@ -56,10 +56,10 @@ function analytics(plots: Plot[], now: number) {
   const area = mergeHist(hist(avail.map((p) => p.area), 20, 300, 1300), hist(bk.map((p) => p.area), 20, 300, 1300), (x) => num(x));
 
   const week = 7 * 86_400_000;
-  const proj = new Map<string, { cityName: string; projectName: string | null; total: number; booked: number; available: number; last7d: number }>();
+  const proj = new Map<string, { cityName: string; projectId: string | null; projectName: string | null; total: number; booked: number; available: number; last7d: number }>();
   for (const p of plots) {
     const k = p.projectId ?? p.cityName;
-    const x = proj.get(k) ?? { cityName: p.cityName, projectName: p.projectName, total: 0, booked: 0, available: 0, last7d: 0 };
+    const x = proj.get(k) ?? { cityName: p.cityName, projectId: p.projectId, projectName: p.projectName, total: 0, booked: 0, available: 0, last7d: 0 };
     x.total++;
     if (p.status === "booked") {
       x.booked++;
@@ -215,8 +215,12 @@ function ProjectTable({ title, rows }: { title: string; rows: ReturnType<typeof 
             {rows.map((p, i) => (
               <tr key={i} className="border-b border-border/60">
                 <td className="max-w-[200px] py-1.5">
-                  <div className="truncate">{p.projectName ?? "—"}</div>
-                  <div className="truncate text-xs text-muted">{p.cityName}</div>
+                  <div className="truncate">
+                    <AreaLink city={p.cityName} district={p.projectId}>{p.projectName ?? "—"}</AreaLink>
+                  </div>
+                  <div className="truncate text-xs">
+                    <AreaLink city={p.cityName}>{p.cityName}</AreaLink>
+                  </div>
                 </td>
                 <td>{num(p.last7d)}</td>
                 <td>{num(p.booked)}</td>

@@ -1,5 +1,7 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { REC, num, t } from "@/i18n/ar";
+import { areaHref } from "@/lib/phases";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <section className={`rounded-2xl border border-border bg-surface p-4 ${className}`}>{children}</section>;
@@ -26,6 +28,18 @@ const TONES = {
 
 export function Badge({ children, tone = "muted" }: { children: ReactNode; tone?: keyof typeof TONES }) {
   return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${TONES[tone]}`}>{children}</span>;
+}
+
+/**
+ * A city or district name that opens its plots and map. Sits above a row's stretched plot link
+ * (`relative z-10`), so names stay clickable inside clickable cards.
+ */
+export function AreaLink({ city, district, children, className = "" }: { city: string; district?: string | null; children: ReactNode; className?: string }) {
+  return (
+    <Link href={areaHref(city, district)} className={`relative z-10 text-accent hover:underline ${className}`}>
+      {children}
+    </Link>
+  );
 }
 
 export const recTone = (r: string) => (r === "STRONG_BUY" ? "good" : r === "GOOD" ? "accent" : r === "WATCH" ? "warn" : "bad");

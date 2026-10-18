@@ -7,7 +7,7 @@ import type { RankedLand } from "@/engine/compute";
 import { FACTOR, km, num, t, usd } from "@/i18n/ar";
 import { track } from "@/lib/firebase";
 import { useApp } from "./app-state";
-import { Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
+import { AreaLink, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
 
 type Sort = keyof typeof t.search.sorts;
 const PAGE = 30;
@@ -134,11 +134,15 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
 
           <ul className="mt-3 divide-y divide-border">
             {rows.slice(page * PAGE, (page + 1) * PAGE).map((l) => (
-              <li key={l.id}>
-                <Link href={`/land?id=${l.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
+              <li key={l.id} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold">
-                      {t.card.plot} {l.plotNumber} · <span className="font-normal">{l.projectName}</span> · <span className="text-accent">{l.cityName}</span>
+                      {/* Stretched over the whole row; the area names sit above it. */}
+                      <Link href={`/land?id=${l.id}`} className="after:absolute after:inset-0">
+                        {t.card.plot} {l.plotNumber}
+                      </Link>{" "}
+                      · <AreaLink city={l.cityName} district={l.projectId} className="font-normal">{l.projectName}</AreaLink> ·{" "}
+                      <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
                     </div>
                     <div className="text-xs text-muted">
                       {num(l.area)} {t.card.m2} · {t.card.dp} {usd(l.downPayment)} · 🏘️ {km(l.builtKm)}
@@ -151,7 +155,6 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                     <span className="text-[10px] text-muted">/١٠٠</span>
                   </span>
                   <RecBadge rec={l.recommendation} />
-                </Link>
               </li>
             ))}
             {!rows.length ? <li className="py-6 text-center text-muted">{t.search.empty}</li> : null}

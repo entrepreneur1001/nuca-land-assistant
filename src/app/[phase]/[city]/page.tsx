@@ -5,7 +5,8 @@ import { LiveAsOf, LiveCityFaq, LiveCityIntro, LiveCityLinks, LiveCityStats, Liv
 import { Breadcrumbs, Cta, DataNote, HubLinks, cityFaq } from "@/components/phase-blocks";
 import { date, t, usd } from "@/i18n/ar";
 import { getCities, getDataDate } from "@/lib/build-data";
-import { PHASES, getPhase, phasePath } from "@/lib/phases";
+import Link from "next/link";
+import { PHASES, areaHref, getPhase, phasePath } from "@/lib/phases";
 import { OG_BASE } from "@/lib/site";
 
 const s = t.seo;
@@ -57,6 +58,9 @@ export default async function Page({ params }: PageProps<"/[phase]/[city]">) {
         </p>
       </header>
       <LiveCityStats initial={city} />
+      <Link href={areaHref(city.name)} className="inline-block rounded-xl border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft">
+        {t.area.openMap}
+      </Link>
       <Cta />
 
       <section className="space-y-3">
