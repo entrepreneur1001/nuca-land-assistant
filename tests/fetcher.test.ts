@@ -49,6 +49,54 @@ describe("token provider", () => {
     await expect(p.get()).rejects.toThrow(/SOURCE_REFRESH_TOKEN/);
     await expect(createTokenProvider(memTokens(null)).get()).rejects.toThrow(/SOURCE_REFRESH_TOKEN/);
   });
+
+  /** Token endpoint that answers the first `outages` calls with the given failure, then works. */
+  function flakyServer(outages: number, fail: () => Response | Promise<never>) {
+    let calls = 0;
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      calls++;
+      if (calls <= outages) return fail();
+      const refresh = new URLSearchParams(String(init?.body)).get("refresh_token")!;
+      return json({ access_token: `at-${refresh}`, refresh_token: `rt-${calls}`, expires_in: 3600 });
+    }) as typeof fetch;
+    return { fetchImpl, get calls() { return calls; } };
+  }
+  const noSleep = async () => {};
+
+  it("retries the token endpoint after a 503 and a network error, then succeeds", async () => {
+    const srv = flakyServer(2, () => (srv.calls === 1 ? json({ error: "temporarily_unavailable" }, 503) : Promise.reject(new Error("ECONNRESET"))));
+    const store = memTokens("rt0");
+    const p = createTokenProvider(store, { fetchImpl: srv.fetchImpl, seedRefreshToken: "seed", sleep: noSleep });
+    expect(await p.get()).toBe("at-rt0");
+    expect(srv.calls).toBe(3);
+    expect(store.current).toBe("rt-3");
+  });
+
+  it("does not retry a rejected token; moves straight to the next candidate", async () => {
+    const srv = tokenServer();
+    const p = createTokenProvider(memTokens("dead"), { fetchImpl: srv.fetchImpl, seedRefreshToken: "fresh", sleep: noSleep });
+    expect(await p.get()).toBe("at1");
+    expect(srv.calls).toEqual(["dead", "fresh"]);
+  });
+
+  it("gives up on an outage without blaming the secret, and leaves the seed token untouched", async () => {
+    const srv = flakyServer(99, () => json({}, 503));
+    const p = createTokenProvider(memTokens("rt0"), { fetchImpl: srv.fetchImpl, seedRefreshToken: "seed", retries: 2, sleep: noSleep });
+    const err = await p.get().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FetchError);
+    expect(String(err)).toMatch(/HTTP 503.*unavailable/);
+    expect(String(err)).not.toMatch(/update the SOURCE_REFRESH_TOKEN/);
+    expect((err as FetchError).status).toBe(503);
+    expect(srv.calls).toBe(3); // 1 + 2 retries for the stored token only; the seed is never spent on an outage
+  });
+
+  it("shares one exchange between parallel callers so a single-use refresh token is spent once", async () => {
+    const srv = tokenServer();
+    const p = createTokenProvider(memTokens("rt0"), { fetchImpl: srv.fetchImpl });
+    const tokens = await Promise.all([p.get(), p.get(), p.get()]);
+    expect(tokens).toEqual(["at1", "at1", "at1"]);
+    expect(srv.calls).toEqual(["rt0"]);
+  });
 });
 
 describe("fetchJson auth", () => {

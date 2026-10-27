@@ -4,7 +4,7 @@ import { MODEL } from "./config";
 import { sectorDemand, sectorKey, turnNearness } from "./demand";
 import { computeSurvival, learnFeatureWeights, type FeatureKey, type Survival } from "./depletion";
 import { neighbourBookedShare } from "./nearbuilt";
-import { estimateQueue, type QueueEstimate } from "./queue";
+import { estimateQueue, inSyncWindow, type QueueEstimate } from "./queue";
 import { budgetLimit, scoreLands, type ExclusionStats, type Profile, type ScoredLand } from "./scoring";
 
 export type RankedLand = Plot & ScoredLand;
@@ -51,8 +51,14 @@ export interface Computed {
   byId: Map<string, Plot & { survival?: Survival; scored?: ScoredLand; neighbourShare: number | null }>;
 }
 
-/** GitHub Actions runs every 15 min but can be delayed; allow for that. */
-export const FRESHNESS = { staleAfterMs: 45 * 60_000, maxFullSyncMs: 2 * 3600_000 };
+/**
+ * The sync runs every 15 min inside the Cairo working window and hourly outside it (see MODEL.syncWindowHours),
+ * and either trigger can be delayed a little; the stale threshold allows for that.
+ */
+export const FRESHNESS = { staleAfterMs: 45 * 60_000, offHoursStaleAfterMs: 90 * 60_000, maxFullSyncMs: 2 * 3600_000 };
+export function freshnessFor(now: Date): { staleAfterMs: number; maxFullSyncMs: number } {
+  return { staleAfterMs: inSyncWindow(now) ? FRESHNESS.staleAfterMs : FRESHNESS.offHoursStaleAfterMs, maxFullSyncMs: FRESHNESS.maxFullSyncMs };
+}
 
 const DAY = 86_400_000;
 
@@ -81,7 +87,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
     lastStatsOkAt: meta.statsAt ? new Date(meta.statsAt) : null,
     lastFullOkAt: meta.fullSyncAt ? new Date(meta.fullSyncAt) : null,
     lastError: meta.lastError,
-    ...FRESHNESS,
+    ...freshnessFor(now),
   });
 
   const booked = plots.filter((p) => p.status === "booked").length;

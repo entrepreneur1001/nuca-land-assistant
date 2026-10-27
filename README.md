@@ -4,11 +4,11 @@ A public, Arabic (Egyptian), phone-friendly site that answers:
 
 > **With my rank and the money I paid, which NUCA plots can I realistically book, ideally on a garden, a corner (ناصية), and near already-built areas?**
 
-Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the 15-minute sync.
+Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the sync, triggered by **cron-job.org** every 15 minutes during Cairo working hours.
 
 ```
 baytwaten4all API ─┐
-OpenStreetMap ─────┤→ GitHub Actions (every 15 min) → Firestore (meta + 8 gzipped plot chunks, AI cache)
+OpenStreetMap ─────┤→ cron-job.org → GitHub Actions (every 15 min Sun–Thu 10–22 Cairo; hourly otherwise) → Firestore (meta + 8 gzipped plot chunks, AI cache)
                                                           ↓ public read
           Firebase Hosting (static Next.js export) → the visitor's browser computes the ranking (Web Worker)
                                                    ↳ Gemini via Firebase AI Logic (App Check / Fraud Defense)
@@ -51,14 +51,33 @@ Local dev: register an App Check *debug token* (Firebase console → App Check �
 
 Deploy: `npm run deploy` (tests, static build, then `firebase deploy` of hosting + Firestore rules).
 
-## Data sync (GitHub Actions)
+## Data sync (cron-job.org → GitHub Actions)
 
-`.github/workflows/sync.yml` runs `scripts/ingest.mts` every 15 minutes (public repo, so Actions minutes are free):
+`.github/workflows/sync.yml` runs `scripts/ingest.mts` (public repo, so Actions minutes are free). The cadence is **every 15 minutes Sunday–Thursday 10:00–22:00 Africa/Cairo, and hourly the rest of the time**.
+
+GitHub's own `schedule:` cron is **not** the trigger: GitHub runs scheduled workflows best-effort and, with `*/15`, this repo observed gaps of 2–6 hours. The workflow keeps an hourly `schedule:` only as a backup. The real trigger is [cron-job.org](https://cron-job.org) (free, timezone-aware), which calls GitHub's `workflow_dispatch` API.
 
 ```bash
 gh secret set FIREBASE_SERVICE_ACCOUNT < service-account.json
+gh secret set SOURCE_REFRESH_TOKEN                     # paste the OAuth refresh token; it is rotated into Firestore `private/sourceAuth` after the first run
 gh workflow run sync.yml -f full=true -f osm=true     # first seed
 ```
+
+### One-time trigger setup
+
+1. **GitHub token.** GitHub → Settings → Developer settings → Fine-grained personal access tokens → *Generate new token*. Repository access: only `entrepreneur1001/nuca-land-assistant`. Permissions: **Actions → Read and write** (nothing else). Pick the longest expiry and put the renewal date in your calendar; when it expires, the 15-minute cadence silently falls back to the hourly GitHub cron.
+2. **cron-job.org jobs.** Create two jobs with the same request and only the schedule different:
+   - URL: `https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches`
+   - Method: `POST`. Body: `{"ref":"main"}`
+   - Headers: `Authorization: Bearer <the token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`, `User-Agent: nuca-sync-trigger`
+   - Timezone: `Africa/Cairo`. Treat HTTP `204` as success. Turn on failure notifications (email).
+   - **Job A, peak:** minutes `0,15,30,45`, hours `10–21`, days `Sun–Thu`.
+   - **Job B, off-hours:** minute `5`, every hour, every day. (Inside the window it overlaps Job A; harmless: the run queues behind the workflow's concurrency group and does a cheap stats poll.)
+3. **Check.** Press *Run now* on Job A, then `gh run list --workflow=sync.yml --limit 5 --json event,createdAt,conclusion` should show a `workflow_dispatch` run within about a minute. After an hour inside the window, runs land every 15 minutes.
+
+The token lives only in cron-job.org. Nothing secret is stored in this repo.
+
+Resilience built into each run: the source's OAuth token endpoint is retried with backoff on outages (5xx/network), parallel requests share one token exchange (refresh tokens are single-use), and a failed run keeps the last good data and records `lastError` in `meta/current`. The site's "stale" badge allows 45 minutes inside the window and 90 minutes outside it (`src/engine/compute.ts`).
 
 Each run:
 1. Polls the source's stats (tiny).

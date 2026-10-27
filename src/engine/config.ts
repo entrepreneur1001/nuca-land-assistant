@@ -36,6 +36,8 @@ export const MODEL = {
   /** Booking codes go out one batch per working day; Friday and Saturday (Cairo time) are off. */
   batchWeekdays: [0, 1, 2, 3, 4],
   batchTimeZone: "Africa/Cairo",
+  /** Data sync runs every 15 min during these Cairo hours on batch weekdays (cron-job.org), hourly otherwise. */
+  syncWindowHours: { start: 10, end: 22 },
   /**
    * Code holders from earlier batches who haven't booked may still book later (low / mid / high share).
    * The source shows no late bookings so far, so the expected case is small and the worst case is wider.

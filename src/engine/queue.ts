@@ -46,6 +46,13 @@ function cairoDay(d: Date): number {
 }
 const isBatchDay = (day: number) => (MODEL.batchWeekdays as readonly number[]).includes(new Date(day).getUTCDay());
 
+const cairoHour = new Intl.DateTimeFormat("en-GB", { timeZone: MODEL.batchTimeZone, hour: "numeric", hourCycle: "h23" });
+/** True during the 15-minute sync window: a batch weekday (Sun–Thu) between the configured Cairo hours. */
+export function inSyncWindow(d: Date): boolean {
+  const hour = Number(cairoHour.format(d));
+  return isBatchDay(cairoDay(d)) && hour >= MODEL.syncWindowHours.start && hour < MODEL.syncWindowHours.end;
+}
+
 /** Cairo day of the n-th batch (n ≥ 1) issued after `lastBatchDay`, never earlier than `today`. Skips Friday/Saturday. */
 function nthBatchDay(lastBatchDay: number, today: number, n: number): number {
   let day = Math.max(lastBatchDay + DAY, today);
