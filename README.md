@@ -110,9 +110,10 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
   - Distance from the plot's outline to the nearest motorway/trunk/primary/secondary/tertiary road (`src/engine/roads.ts`).
   - ≤ 30 m from the road's centreline counts as facing it (🛣️ badge, preference, filter). It adds +0.2 to the garden/corner factor, and «لازم» makes it a hard filter.
   - Plots without coordinates, or in cities with no mapped main roads, are "unknown" (never treated as on a road).
-- **Apartments per floor (عدد الشقق في الدور):** set by the plot's area under the city authority's licensing rule (`src/engine/units.ts`).
-  - < 730 m² → 2; 730–950 m² → 3 (licensing fee for the 3rd unit); > 950 m² → 4 (fee for the 4th unit + parking requirements).
-  - 3 or 4 units shows the 🏢 badge and adds +0.1 / +0.2 to the garden/corner factor. It has a profile preference and a search filter; «لازم» excludes 2-unit plots.
+- **Apartments per floor (عدد الشقق في الدور):** set by the plot's area under the Ministry of Housing notice for the 11th offering (`src/engine/units.ts`).
+  - ≤ 550 m² → 2; 551–750 m² → 3; 751–950 m² → 4; ≥ 951 m² → 5. Conditions: unit ≥ 100 m² incl. services/balconies, parking, utilities capacity.
+  - 3, 4 or 5 units shows the 🏢 badge and adds +0.1 / +0.2 / +0.3 to the garden/corner factor. It has a profile preference and a search filter; «لازم» excludes 2-unit plots.
+  - **New Alamein** is exempt: the city sets units *per plot* by block (block 1: 29–44, block 10: 21–35, block 11: 18–45). Those plots have no per-floor number, no badge and no bonus, but count as multi-unit for «لازم» and the filter.
 - **Score** (weights editable in «بحث متقدم → أوزان الترتيب»):
 
 | Factor | Weight |

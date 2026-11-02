@@ -22,9 +22,10 @@ export const DEFAULT_PREMIUM_VALUES = {
   corner: 0.6,
   seaOnly: 0.4,
   none: 0,
-  /** Added on top for 3 / 4 apartments per floor (area licensing rule, see engine/units.ts; not a NUCA premium). */
+  /** Added on top for 3 / 4 / 5 apartments per floor (area rule, see engine/units.ts; not a NUCA premium). City-set plots (New Alamein) get none. */
   units3: 0.1,
   units4: 0.2,
+  units5: 0.3,
 };
 export type PremiumValues = typeof DEFAULT_PREMIUM_VALUES;
 

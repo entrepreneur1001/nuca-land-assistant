@@ -42,7 +42,8 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
         (!f.garden || r.hasGarden) &&
         (!f.corner || r.hasCorner) &&
         (!f.near || r.isNearBuilt) &&
-        (!f.units || r.unitsPerFloor >= 3),
+        // null = the city sets units per plot (New Alamein): always multi-unit.
+        (!f.units || r.unitsPerFloor == null || r.unitsPerFloor >= 3),
     );
     const by: Record<Sort, (a: RankedLand, b: RankedLand) => number> = {
       score: () => 0,

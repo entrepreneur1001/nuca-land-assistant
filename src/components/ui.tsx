@@ -63,8 +63,8 @@ export function FeatureBadges({
   sea?: boolean;
   nearBuilt?: boolean;
   street?: boolean;
-  /** Apartments per floor; badged when 3 or more. */
-  units?: number;
+  /** Apartments per floor; badged when 3 or more. null = city-set per plot (New Alamein), no badge. */
+  units?: number | null;
 }) {
   return (
     <span className="inline-flex flex-wrap gap-1">

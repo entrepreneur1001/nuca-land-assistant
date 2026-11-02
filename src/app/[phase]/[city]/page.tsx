@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { JsonLd, faqPage } from "@/components/json-ld";
 import { LiveAsOf, LiveCityFaq, LiveCityIntro, LiveCityLinks, LiveCityStats, LiveDistricts } from "@/components/live-blocks";
-import { Breadcrumbs, Cta, DataNote, HubLinks, cityFaq } from "@/components/phase-blocks";
+import { Breadcrumbs, Cta, DataNote, HubLinks, UnitsRules, cityFaq } from "@/components/phase-blocks";
 import { date, t, usd } from "@/i18n/ar";
 import { getCities, getDataDate } from "@/lib/build-data";
 import Link from "next/link";
@@ -66,6 +66,11 @@ export default async function Page({ params }: PageProps<"/[phase]/[city]">) {
       <section className="space-y-3">
         <h2 className="text-xl font-bold">{s.city.areasH(city.name)}</h2>
         <LiveDistricts initial={city} />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-bold">{s.rulesPage.unitsH}</h2>
+        <UnitsRules city={city.name} />
       </section>
 
       <LiveCityFaq phase={phase} initial={city} initialAt={at} />

@@ -9,7 +9,8 @@ import type { BuildingRules } from "./snapshot";
  * Source: «كراسة شروط المصريين بالخارج – المرحلة الحادية عشر (قطع أراضي سكنية)», يونيو 2026,
  * https://lands.nuca.gov.eg/Files/Handbook.pdf, table «الاشتراطات البنائية» on printed pages 4–5.
  * Booklet notes (p. 5): side setback may drop from 3م to 2.5م when the frontage is under 22.5م;
- * the number of units is set by the city authority.
+ * the number of units is set by the city authority. Units per floor / per plot now follow the
+ * ministry notice for the 11th offering (engine/units.ts).
  */
 const r = (ratio: string, floors: string, setbacks: string): BuildingRules => ({ ratio, floors, setbacks });
 

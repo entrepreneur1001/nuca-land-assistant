@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LiveAsOf, LiveRulesByCity } from "@/components/live-blocks";
-import { Breadcrumbs, Cta, DataNote, HubLinks } from "@/components/phase-blocks";
+import { Breadcrumbs, Cta, DataNote, HubLinks, UnitsRules } from "@/components/phase-blocks";
 import { t } from "@/i18n/ar";
 import { PHASE_CONTENT } from "@/content";
 import { getCities, getDataDate } from "@/lib/build-data";
@@ -44,6 +44,11 @@ export default async function Page({ params }: PageProps<"/[phase]/building-requ
       <section className="space-y-4">
         <h2 className="text-xl font-bold">{r.byCityH}</h2>
         <LiveRulesByCity phase={phase} initial={cities} />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-bold">{r.unitsH}</h2>
+        <UnitsRules />
       </section>
 
       <section className="space-y-2 rounded-2xl border border-border bg-surface p-4">

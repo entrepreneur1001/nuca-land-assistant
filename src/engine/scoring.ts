@@ -3,7 +3,7 @@ import { sectorKey } from "./demand";
 import { featureKey, type Survival } from "./depletion";
 import { NEAR_BUILT, nearBuiltFactor } from "./nearbuilt";
 import { isOnMainRoad } from "./roads";
-import { isMultiUnit, unitsPerFloor, type UnitsPerFloor } from "./units";
+import { isMultiUnit, unitsRule, type UnitsPerFloor } from "./units";
 import { km as fmtKm, t } from "@/i18n/ar";
 
 export type FeatureMode = "ignore" | "prefer" | "require";
@@ -77,8 +77,8 @@ export interface ScoredLand {
   hasStreet: boolean;
   /** Within NEAR_BUILT.badgeKm of existing buildings. */
   isNearBuilt: boolean;
-  /** Apartments per floor allowed for the plot's area. */
-  unitsPerFloor: UnitsPerFloor;
+  /** Apartments per floor allowed for the plot's area; null where the city sets units per plot (New Alamein). */
+  unitsPerFloor: UnitsPerFloor | null;
   neighbourShare: number | null;
   reasons: string[];
 }
@@ -129,7 +129,7 @@ export function exclusionReason(l: ScorableLand, p: Profile): keyof ExclusionSta
   if (p.preferences?.garden === "require" && !(l.gardenPct > 0)) return "featureRequired";
   if (p.preferences?.corner === "require" && !(l.cornerPct > 0)) return "featureRequired";
   if (p.preferences?.nearBuilt === "require" && !isNearBuilt(l.builtKm)) return "featureRequired";
-  if (p.preferences?.units === "require" && !isMultiUnit(l.area)) return "featureRequired";
+  if (p.preferences?.units === "require" && !isMultiUnit(l.area, l.cityName)) return "featureRequired";
   if (p.preferences?.onlyPreferredCities && p.preferredCities.length && !p.preferredCities.includes(l.cityName))
     return "city";
   return null;
@@ -199,7 +199,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     const hasGarden = l.gardenPct > 0;
     const hasCorner = l.cornerPct > 0;
     const hasStreet = isOnMainRoad(l.mainRoadM);
-    const units = unitsPerFloor(l.area);
+    const units = unitsRule(l.area, l.cityName);
 
     const med = medians.get(gk(l)) ?? l.pricePerMeter;
     let value = clamp01(0.5 + (med - l.pricePerMeter) / med);
@@ -230,7 +230,8 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
               ? premiumValues.corner
               : premiumValues.none;
     if (gardenMode === "ignore" && cornerMode === "ignore") premium = 0.5;
-    if (unitsMode !== "ignore") premium += units === 4 ? premiumValues.units4 : units === 3 ? premiumValues.units3 : 0;
+    if (unitsMode !== "ignore")
+      premium += units === 5 ? premiumValues.units5 : units === 4 ? premiumValues.units4 : units === 3 ? premiumValues.units3 : 0;
 
     const neighbourShare = ctx.neighbourShare?.get(l.id) ?? null;
     const near = nearMode === "ignore" ? 0.5 : nearBuiltFactor(l.builtKm ?? null, neighbourShare);
@@ -254,7 +255,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     else if (hasGarden) reasons.push(R.garden);
     else if (hasCorner) reasons.push(R.corner);
     if (hasStreet) reasons.push(R.street);
-    if (units >= 3) reasons.push(R.units(units));
+    if (units != null && units >= 3) reasons.push(R.units(units));
     if (isNearBuilt(l.builtKm)) reasons.push(R.nearBuilt(fmtKm(l.builtKm)));
     if (neighbourShare != null && neighbourShare >= 0.4) reasons.push(R.neighbours);
     const p100 = Math.round(s.mid * 100);

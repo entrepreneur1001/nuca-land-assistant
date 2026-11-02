@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { BuildingRules } from "@/data/snapshot";
+import { ALAMEIN_BLOCKS, isCitySetUnits } from "@/engine/units";
 import { num, t, usd } from "@/i18n/ar";
 import type { AreaStats, CityInfo } from "@/lib/area-stats";
 import { OFFICIAL, phasePath, type Phase } from "@/lib/phases";
@@ -68,6 +69,77 @@ export function RulesList({ rules }: { rules: BuildingRules | null }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * Residential units allowed, from the ministry notice: the per-floor table for every city except New
+ * Alamein, and the per-plot block table for New Alamein. With `city`, only that city's part is shown.
+ */
+export function UnitsRules({ city }: { city?: string }) {
+  const r = s.rulesPage;
+  const alamein = city == null || isCitySetUnits(city);
+  const others = city == null || !isCitySetUnits(city);
+  const th = "px-3 py-2 text-start text-xs font-semibold text-muted";
+  const td = "px-3 py-2";
+  return (
+    <div className="space-y-4">
+      {others ? (
+        <div className="space-y-2">
+          <h3 className="font-semibold">{r.unitsAllCitiesH}</h3>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-2">
+                <tr>
+                  <th className={th}>{r.unitsAreaCol}</th>
+                  <th className={th}>{r.unitsPerFloorCol}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.unitsRows.map(([area, units]) => (
+                  <tr key={area} className="border-t border-border">
+                    <td className={td}>{area}</td>
+                    <td className={`${td} font-semibold`}>{units}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ul className="list-disc space-y-1 ps-5 text-sm leading-7">
+            {r.unitsConditions.map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {alamein ? (
+        <div className="space-y-2">
+          <h3 className="font-semibold">{r.unitsAlameinH}</h3>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-2">
+                <tr>
+                  <th className={th}>{r.unitsBlockCol}</th>
+                  <th className={th}>{r.unitsPlotsCol}</th>
+                  <th className={th}>{r.unitsRangeCol}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ALAMEIN_BLOCKS.map((b) => (
+                  <tr key={b.block} className="border-t border-border">
+                    <td className={td}>{num(b.block)}</td>
+                    <td className={td}>{num(b.plots)}</td>
+                    <td className={`${td} font-semibold`}>{t.rules.unitsValueRange(b.min, b.max)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-sm leading-7 text-muted">{r.unitsAlameinNote}</p>
+        </div>
+      ) : null}
+      <p className="text-xs text-muted">{r.unitsSource}</p>
+    </div>
   );
 }
 

@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { FACTOR, ago, km, num, pct, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
-import { unitsPerFloor } from "@/engine/units";
+import { alameinBlock, unitsRule } from "@/engine/units";
 import { track } from "@/lib/firebase";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
@@ -39,9 +39,9 @@ export function LandDetail() {
     [t.rules.floors, plot.rules?.floors],
     [t.rules.setbacks, plot.rules?.setbacks],
   ].filter((x): x is [string, string] => !!x[1]);
-  // Always known: set by the plot's area under the licensing rule.
-  const units = unitsPerFloor(plot.area);
-  const unitsNote = units === 4 ? t.rules.unitsNote4 : units === 3 ? t.rules.unitsNote3 : null;
+  // Always known: set by the plot's area under the ministry rule, or by the city per plot (New Alamein).
+  const units = unitsRule(plot.area, plot.cityName);
+  const block = units == null ? alameinBlock(plot.projectName) : null;
 
   return (
     <div className="space-y-4">
@@ -157,14 +157,21 @@ export function LandDetail() {
               <dd className="font-semibold">{value}</dd>
             </div>
           ))}
-          <div>
-            <dt className="text-muted">{t.rules.units}</dt>
-            <dd className="font-semibold">{t.rules.unitsValue(units)}</dd>
-            {unitsNote ? <dd className="text-xs text-muted">{unitsNote}</dd> : null}
-          </div>
+          {units != null ? (
+            <div>
+              <dt className="text-muted">{t.rules.units}</dt>
+              <dd className="font-semibold">{t.rules.unitsValue(units)}</dd>
+              {units >= 3 ? <dd className="text-xs text-muted">{t.rules.unitsConditions}</dd> : null}
+            </div>
+          ) : (
+            <div>
+              <dt className="text-muted">{t.rules.unitsPerPlot}</dt>
+              <dd className="font-semibold">{block ? t.rules.unitsBlockValue(block) : t.rules.unitsCityDecides}</dd>
+            </div>
+          )}
         </dl>
         {rules.length ? <p className="mt-2 text-xs text-muted">{plot.rules?.from === "booklet" ? t.rules.noteBooklet : t.rules.note}</p> : null}
-        <p className="mt-1 text-xs text-muted">{t.rules.unitsBasis}</p>
+        <p className="mt-1 text-xs text-muted">{units != null ? t.rules.unitsBasis : t.rules.unitsAlamein}</p>
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2">

@@ -1,8 +1,13 @@
 /** All user-facing text, in Egyptian Arabic. */
 
+import { ALAMEIN_BLOCKS, UNITS, type AlameinBlock } from "@/engine/units";
+
 const nf = (digits = 0) => new Intl.NumberFormat("ar-EG", { maximumFractionDigits: digits });
 export const num = (n: number | null | undefined, digits = 0) =>
   n == null || !Number.isFinite(n) ? "—" : nf(digits).format(n);
+/** «بلوك ١: من ٢٩ لـ ٤٤ وحدة، …» for the New Alamein per-plot rule. */
+const alameinList = ALAMEIN_BLOCKS.map((b) => `بلوك ${num(b.block)}: من ${num(b.min)} لـ ${num(b.max)} وحدة`).join("، ");
+const alameinPlots = ALAMEIN_BLOCKS.reduce((a, b) => a + b.plots, 0);
 export const usd = (n: number | null | undefined) => (n == null ? "—" : `${num(n)} دولار`);
 export const pct = (n: number | null | undefined) => (n == null ? "—" : `${num(Math.round(n * 100))}٪`);
 export const km = (n: number | null | undefined) =>
@@ -69,10 +74,16 @@ export const t = {
     floors: "الارتفاع المسموح",
     setbacks: "الردود",
     units: "عدد الشقق في الدور",
-    unitsValue: (n: number) => `${num(n)} شقق`,
-    unitsNote3: "الشقة التالتة بعد دفع رسوم ترخيصها لجهاز المدينة.",
-    unitsNote4: "الشقة التالتة والرابعة بعد دفع رسوم ترخيصهم لجهاز المدينة واستيفاء أماكن الركن.",
-    unitsBasis: "محسوبة من مساحة الأرض: أقل من ٧٣٠ م² = شقتين، من ٧٣٠ لـ ٩٥٠ م² = ٣ شقق، أكتر من ٩٥٠ م² = ٤ شقق.",
+    unitsValue: (n: number) => (n === 2 ? "شقتين" : `${num(n)} شقق`),
+    unitsConditions:
+      "بشرط إن مساحة الشقة (شاملة حصتها من الخدمات والبلكونات) ماتقلش عن ١٠٠ م²، وتوفير أماكن ركن جوه الأرض، وإن شبكة المرافق تستوعب العدد.",
+    unitsBasis: `محسوبة من مساحة الأرض حسب تنويه الوزارة للطرح الحادي عشر: حتى ${num(UNITS.twoUpToM2)} م² = شقتين في الدور، من ${num(UNITS.twoUpToM2 + 1)} لـ ${num(UNITS.threeUpToM2)} م² = ٣ شقق، من ${num(UNITS.threeUpToM2 + 1)} لـ ${num(UNITS.fourUpToM2)} م² = ٤ شقق، ${num(UNITS.fourUpToM2 + 1)} م² فأكتر = ٥ شقق.`,
+    unitsPerPlot: "عدد الوحدات في القطعة",
+    unitsCityDecides: "بيحددها جهاز المدينة لكل قطعة حسب البلوك",
+    unitsValueRange: (min: number, max: number) => `من ${num(min)} لـ ${num(max)} وحدة`,
+    unitsBlockValue: (b: AlameinBlock) => `من ${num(b.min)} لـ ${num(b.max)} وحدة (بلوك ${num(b.block)})`,
+    unitsBlockRow: (b: AlameinBlock) => `بلوك ${num(b.block)} (${num(b.plots)} قطعة): من ${num(b.min)} لـ ${num(b.max)} وحدة`,
+    unitsAlamein: `في العلمين الجديدة تيسير عدد الشقق في الدور مابيطبقش: جهاز المدينة بيحدد عدد الوحدات لكل قطعة حسب البلوك — ${alameinList} (${num(alameinPlots)} قطعة). العدد النهائي لكل قطعة حسب اشتراطات جهاز المدينة.`,
     note: "منقولة من بيانات الطرح للمنطقة، اتأكد منها من كراسة الشروط.",
     noteBooklet: "منقولة من كراسة شروط الطرح أو بروشور المنطقة الرسمي (المصدر مانشرهاش للمنطقة دي)، اتأكد منها قبل الحجز.",
   },
@@ -139,6 +150,29 @@ export const t = {
       byCityH: "الاشتراطات حسب المدينة والمنطقة",
       area: "المنطقة",
       notesH: "ملاحظات مهمة من كراسة الشروط",
+      unitsH: "عدد الوحدات السكنية المسموح بيها",
+      unitsAllCitiesH: "كل المدن الجديدة (ما عدا العلمين الجديدة): الحد الأقصى للشقق في الدور حسب مساحة الأرض",
+      unitsAlameinH: "العلمين الجديدة: عدد الوحدات لكل قطعة حسب البلوك",
+      unitsAreaCol: "مساحة الأرض",
+      unitsPerFloorCol: "الحد الأقصى للشقق في الدور",
+      unitsBlockCol: "البلوك",
+      unitsPlotsCol: "عدد القطع",
+      unitsRangeCol: "الوحدات المسموح بيها لكل قطعة",
+      unitsRows: [
+        [`حتى ${num(UNITS.twoUpToM2)} م²`, "شقتين"],
+        [`من ${num(UNITS.twoUpToM2 + 1)} لـ ${num(UNITS.threeUpToM2)} م²`, "٣ شقق"],
+        [`من ${num(UNITS.threeUpToM2 + 1)} لـ ${num(UNITS.fourUpToM2)} م²`, "٤ شقق"],
+        [`${num(UNITS.fourUpToM2 + 1)} م² فأكتر`, "٥ شقق"],
+      ] as [string, string][],
+      unitsAlameinNote: "تيسير زيادة عدد الشقق في الدور مابيطبقش على العلمين الجديدة، والأعداد دي بتخضع لاشتراطات وتفاصيل جهاز المدينة لكل قطعة.",
+      unitsSource: "المصدر: تنويه وزارة الإسكان بشأن عدد الوحدات السكنية بقطع أراضي بيت الوطن – الطرح الحادي عشر.",
+      unitsConditionsH: "الضوابط العامة",
+      unitsConditions: [
+        "مساحة الوحدة السكنية (شاملة حصتها من الخدمات والبلكونات) ماتقلش عن ١٠٠ م² (في العلمين الجديدة حسب جهاز المدينة).",
+        "توفير أماكن انتظار للعربيات.",
+        "الالتزام باستيعاب شبكة المرافق.",
+        "الالتزام بالاشتراطات البنائية والعامة المعمول بيها.",
+      ],
     },
     guidePage: {
       title: (p: PhaseName) => `شروط حجز بيت الوطن المرحلة ${p.ordinal} — المقدم والأقساط والتحويلات`,
@@ -370,8 +404,7 @@ export const t = {
       "«قربها من العمار» = المسافة لأقرب مباني قائمة على خرايط «أوبن ستريت ماب» (لو الأرض مالهاش إحداثيات بناخد نص منطقتها)، مع نسبة الأراضي اللي حواليها اتحجزت (٤٠٠ متر).",
     street:
       "«على شارع رئيسي» = حدود الأرض على بُعد ٣٠ متر أو أقل من محور شارع رئيسي متسجّل على «أوبن ستريت ماب». ده مش من بيانات الهيئة ومالوش تميّز في السعر، والخرايط في المدن الجديدة ممكن تكون ناقصة.",
-    units:
-      "«عدد الشقق في الدور» محسوب من مساحة الأرض: أقل من ٧٣٠ م² شقتين، من ٧٣٠ لـ ٩٥٠ م² ٣ شقق (بعد دفع رسوم ترخيص الشقة التالتة)، وأكتر من ٩٥٠ م² ٤ شقق (بعد دفع رسوم الترخيص واستيفاء أماكن الركن). الأرض اللي فيها ٣ أو ٤ شقق بتاخد تقييم أعلى.",
+    units: `«عدد الشقق في الدور» محسوب من مساحة الأرض حسب تنويه الوزارة للطرح الحادي عشر: حتى ${num(UNITS.twoUpToM2)} م² شقتين، من ${num(UNITS.twoUpToM2 + 1)} لـ ${num(UNITS.threeUpToM2)} م² ٣ شقق، من ${num(UNITS.threeUpToM2 + 1)} لـ ${num(UNITS.fourUpToM2)} م² ٤ شقق، و${num(UNITS.fourUpToM2 + 1)} م² فأكتر ٥ شقق (بشرط إن الشقة ماتقلش عن ١٠٠ م² وتوفير أماكن ركن). الأرض اللي فيها ٣ شقق أو أكتر بتاخد تقييم أعلى. في العلمين الجديدة جهاز المدينة بيحدد عدد الوحدات لكل قطعة حسب البلوك، فمفيش رقم في الدور ولا زيادة في التقييم.`,
     assumptions: [
       "افتراض: أكواد الحجز بتتبعت بالترتيب.",
       "افتراض: الدفعات الجاية هتتحجز بنفس نسبة الدفعات الأخيرة.",

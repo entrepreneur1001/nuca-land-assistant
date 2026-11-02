@@ -153,18 +153,29 @@ describe("main road", () => {
 
 describe("apartments per floor", () => {
   it("prefer adds to the premium factor; require excludes 2-unit plots; ignore removes the bonus", () => {
-    const lands = [land("two", { area: 700 }), land("three", { area: 800 }), land("four", { area: 1000 })];
+    const lands = [
+      land("two", { area: 500 }),
+      land("three", { area: 700 }),
+      land("four", { area: 900 }),
+      land("five", { area: 1000 }),
+      // New Alamein: the city sets units per plot, so no per-floor number and no bonus, but multi-unit.
+      land("alamein", { area: 400, cityName: "العلمين الجديدة" }),
+    ];
     const ids = lands.map((l) => l.id);
     const premium = (r: ReturnType<typeof scoreLands>, id: string) => r.scored.find((x) => x.id === id)!.factors.premium;
     const r = scoreLands(lands, profile, ctx(ids));
-    expect(r.scored.find((x) => x.id === "four")!.unitsPerFloor).toBe(4);
+    const units = (id: string) => r.scored.find((x) => x.id === id)!.unitsPerFloor;
+    expect([units("two"), units("three"), units("four"), units("five"), units("alamein")]).toEqual([2, 3, 4, 5, null]);
     expect(premium(r, "three")).toBeGreaterThan(premium(r, "two"));
     expect(premium(r, "four")).toBeGreaterThan(premium(r, "three"));
+    expect(premium(r, "five")).toBeGreaterThan(premium(r, "four"));
+    expect(premium(r, "alamein")).toBe(premium(r, "two"));
+    expect(r.scored.find((x) => x.id === "alamein")!.reasons.some((x) => x.includes("شقق في الدور"))).toBe(false);
     const req = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, units: "require" } }, ctx(ids));
-    expect(req.scored.map((x) => x.id).sort()).toEqual(["four", "three"]);
+    expect(req.scored.map((x) => x.id).sort()).toEqual(["alamein", "five", "four", "three"]);
     expect(req.excluded.featureRequired).toBe(1);
     const ign = scoreLands(lands, { ...profile, preferences: { ...profile.preferences, units: "ignore" } }, ctx(ids));
-    expect(premium(ign, "four")).toBe(premium(ign, "two"));
+    expect(premium(ign, "five")).toBe(premium(ign, "two"));
   });
 });
 

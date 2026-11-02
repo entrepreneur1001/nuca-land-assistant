@@ -4,7 +4,8 @@ import path from "node:path";
 
 describe("Arabic UI text", () => {
   it("has no English words in user-facing strings", () => {
-    const src = readFileSync(path.resolve(__dirname, "../src/i18n/ar.ts"), "utf8");
+    // Import specifiers are module paths, not UI text.
+    const src = readFileSync(path.resolve(__dirname, "../src/i18n/ar.ts"), "utf8").replace(/^import .*$/gm, "");
     // Collect string literal contents (quotes and template literals).
     const strings = [...src.matchAll(/"([^"\n]*)"|`([^`]*)`/g)].map((m) => (m[1] ?? m[2]).replace(/\$\{[^}]*\}/g, ""));
     const allowed = /^(ar-EG|Africa\/Cairo|numeric|long|short|2-digit|—|…|)$/;
