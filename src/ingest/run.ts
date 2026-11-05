@@ -12,6 +12,7 @@ import {
   type PlotTuple,
 } from "@/data/snapshot";
 import { RULES_OVERRIDES } from "@/data/building-rules";
+import { DISTRICT_CENTRES } from "@/data/district-centres";
 import { SECTOR_VIEWS, viewCentres, type SectorView } from "@/data/sector-views";
 import { computeBuiltDistances, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
 import { buildRoadIndex, computeRoadDistances, type Segment } from "@/engine/roads";
@@ -64,6 +65,8 @@ export interface RunOptions {
   rulesOverrides?: Record<string, BuildingRules>;
   /** The source's map view per district, for districts whose plots have no coordinates. */
   sectorViews?: Record<string, SectorView>;
+  /** Approximate centres read off public maps, for districts the source has not placed at all. */
+  districtCentres?: Record<string, LatLng>;
   log?: (...a: unknown[]) => void;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -127,6 +130,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
   const log = opts.log ?? ((...a: unknown[]) => console.log("[ingest]", ...a));
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const views = viewCentres(opts.sectorViews ?? SECTOR_VIEWS);
+  const approx = new Map(Object.entries(opts.districtCentres ?? DISTRICT_CENTRES));
   const maxFullSyncMs = opts.maxFullSyncMs ?? 2 * 3600_000;
   const osmMaxAgeMs = opts.osmMaxAgeMs ?? 7 * 86_400_000;
   const osmCitiesPerRun = opts.osmCitiesPerRun ?? Number(process.env.OSM_CITIES_PER_RUN ?? 3);
@@ -323,7 +327,8 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     });
     const plotCentres = sectorCentroids(plots);
     for (const x of sectors) {
-      const ll = plotCentres.get(x.id) ?? views.get(x.id) ?? tileCentres.get(x.id);
+      // The source's own placement first; our public-map centres only when it has none.
+      const ll = plotCentres.get(x.id) ?? views.get(x.id) ?? tileCentres.get(x.id) ?? approx.get(x.id);
       if (ll) x.c = [round(ll[0], 5)!, round(ll[1], 5)!];
     }
     meta.cities = cities;

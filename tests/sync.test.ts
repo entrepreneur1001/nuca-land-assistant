@@ -271,4 +271,26 @@ describe("sync runner", () => {
     expect(inS1.latitude).toBeNull();
     expect(inS1.approxLoc).toEqual({ lat: 30.25, lng: 31.55 });
   });
+  it("a public-map centre places a district the source has not placed, without feeding the ranking", async () => {
+    const m = memStore();
+    const base = fakeSource(40, new Set());
+    // s1 has tile bounds and a public-map centre (the source wins); s3 has only the public-map centre.
+    const src = async (path: string) => {
+      const r = (await base(path)) as { items?: Record<string, unknown>[] };
+      if (path.startsWith("/api/app/sector")) r.items![0] = { ...r.items![0], tileMinLng: 31.5, tileMinLat: 30.2, tileMaxLng: 31.6, tileMaxLat: 30.3 };
+      if (path.startsWith("/api/app/land-plot")) r.items = r.items!.map((p) => (p.sectorId === "s1" || p.sectorId === "s3" ? { ...p, geoJson: null } : p));
+      return r;
+    };
+    const districtCentres = { s1: [10, 10] as [number, number], s3: [30.5, 31.9] as [number, number] };
+    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, districtCentres, now: new Date("2026-10-07T10:00:00Z") });
+    const c = (id: string) => m.meta!.sectors.find((s) => s.id === id)?.c;
+    expect(c("s1")).toEqual([30.25, 31.55]);
+    expect(c("s3")).toEqual([30.5, 31.9]);
+    const tuples = await loadTuples(m.store, m.meta!);
+    const inS3 = tupleToPlot(tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s3")!, m.meta!);
+    expect(inS3.approxLoc).toEqual({ lat: 30.5, lng: 31.9 });
+    // Distance to built-up areas stays unknown: it is never measured from a public-map guess.
+    expect(inS3.builtSrc).toBe(2);
+    expect(inS3.builtKm).toBeNull();
+  });
 });
