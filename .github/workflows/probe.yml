@@ -1,0 +1,27 @@
+# Manual, read-only probe of the source's per-district tile endpoints (scripts/tools/sector-tiles-probe.mts).
+# Shares the sync job's credentials and concurrency group so it never races a sync for the single-use refresh token.
+name: Probe source tile endpoints
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Probe tile endpoints
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          SOURCE_REFRESH_TOKEN: ${{ secrets.SOURCE_REFRESH_TOKEN }}
+        run: npx tsx scripts/tools/sector-tiles-probe.mts
