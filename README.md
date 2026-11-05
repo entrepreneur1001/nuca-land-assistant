@@ -89,6 +89,8 @@ Each run:
 4. Fills building rules (الاشتراطات البنائية) the source leaves empty from `src/data/building-rules.ts`. That table is copied from NUCA's official 11th-phase terms booklet (lands.nuca.gov.eg/Files/Handbook.pdf). Source values always win, field by field.
 5. Writes **only the chunks whose content changed**, plus `meta/current`. That's ~100–300 writes/day.
 
+A district's map position comes from its located plots, else `src/data/sector-views.ts`, else the source's tile bounds. When districts stay unplaced, `gh workflow run probe.yml` (`scripts/tools/sector-tiles-probe.mts`) prints what the source's per-district tile endpoints return for them; on 2026-11-05 all 15 unplaced districts had no tiles and no bounds on the source either.
+
 ## Model
 
 All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
