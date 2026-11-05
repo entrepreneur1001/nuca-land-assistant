@@ -92,7 +92,12 @@ export function subscribeSnapshot(onData: (s: Snapshot) => void, onError: (e: Er
   }
   return onSnapshot(
     doc(firestore(), "meta", "current"),
-    (s) => void handle(s.exists() ? (s.data() as MetaDoc) : null),
+    (s) => {
+      // While the SDK still thinks it's offline (first 10 s before the stream opens) it fires a cached "doesn't exist" snapshot
+      // for a doc it has never seen. That is not "no data yet": wait for the server snapshot instead.
+      if (!s.exists() && s.metadata.fromCache) return;
+      void handle(s.exists() ? (s.data() as MetaDoc) : null);
+    },
     (e) => onError(e),
   );
 }

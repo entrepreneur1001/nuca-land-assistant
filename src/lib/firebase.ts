@@ -62,9 +62,14 @@ function initAppCheck(a: FirebaseApp) {
   });
 }
 
-/** In-memory Firestore cache only: IndexedDB persistence can corrupt and crash the SDK. Plot chunks are cached by us (lib/data.ts). */
+/**
+ * In-memory Firestore cache only: IndexedDB persistence can corrupt and crash the SDK. Plot chunks are cached by us (lib/data.ts).
+ * Deliberately does NOT start App Check: Firestore is not App Check enforced, but once App Check is initialised the SDK waits for
+ * its token (reCAPTCHA round-trip + exchange, 10–30 s when attestation is slow or failing) before opening a stream, and its 10 s
+ * offline watchdog then fires empty cached snapshots first. Writers that need the token (AI, feedback) call whenAppCheckReady().
+ */
 export function firestore(): Firestore {
-  db ??= getFirestore(checkedApp());
+  db ??= getFirestore(firebaseApp());
   return db;
 }
 
