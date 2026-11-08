@@ -84,6 +84,51 @@ describe("batch schedule (one batch per working day, Fri/Sat off)", () => {
   });
 });
 
+describe("announced batch size (700 from 8 Nov 2026, MODEL.announcedBatchSizes)", () => {
+  // The source still reports 300-code batches, the last one on Thu 5 Nov 2026 (Cairo).
+  const nov = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"].map((d) => ({
+    issueDate: new Date(`${d}T22:00:00Z`), // 2–5 Nov Cairo
+    totalCodes: 300,
+    plotsBooked: 200,
+  }));
+  const at = (iso: string, allocations = nov, rank = 5000) => estimateQueue({ rank, booked: 800, available: 10000, allocations, now: new Date(iso) });
+
+  it("applies the floor from 8 Nov even though the synced batches are still 300", () => {
+    const q = at("2026-11-08T10:00:00Z"); // Sun 8 Nov, 12:00 Cairo
+    expect(q.codesPerBatch).toEqual({ low: 700, mid: 700, high: 933 });
+    expect(q.announcedBatch).toEqual({ codes: 700, from: "2026-11-08" });
+    expect(q.assumptions.some((a) => a.startsWith("A5:"))).toBe(true);
+    // Today's batch is not synced yet, so it is the next one: 700 ranks fit in it, the 701st waits for Monday.
+    const day = (r: number) => new Date(at("2026-11-08T10:00:00Z", nov, r).eta.expected!).toISOString().slice(0, 10);
+    expect(day(1200 + 700)).toBe("2026-11-08");
+    expect(day(1200 + 701)).toBe("2026-11-09");
+  });
+
+  it("keeps the synced size while the next batch is before the announcement date", () => {
+    const q = at("2026-11-04T10:00:00Z", nov.slice(0, 3)); // Wed 4 Nov; next batch Thu 5 Nov
+    expect(q.codesPerBatch).toEqual({ low: 300, mid: 300, high: 400 });
+    expect(q.announcedBatch).toBeNull();
+  });
+
+  it("applies to the next batch: on Saturday 7 Nov the next batch is Sunday 8 Nov", () => {
+    const q = at("2026-11-07T10:00:00Z");
+    expect(q.codesPerBatch.mid).toBe(700);
+    expect(q.announcedBatch).toEqual({ codes: 700, from: "2026-11-08" });
+  });
+
+  it("a larger synced batch wins over the announcement", () => {
+    const q = at("2026-11-09T10:00:00Z", [...nov, { issueDate: new Date("2026-11-07T22:00:00Z"), totalCodes: 800, plotsBooked: 500 }]);
+    expect(q.codesPerBatch).toEqual({ low: 800, mid: 800, high: 1067 });
+    expect(q.announcedBatch).toBeNull();
+  });
+
+  it("without allocation history the default is 700 and the announcement is reported", () => {
+    const q = at("2026-11-08T10:00:00Z", []);
+    expect(q.codesPerBatch.mid).toBe(700);
+    expect(q.announcedBatch).toEqual({ codes: 700, from: "2026-11-08" });
+  });
+});
+
 describe("depletion model", () => {
   it("plot survival: no bookings → 1, bookings ≥ plots → 0, and expected picks match", () => {
     expect(plotSurvival([1, 1, 1], 0)).toEqual([1, 1, 1]);

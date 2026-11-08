@@ -23,6 +23,8 @@ export interface QueueEstimate {
   /** Calendar days until the user's batch is issued. low = fastest. */
   daysToTurn: Range;
   eta: { best: Date | null; expected: Date | null; worst: Date | null };
+  /** Set while an announced batch size (MODEL.announcedBatchSizes) is what sizes future batches, i.e. the source hasn't reported such a batch yet. */
+  announcedBatch: { codes: number; from: string } | null;
   /** Code holders already called (earlier batches) who haven't booked yet. */
   unbookedCodes: number;
   /** Bookings still expected from people already called: today's batch finishing + late bookers from earlier batches. */
@@ -44,6 +46,11 @@ function cairoDay(d: Date): number {
   const [y, m, dd] = cairoDate.format(d).split("-").map(Number);
   return Date.UTC(y, m - 1, dd, 12);
 }
+/** "YYYY-MM-DD" as UTC noon of that day (same convention as cairoDay). */
+const isoDay = (s: string) => {
+  const [y, m, d] = s.split("-").map(Number);
+  return Date.UTC(y, m - 1, d, 12);
+};
 const isBatchDay = (day: number) => (MODEL.batchWeekdays as readonly number[]).includes(new Date(day).getUTCDay());
 
 const cairoHour = new Intl.DateTimeFormat("en-GB", { timeZone: MODEL.batchTimeZone, hour: "numeric", hourCycle: "h23" });
@@ -117,14 +124,21 @@ export function estimateQueue(input: {
 
   const peopleAhead = Math.max(0, input.rank - codesIssued);
 
-  // NUCA sends one batch per working day (Sun–Thu) and only ever grew it (200 → 300 on 1 Oct 2026), so the latest batch
-  // size is both the expected and the worst case; the best case allows it to grow again.
-  const latest = batches.at(-1)?.totalCodes ?? MODEL.defaultCodesPerBatch;
+  const lastBatchDay = batches.length ? cairoDay(batches.at(-1)!.issueDate) : today - DAY;
+  const nextBatchDay = nthBatchDay(lastBatchDay, today, 1);
+
+  // NUCA sends one batch per working day (Sun–Thu) and only ever grew it (200 → 300 on 1 Oct 2026, 300 → 700 on
+  // 8 Nov 2026), so the latest batch size is both the expected and the worst case; the best case allows it to grow
+  // again. An announced size applies from its date as a floor, even before the source reports such a batch.
+  const synced = batches.at(-1)?.totalCodes ?? null;
+  const announcement = MODEL.announcedBatchSizes.filter((a) => isoDay(a.from) <= nextBatchDay).at(-1) ?? null;
+  const latest = Math.max(synced ?? MODEL.defaultCodesPerBatch, announcement?.codes ?? 0);
+  const announcedBatch = announcement && announcement.codes > (synced ?? 0) ? { codes: announcement.codes, from: announcement.from } : null;
+  if (announcedBatch) assumptions.push(`A5: NUCA announced ${announcedBatch.codes}-code batches from ${announcedBatch.from}; applied although the latest synced batch is ${synced ?? "unknown"}.`);
   const codesPerBatch: Range = { low: latest, mid: latest, high: Math.round(latest * MODEL.optimisticBatchGrowth) };
   const batchesPerWeek = MODEL.batchWeekdays.length;
   assumptions.push("A3: one batch per working day; Friday and Saturday are off (public holidays are not modelled).");
 
-  const lastBatchDay = batches.length ? cairoDay(batches.at(-1)!.issueDate) : today - DAY;
   const turn = (perBatch: number) => {
     if (peopleAhead <= 0) return { days: 0, date: now };
     const day = nthBatchDay(lastBatchDay, today, Math.ceil(peopleAhead / perBatch));
@@ -167,6 +181,7 @@ export function estimateQueue(input: {
     batchesPerWeek,
     daysToTurn,
     eta: { best: fast.date, expected: mid.date, worst: slow.date },
+    announcedBatch,
     unbookedCodes,
     pendingBookings,
     bookingsAhead,

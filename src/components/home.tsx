@@ -202,6 +202,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
           <summary className="cursor-pointer text-sm font-semibold">{t.how.title}</summary>
           <div className="mt-2 space-y-2 text-sm text-muted">
             <p>{t.how.queue(q.codesPerBatch.mid, q.batchesPerWeek, q.codesIssued, pct(q.conversion.low), pct(q.conversion.high), pct(q.conversion.mid))}</p>
+            {q.announcedBatch ? <p>{t.how.announced(q.announcedBatch.codes, date(new Date(q.announcedBatch.from)))}</p> : null}
             {q.unbookedCodes > 0 ? <p>{t.how.late(q.unbookedCodes, pct(MODEL.lateBookingShare.mid), pct(MODEL.lateBookingShare.high))}</p> : null}
             <p>{t.how.demand(d.featureWeights.gardenCorner, d.featureWeights.garden, d.featureWeights.corner)}</p>
             <p>{t.how.nearBuilt}</p>
