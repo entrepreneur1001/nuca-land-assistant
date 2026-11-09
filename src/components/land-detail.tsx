@@ -67,6 +67,7 @@ export function LandDetail() {
             sea={plot.seaPct > 0}
             nearBuilt={s?.isNearBuilt}
             units={units}
+            held={plot.held}
           />
           {s && personal ? <span className="text-xs text-muted">{t.detail.rankOf(pos + 1)}</span> : null}
         </div>

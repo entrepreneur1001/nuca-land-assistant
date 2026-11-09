@@ -1,73 +1,91 @@
-import { SOURCE } from "./source";
-
+/**
+ * HTTP for the official portal (lands.nuca.gov.eg): plain text/HTML GETs and WebForms POSTs,
+ * with timeout and jittered exponential backoff. The site answers unknown paths and HEAD
+ * requests with `302 → ~/Error.aspx`, so any redirect is a failure and is never retried.
+ */
 export class FetchError extends Error {
   constructor(
     message: string,
     readonly status?: number,
   ) {
     super(message);
+    this.name = "FetchError";
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export interface FetchOptions {
+export interface FetchTextOptions {
+  method?: "GET" | "POST";
+  body?: URLSearchParams | string;
+  headers?: Record<string, string>;
+  /** Extra attempts after the first (default 3). */
   retries?: number;
   timeoutMs?: number;
   baseDelayMs?: number;
   fetchImpl?: typeof fetch;
-  /** Bearer token source; on an auth rejection it is invalidated and retried once. */
-  auth?: { get(): Promise<string>; invalidate(): void };
+  sleep?: (ms: number) => Promise<void>;
 }
 
-/** The source answers unauthenticated API calls with 401 or a redirect to its login page. */
-const isAuthRejection = (res: Response) =>
-  res.status === 401 || (res.status >= 300 && res.status < 400 && /\/Account\/Login|httpStatusCode=40[13]/i.test(res.headers.get("location") ?? ""));
+const USER_AGENT = "nuca-land-assistant/1.0 (personal, read-only)";
+/** Longest pause a `retry-after` header can impose. */
+const MAX_RETRY_AFTER_MS = 120_000;
+
+/** Seconds or HTTP-date forms of `retry-after`, as milliseconds; null when absent or unusable. */
+function retryAfterMs(res: Response): number | null {
+  const raw = res.headers.get("retry-after");
+  if (!raw) return null;
+  const secs = Number(raw);
+  const ms = Number.isFinite(secs) ? secs * 1000 : Date.parse(raw) - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return Math.min(ms, MAX_RETRY_AFTER_MS);
+}
+
+const isRedirect = (res: Response) => res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400);
 
 /**
- * GET JSON with timeout + exponential backoff with jitter.
- * Retries on network errors, 429 and 5xx; fails fast on other 4xx.
+ * Fetch a body as text. Retries on network errors, 429 and 5xx (jittered exponential
+ * backoff, `retry-after` honoured); fails fast on redirects and other 4xx.
  */
-export async function fetchJson(pathOrUrl: string, opts: FetchOptions = {}): Promise<unknown> {
-  const { retries = 4, timeoutMs = 30_000, baseDelayMs = 1000, fetchImpl = fetch, auth } = opts;
-  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${SOURCE.apiUrl}${pathOrUrl}`;
+async function fetchBody(url: string, accept: string, opts: FetchTextOptions): Promise<string> {
+  const { method = "GET", body, retries = 3, timeoutMs = 30_000, baseDelayMs = 1000, fetchImpl = fetch, sleep = defaultSleep } = opts;
+  const headers: Record<string, string> = { accept, "accept-language": "ar,en;q=0.5", "user-agent": USER_AGENT, ...opts.headers };
   let lastErr: unknown;
-  let reauthed = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    let delay: number | null = null;
     try {
-      const headers: Record<string, string> = { accept: "application/json", "user-agent": "nuca-land-assistant/1.0 (personal, read-only)" };
-      if (auth) headers.authorization = `Bearer ${await auth.get()}`;
-      const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(timeoutMs), cache: "no-store", redirect: "manual" });
-      if (isAuthRejection(res)) {
-        if (auth && !reauthed) {
-          reauthed = true;
-          auth.invalidate();
-          attempt--;
-          continue;
-        }
-        throw new FetchError(`source requires auth (HTTP ${res.status} for ${url})${auth ? ": token rejected" : ": set SOURCE_REFRESH_TOKEN"}`, 401);
-      }
-      if (res.ok) {
-        const type = res.headers.get("content-type") ?? "";
-        if (!type.includes("json")) throw new FetchError(`expected JSON but got ${type || "no content-type"} for ${url}`, 422);
-        return await res.json();
-      }
-      const retryable = res.status === 429 || res.status >= 500;
+      const res = await fetchImpl(url, { method, headers, body, cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+      if (isRedirect(res)) throw new FetchError(`redirected to ${res.headers.get("location") ?? "?"} (HTTP ${res.status}) for ${url}`, res.status);
+      if (res.ok) return await res.text();
       lastErr = new FetchError(`HTTP ${res.status} for ${url}`, res.status);
-      if (!retryable) throw lastErr;
-      const retryAfter = Number(res.headers.get("retry-after"));
-      if (Number.isFinite(retryAfter) && retryAfter > 0) {
-        await sleep(Math.min(retryAfter * 1000, 120_000));
-        continue;
-      }
+      if (res.status !== 429 && res.status < 500) throw lastErr;
+      delay = retryAfterMs(res);
     } catch (e) {
-      if (e instanceof FetchError && e.status && e.status < 500 && e.status !== 429) throw e;
+      // Our own verdicts (redirect, 4xx) are final; anything else is the network and is retried.
+      if (e instanceof FetchError && e.status !== undefined && e.status !== 429 && e.status < 500) throw e;
       lastErr = e;
     }
-    if (attempt < retries) {
-      const delay = baseDelayMs * 2 ** attempt * (0.5 + Math.random());
-      await sleep(delay);
-    }
+    if (attempt < retries) await sleep(delay ?? baseDelayMs * 2 ** attempt * (0.5 + Math.random()));
   }
   throw lastErr instanceof Error ? lastErr : new FetchError(String(lastErr));
+}
+
+/** GET (or POST a form) and return the HTML/text body. */
+export async function fetchText(url: string, opts: FetchTextOptions = {}): Promise<string> {
+  return fetchBody(url, "text/html,*/*;q=0.8", opts);
+}
+
+/** POST a JSON body (ASP.NET page methods such as `Cities.aspx/GetSiteCities`) and parse the JSON answer. */
+export async function fetchJsonPost(url: string, body: unknown, opts: FetchTextOptions = {}): Promise<unknown> {
+  const text = await fetchBody(url, "application/json, text/javascript, */*;q=0.1", {
+    ...opts,
+    method: "POST",
+    body: JSON.stringify(body ?? {}),
+    headers: { "content-type": "application/json; charset=utf-8", ...opts.headers },
+  });
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new FetchError(`expected JSON for ${url} but got: ${text.slice(0, 80)}`, 422);
+  }
 }

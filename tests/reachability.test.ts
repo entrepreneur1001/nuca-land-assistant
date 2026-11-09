@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { estimateQueue } from "@/engine/queue";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { MODEL } from "@/engine/config";
+import { cairoHourOf, estimateQueue, isoDay, nthBatchDay, officialQueue } from "@/engine/queue";
 import { computeSurvival, plotSurvival, simulateSectorDepletion } from "@/engine/depletion";
+import { parseNewsList } from "@/ingest/nuca-news";
 
 const NOW = new Date("2026-10-07T12:00:00Z");
 const day = (d: string) => new Date(`${d}T00:00:00Z`);
@@ -84,48 +88,109 @@ describe("batch schedule (one batch per working day, Fri/Sat off)", () => {
   });
 });
 
-describe("announced batch size (700 from 8 Nov 2026, MODEL.announcedBatchSizes)", () => {
-  // The source still reports 300-code batches, the last one on Thu 5 Nov 2026 (Cairo).
+describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
+  // The real list as of 8 Nov 2026: 300-code batches through Thu 5 Nov, then «9301–10000 on Sun 8 Nov at 10»
+  // (NID 9116, Sat 7 Nov) and «through 10000; 10001–10700 on Mon 9 Nov at 10» (NID 9117, Sun 8 Nov).
+  const all = parseNewsList(readFileSync(path.resolve(__dirname, "fixtures/official/newslist.html"), "utf8"));
+  /** Items published up to and including `day` (what the sync would have had then). */
+  const publishedBy = (day: string) => all.filter((i) => i.day <= day);
+  // The tracker still reports 300-code batches, the last one on Thu 5 Nov 2026 (Cairo).
   const nov = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"].map((d) => ({
     issueDate: new Date(`${d}T22:00:00Z`), // 2–5 Nov Cairo
     totalCodes: 300,
     plotsBooked: 200,
   }));
-  const at = (iso: string, allocations = nov, rank = 5000) => estimateQueue({ rank, booked: 800, available: 10000, allocations, now: new Date(iso) });
+  const at = (iso: string, official = publishedBy("2026-11-07"), allocations = nov, rank = 5000, allocatedCodes: number | null = null) =>
+    estimateQueue({ rank, booked: 800, available: 10000, allocations, allocatedCodes, official, now: new Date(iso) });
+  const day = (d: Date | null) => new Date(d!).toISOString().slice(0, 10);
 
-  it("applies the floor from 8 Nov even though the synced batches are still 300", () => {
-    const q = at("2026-11-08T10:00:00Z"); // Sun 8 Nov, 12:00 Cairo
+  it("Sat 7 Nov 20:00 Cairo: the official item sets codes issued (9300) and the batch size (700), not the synced 300s", () => {
+    const q = at("2026-11-07T18:00:00Z");
+    expect(q.codesIssuedSource).toBe("official");
+    expect(q.codesIssued).toBe(9300);
     expect(q.codesPerBatch).toEqual({ low: 700, mid: 700, high: 933 });
-    expect(q.announcedBatch).toEqual({ codes: 700, from: "2026-11-08" });
-    expect(q.assumptions.some((a) => a.startsWith("A5:"))).toBe(true);
-    // Today's batch is not synced yet, so it is the next one: 700 ranks fit in it, the 701st waits for Monday.
-    const day = (r: number) => new Date(at("2026-11-08T10:00:00Z", nov, r).eta.expected!).toISOString().slice(0, 10);
-    expect(day(1200 + 700)).toBe("2026-11-08");
-    expect(day(1200 + 701)).toBe("2026-11-09");
+    expect(q.official).toEqual({ nid: 9116, day: "2026-11-07", issuedThrough: 9300, batchSize: 700, next: { from: 9301, to: 10000, day: "2026-11-08" }, applied: true });
+    expect(q.assumptions.find((a) => a.startsWith("A5:"))).toMatch(/NID 9116.*through 9300.*9301–10000 on 2026-11-08/);
+    // Rank 10000 is in Sunday's announced batch; 10001 waits for Monday.
+    expect(day(at("2026-11-07T18:00:00Z", undefined, nov, 10000).eta.expected)).toBe("2026-11-08");
+    expect(day(at("2026-11-07T18:00:00Z", undefined, nov, 10001).eta.expected)).toBe("2026-11-09");
+    // No batch is open on a Saturday evening: only late bookers from the 9300 − 800 earlier holders are pending.
+    expect(q.unbookedCodes).toBe(9300 - 800);
+    expect(q.pendingBookings.mid).toBeCloseTo(q.unbookedCodes * MODEL.lateBookingShare.mid, 5);
   });
 
-  it("keeps the synced size while the next batch is before the announcement date", () => {
-    const q = at("2026-11-04T10:00:00Z", nov.slice(0, 3)); // Wed 4 Nov; next batch Thu 5 Nov
-    expect(q.codesPerBatch).toEqual({ low: 300, mid: 300, high: 400 });
-    expect(q.announcedBatch).toBeNull();
+  it("Sun 8 Nov 09:00 Cairo: the 10:00 batch is not out yet", () => {
+    const q = at("2026-11-08T07:00:00Z");
+    expect(q.codesIssued).toBe(9300);
+    expect(day(at("2026-11-08T07:00:00Z", undefined, nov, 10000).eta.expected)).toBe("2026-11-08");
   });
 
-  it("applies to the next batch: on Saturday 7 Nov the next batch is Sunday 8 Nov", () => {
-    const q = at("2026-11-07T10:00:00Z");
+  it("Sun 8 Nov 12:00 Cairo: the announced batch counts as issued, and it is today's open batch", () => {
+    const q = at("2026-11-08T10:00:00Z");
+    expect(q.codesIssued).toBe(10000);
+    expect(q.codesIssuedSource).toBe("official");
+    expect(q.official!.next).toBeNull();
+    expect(day(at("2026-11-08T10:00:00Z", undefined, nov, 10001).eta.expected)).toBe("2026-11-09");
+    expect(day(at("2026-11-08T10:00:00Z", undefined, nov, 10701).eta.expected)).toBe("2026-11-10");
+    // The 700 codes issued today are still booking (the tracker has no batch for today yet).
+    expect(q.pendingBookings.mid).toBeGreaterThanOrEqual(700 * q.conversion.mid);
+  });
+
+  it("Mon 9 Nov 12:00 Cairo with the tracker caught up: both agree on 10700", () => {
+    const allocations = [...nov, { issueDate: new Date("2026-11-09T08:00:00Z"), totalCodes: 700, plotsBooked: 100 }];
+    const q = at("2026-11-09T10:00:00Z", publishedBy("2026-11-08"), allocations, 12000, 10700);
+    expect(q.codesIssued).toBe(10700);
+    expect(q.codesIssuedSource).toBe("official");
+    expect(q.official!.nid).toBe(9117);
     expect(q.codesPerBatch.mid).toBe(700);
-    expect(q.announcedBatch).toEqual({ codes: 700, from: "2026-11-08" });
+    expect(day(q.eta.expected)).toBe("2026-11-11"); // 1300 ahead → Tue 10 Nov and Wed 11 Nov
   });
 
-  it("a larger synced batch wins over the announcement", () => {
-    const q = at("2026-11-09T10:00:00Z", [...nov, { issueDate: new Date("2026-11-07T22:00:00Z"), totalCodes: 800, plotsBooked: 500 }]);
-    expect(q.codesPerBatch).toEqual({ low: 800, mid: 800, high: 1067 });
-    expect(q.announcedBatch).toBeNull();
+  it("a tracker batch newer than the latest item wins; the item is reported but not applied", () => {
+    const allocations = [...nov, { issueDate: new Date("2026-11-08T08:00:00Z"), totalCodes: 700, plotsBooked: 400 }];
+    const q = at("2026-11-09T10:00:00Z", publishedBy("2026-11-05"), allocations);
+    expect(q.codesIssuedSource).toBe("allocations");
+    expect(q.codesIssued).toBe(4 * 300 + 700);
+    expect(q.official).toMatchObject({ nid: 9113, day: "2026-11-05", issuedThrough: 9300, applied: false });
+    expect(q.assumptions.find((a) => a.startsWith("A5:"))).toMatch(/older than the latest synced batch/);
   });
 
-  it("without allocation history the default is 700 and the announcement is reported", () => {
-    const q = at("2026-11-08T10:00:00Z", []);
-    expect(q.codesPerBatch.mid).toBe(700);
-    expect(q.announcedBatch).toEqual({ codes: 700, from: "2026-11-08" });
+  it("without official items the synced data (or the default 700) is used as before", () => {
+    const synced = at("2026-11-08T10:00:00Z", [], nov);
+    expect(synced.codesIssuedSource).toBe("allocations");
+    expect(synced.codesIssued).toBe(1200);
+    expect(synced.codesPerBatch).toEqual({ low: 300, mid: 300, high: 400 });
+    expect(synced.official).toBeNull();
+    const bare = at("2026-11-08T10:00:00Z", [], []);
+    expect(bare.codesIssuedSource).toBe("estimated-from-booked");
+    expect(bare.codesPerBatch.mid).toBe(700);
+    expect(bare.official).toBeNull();
+    expect(at("2026-11-08T10:00:00Z", all.filter((i) => i.nid === 9114), nov).official).toBeNull(); // no queue items
+  });
+
+  it("officialQueue: the two 2 Nov items and the 3 Nov item give 8700 issued and 300-code batches", () => {
+    const items = all.filter((i) => [9108, 9109, 9110].includes(i.nid));
+    const q = officialQueue(items, new Date("2026-11-03T18:00:00Z"))!; // Tue 3 Nov, 20:00 Cairo
+    expect(q).toMatchObject({ nid: 9110, day: "2026-11-03", issuedThrough: 8700, batchSize: 300, todayBatch: 300 });
+    expect(q.issuedDay).toBe(isoDay("2026-11-03"));
+    expect(q.asOfDay).toBe(isoDay("2026-11-03"));
+    expect(q.next).toEqual({ from: 8701, to: 9000, day: isoDay("2026-11-04"), hour: 11 });
+    // The next morning, before 11:00, nothing has changed; from 11:00 the 4 Nov batch is out.
+    expect(officialQueue(items, new Date("2026-11-04T08:00:00Z"))!.issuedThrough).toBe(8700);
+    const later = officialQueue(items, new Date("2026-11-04T09:00:00Z"))!;
+    expect(later.issuedThrough).toBe(9000);
+    expect(later.issuedDay).toBe(isoDay("2026-11-04"));
+    expect(later.next).toBeNull();
+    expect(later.todayBatch).toBe(300);
+    expect(officialQueue([], new Date())).toBeNull();
+  });
+
+  it("nthBatchDay honours an announced first day, even a Friday, then walks working days", () => {
+    const fri = isoDay("2026-11-13");
+    expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 1, fri)).toBe(fri);
+    expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 2, fri)).toBe(isoDay("2026-11-15")); // Sunday
+    expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 1)).toBe(isoDay("2026-11-11"));
+    expect(cairoHourOf(new Date("2026-11-08T10:00:00Z"))).toBe(12);
   });
 });
 

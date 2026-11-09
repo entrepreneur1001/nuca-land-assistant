@@ -1,138 +1,111 @@
 import { describe, expect, it } from "vitest";
-import { createTokenProvider } from "@/ingest/auth";
-import { FetchError, fetchJson } from "@/ingest/fetcher";
+import { FetchError, fetchJsonPost, fetchText } from "@/ingest/fetcher";
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
-const loginRedirect = () => new Response(null, { status: 302, headers: { location: "/Account/Login?ReturnUrl=%2Fapi" } });
+const html = (body: string, status = 200, headers: Record<string, string> = {}) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", ...headers } });
+const redirect = () => new Response(null, { status: 302, headers: { location: "~/Error.aspx" } });
 
-function tokenServer() {
-  let n = 0;
-  const calls: string[] = [];
-  const fetchImpl = (async (_url: string, init?: RequestInit) => {
-    const refresh = new URLSearchParams(String(init?.body)).get("refresh_token")!;
-    calls.push(refresh);
-    if (refresh === "dead") return json({ error: "invalid_grant" }, 400);
-    n++;
-    return json({ access_token: `at${n}`, refresh_token: `rt${n}`, expires_in: 3600 });
-  }) as typeof fetch;
-  return { fetchImpl, calls };
+/** A fetch whose answers are taken from `script` in order; records calls and sleeps. */
+function server(script: (() => Response | Promise<Response>)[]) {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const sleeps: number[] = [];
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, init: init ?? {} });
+    const next = script.shift();
+    if (!next) throw new Error("script exhausted");
+    return next();
+  }) as unknown as typeof fetch;
+  const sleep = async (ms: number) => void sleeps.push(ms);
+  return { fetchImpl, sleep, calls, sleeps, opts: { fetchImpl, sleep, baseDelayMs: 10 } };
 }
 
-function memTokens(initial: string | null) {
-  let t = initial;
-  return { getRefreshToken: async () => t, putRefreshToken: async (v: string) => void (t = v), get current() { return t; } };
-}
-
-describe("token provider", () => {
-  it("exchanges the refresh token, persists the rotated one and caches the access token", async () => {
-    const srv = tokenServer();
-    const store = memTokens("rt0");
-    const p = createTokenProvider(store, { fetchImpl: srv.fetchImpl });
-    expect(await p.get()).toBe("at1");
-    expect(await p.get()).toBe("at1");
-    expect(store.current).toBe("rt1");
-    p.invalidate();
-    expect(await p.get()).toBe("at2");
-    expect(srv.calls).toEqual(["rt0", "rt1"]);
+describe("fetchText", () => {
+  it("sends the browser-like headers and never follows redirects", async () => {
+    const s = server([() => html("<p>hi</p>")]);
+    expect(await fetchText("https://x/ar/ViewZone.aspx?ID=1", s.opts)).toBe("<p>hi</p>");
+    const { init, url } = s.calls[0];
+    expect(url).toBe("https://x/ar/ViewZone.aspx?ID=1");
+    expect(init.method).toBe("GET");
+    expect(init.redirect).toBe("manual");
+    expect(init.cache).toBe("no-store");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    const h = init.headers as Record<string, string>;
+    expect(h.accept).toMatch(/^text\/html/);
+    expect(h["accept-language"]).toBe("ar,en;q=0.5");
+    expect(h["user-agent"]).toMatch(/nuca-land-assistant/);
   });
 
-  it("falls back to the seed secret when the stored token is stale", async () => {
-    const srv = tokenServer();
-    const store = memTokens("dead");
-    const p = createTokenProvider(store, { fetchImpl: srv.fetchImpl, seedRefreshToken: "fresh" });
-    expect(await p.get()).toBe("at1");
-    expect(store.current).toBe("rt1");
+  it("retries a 503 then succeeds", async () => {
+    const s = server([() => html("busy", 503), () => html("ok")]);
+    expect(await fetchText("https://x/a", s.opts)).toBe("ok");
+    expect(s.calls).toHaveLength(2);
+    expect(s.sleeps).toHaveLength(1);
+    expect(s.sleeps[0]).toBeGreaterThan(0);
   });
 
-  it("fails clearly when no token works", async () => {
-    const p = createTokenProvider(memTokens("dead"), { fetchImpl: tokenServer().fetchImpl });
-    await expect(p.get()).rejects.toThrow(/SOURCE_REFRESH_TOKEN/);
-    await expect(createTokenProvider(memTokens(null)).get()).rejects.toThrow(/SOURCE_REFRESH_TOKEN/);
-  });
-
-  /** Token endpoint that answers the first `outages` calls with the given failure, then works. */
-  function flakyServer(outages: number, fail: () => Response | Promise<never>) {
-    let calls = 0;
-    const fetchImpl = (async (_url: string, init?: RequestInit) => {
-      calls++;
-      if (calls <= outages) return fail();
-      const refresh = new URLSearchParams(String(init?.body)).get("refresh_token")!;
-      return json({ access_token: `at-${refresh}`, refresh_token: `rt-${calls}`, expires_in: 3600 });
-    }) as typeof fetch;
-    return { fetchImpl, get calls() { return calls; } };
-  }
-  const noSleep = async () => {};
-
-  it("retries the token endpoint after a 503 and a network error, then succeeds", async () => {
-    const srv = flakyServer(2, () => (srv.calls === 1 ? json({ error: "temporarily_unavailable" }, 503) : Promise.reject(new Error("ECONNRESET"))));
-    const store = memTokens("rt0");
-    const p = createTokenProvider(store, { fetchImpl: srv.fetchImpl, seedRefreshToken: "seed", sleep: noSleep });
-    expect(await p.get()).toBe("at-rt0");
-    expect(srv.calls).toBe(3);
-    expect(store.current).toBe("rt-3");
-  });
-
-  it("does not retry a rejected token; moves straight to the next candidate", async () => {
-    const srv = tokenServer();
-    const p = createTokenProvider(memTokens("dead"), { fetchImpl: srv.fetchImpl, seedRefreshToken: "fresh", sleep: noSleep });
-    expect(await p.get()).toBe("at1");
-    expect(srv.calls).toEqual(["dead", "fresh"]);
-  });
-
-  it("gives up on an outage without blaming the secret, and leaves the seed token untouched", async () => {
-    const srv = flakyServer(99, () => json({}, 503));
-    const p = createTokenProvider(memTokens("rt0"), { fetchImpl: srv.fetchImpl, seedRefreshToken: "seed", retries: 2, sleep: noSleep });
-    const err = await p.get().catch((e: unknown) => e);
+  it("treats a redirect as a failure and does not retry it", async () => {
+    const s = server([redirect, () => html("never")]);
+    const err = (await fetchText("https://x/a", s.opts).catch((e: unknown) => e)) as FetchError;
     expect(err).toBeInstanceOf(FetchError);
-    expect(String(err)).toMatch(/HTTP 503.*unavailable/);
-    expect(String(err)).not.toMatch(/update the SOURCE_REFRESH_TOKEN/);
-    expect((err as FetchError).status).toBe(503);
-    expect(srv.calls).toBe(3); // 1 + 2 retries for the stored token only; the seed is never spent on an outage
+    expect(err.status).toBe(302);
+    expect(err.message).toMatch(/redirected to ~\/Error\.aspx/);
+    expect(s.calls).toHaveLength(1);
+    expect(s.sleeps).toHaveLength(0);
   });
 
-  it("shares one exchange between parallel callers so a single-use refresh token is spent once", async () => {
-    const srv = tokenServer();
-    const p = createTokenProvider(memTokens("rt0"), { fetchImpl: srv.fetchImpl });
-    const tokens = await Promise.all([p.get(), p.get(), p.get()]);
-    expect(tokens).toEqual(["at1", "at1", "at1"]);
-    expect(srv.calls).toEqual(["rt0"]);
+  it("fails fast on a 404", async () => {
+    const s = server([() => html("gone", 404), () => html("never")]);
+    const err = (await fetchText("https://x/a", s.opts).catch((e: unknown) => e)) as FetchError;
+    expect(err).toBeInstanceOf(FetchError);
+    expect(err.status).toBe(404);
+    expect(s.calls).toHaveLength(1);
+  });
+
+  it("retries a network error", async () => {
+    const s = server([() => Promise.reject(new TypeError("fetch failed")), () => html("ok")]);
+    expect(await fetchText("https://x/a", s.opts)).toBe("ok");
+    expect(s.calls).toHaveLength(2);
+  });
+
+  it("gives up after the configured retries with the last error", async () => {
+    const s = server([() => html("busy", 503), () => html("busy", 503), () => Promise.reject(new TypeError("fetch failed"))]);
+    const err = (await fetchText("https://x/a", { ...s.opts, retries: 2 }).catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/fetch failed/);
+    expect(s.calls).toHaveLength(3);
+    expect(s.sleeps).toHaveLength(2);
+    // jittered exponential backoff: the second wait is drawn from a doubled base
+    expect(s.sleeps[1]).toBeGreaterThanOrEqual(10);
+    expect(s.sleeps[1]).toBeLessThanOrEqual(30);
+  });
+
+  it("honours retry-after (seconds, capped at 120 s)", async () => {
+    const s = server([() => html("busy", 503, { "retry-after": "7" }), () => html("busy", 429, { "retry-after": "1000" }), () => html("ok")]);
+    expect(await fetchText("https://x/a", s.opts)).toBe("ok");
+    expect(s.sleeps).toEqual([7000, 120_000]);
   });
 });
 
-describe("fetchJson auth", () => {
-  const opts = { retries: 0, baseDelayMs: 0 };
-
-  it("sends the bearer token", async () => {
-    let seen: string | undefined;
-    const fetchImpl = (async (_u: string, init?: RequestInit) => {
-      seen = (init?.headers as Record<string, string>).authorization;
-      return json({ ok: 1 });
-    }) as typeof fetch;
-    const auth = { get: async () => "tok", invalidate() {} };
-    expect(await fetchJson("/x", { ...opts, fetchImpl, auth })).toEqual({ ok: 1 });
-    expect(seen).toBe("Bearer tok");
+describe("fetchJsonPost", () => {
+  it("POSTs a JSON body with the JSON content type and parses the answer", async () => {
+    const s = server([() => new Response('{"d":"[1,2]"}', { headers: { "content-type": "application/json" } })]);
+    expect(await fetchJsonPost("https://x/ar/Cities.aspx/GetSiteCities", { a: 1 }, s.opts)).toEqual({ d: "[1,2]" });
+    const { init } = s.calls[0];
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe('{"a":1}');
+    const h = init.headers as Record<string, string>;
+    expect(h["content-type"]).toBe("application/json; charset=utf-8");
+    expect(h.accept).toMatch(/application\/json/);
   });
 
-  it("re-authenticates once after a login redirect", async () => {
-    let calls = 0;
-    let invalidated = 0;
-    const fetchImpl = (async () => (++calls === 1 ? loginRedirect() : json({ ok: 1 }))) as unknown as typeof fetch;
-    const auth = { get: async () => "tok", invalidate: () => void invalidated++ };
-    expect(await fetchJson("/x", { ...opts, fetchImpl, auth })).toEqual({ ok: 1 });
-    expect(invalidated).toBe(1);
-  });
-
-  it("fails with a clear auth error instead of a JSON parse error", async () => {
-    const fetchImpl = (async () => loginRedirect()) as unknown as typeof fetch;
-    await expect(fetchJson("/x", { ...opts, fetchImpl })).rejects.toThrow(/requires auth/);
-    const auth = { get: async () => "tok", invalidate() {} };
-    await expect(fetchJson("/x", { ...opts, fetchImpl, auth })).rejects.toThrow(/token rejected/);
-  });
-
-  it("rejects HTML bodies", async () => {
-    const fetchImpl = (async () => new Response("<!DOCTYPE html>", { headers: { "content-type": "text/html" } })) as unknown as typeof fetch;
-    const err = (await fetchJson("/x", { ...opts, fetchImpl }).catch((e) => e)) as FetchError;
+  it("rejects a non-JSON answer with a FetchError", async () => {
+    const s = server([() => html("<html>oops</html>")]);
+    const err = (await fetchJsonPost("https://x/a", {}, s.opts).catch((e: unknown) => e)) as FetchError;
     expect(err).toBeInstanceOf(FetchError);
-    expect(err.message).toMatch(/expected JSON/);
+    expect(err.status).toBe(422);
+  });
+
+  it("retries a 503 like fetchText", async () => {
+    const s = server([() => html("busy", 503), () => new Response("[1]", { headers: { "content-type": "application/json" } })]);
+    expect(await fetchJsonPost("https://x/a", {}, s.opts)).toEqual([1]);
+    expect(s.calls).toHaveLength(2);
   });
 });

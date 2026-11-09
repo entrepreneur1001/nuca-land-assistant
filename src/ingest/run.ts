@@ -1,36 +1,17 @@
-import { z } from "zod";
-import {
-  CHUNK_COUNT,
-  SCHEMA_VERSION,
-  chunkOf,
-  hashString,
-  packTuples,
-  round,
-  unpackTuples,
-  type BuildingRules,
-  type MetaDoc,
-  type PlotTuple,
-} from "@/data/snapshot";
+import { CHUNK_COUNT, SCHEMA_VERSION, chunkOf, hashString, packTuples, round, unpackTuples, type BuildingRules, type MetaDoc, type OfficialNewsItem, type OfficialZoneState, type PlotTuple } from "@/data/snapshot";
 import { RULES_OVERRIDES } from "@/data/building-rules";
 import { DISTRICT_CENTRES } from "@/data/district-centres";
+import { OFFICIAL_CITIES, OFFICIAL_ZONES } from "@/data/official-zones";
 import { SECTOR_VIEWS, viewCentres, type SectorView } from "@/data/sector-views";
 import { computeBuiltDistances, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
-import { buildRoadIndex, computeRoadDistances, type Segment } from "@/engine/roads";
-import { diffSnapshot, type ExistingItem, type LandStatus } from "./diff";
-import { fetchJson as defaultFetchJson } from "./fetcher";
-import {
-  allocationSchema,
-  allocationStatSchema,
-  enhancedStatsSchema,
-  pagedSchema,
-  parseSourceDate,
-  sectorSchema,
-  statsSchema,
-  validatePlots,
-  type NormalizedPlot,
-} from "./normalize";
-import { buildIndex, fetchBuiltPoints as defaultFetchBuilt, fetchMainRoads as defaultFetchRoads } from "./osm";
-import { SOURCE } from "./source";
+import { officialQueue } from "@/engine/queue";
+import { fetchJsonPost as defaultFetchJsonPost, fetchText } from "./fetcher";
+import { mergeOfficialNews, parseNewsList } from "./nuca-news";
+import { createClient, crawlZones, discoverZones, type FetchHtml, type ZoneCrawl } from "./nuca-plots";
+import { OFFICIAL_SITE, officialUrl } from "./official";
+import { buildOfficialIndex, type OfficialZoneEntry } from "./official-map";
+import { buildIndex, fetchBuiltPoints as defaultFetchBuilt } from "./osm";
+import { bumpBookingsByDay, deriveStatuses, hotSectors, recordToTuple, seedBookingsByDay, synthesizeAllocations, tupleToRecord, type PlotRecord } from "./status";
 
 export interface ChunkDoc {
   version: string;
@@ -49,35 +30,50 @@ export interface Store {
 
 export interface RunOptions {
   now?: Date;
-  forceFull?: boolean;
-  forceOsm?: boolean;
-  /** Re-run a full sync at least this often even if stats look unchanged. */
-  maxFullSyncMs?: number;
-  osmMaxAgeMs?: number;
-  /** Max cities refreshed from OpenStreetMap per run (keeps every run short). */
-  osmCitiesPerRun?: number;
-  fetchJson?: (path: string) => Promise<unknown>;
-  /** Built points near the given district centres. */
+  /** Also crawl the booked views (daily): confirms statuses and names of fully booked squares. */
+  full?: boolean;
+  /** Allow starting without a previous snapshot (otherwise refused, since nothing could be frozen from it). */
+  bootstrap?: boolean;
+  /** Compute and log everything, write nothing. */
+  dryRun?: boolean;
+  /** Re-discover the zone list even if the cached one is fresh. */
+  forceZones?: boolean;
+  /** Accept a run that marks more plots booked than OFFICIAL_SITE.maxNewlyBookedPerRun. */
+  acceptLarge?: boolean;
+  budgetMs?: number;
+  concurrency?: number;
+  delayMs?: number;
+  zonesMaxAgeMs?: number;
+  fetchHtml?: FetchHtml;
+  fetchJsonPost?: (url: string, body: unknown) => Promise<unknown>;
+  /** Built points near the given district centres (OpenStreetMap). */
   fetchBuiltPoints?: (centers: LatLng[]) => Promise<LatLng[]>;
-  /** Main-road segments near the given district centres. */
-  fetchMainRoads?: (centers: LatLng[]) => Promise<Segment[]>;
-  /** Building rules from the NUCA booklet for districts the source leaves empty. */
+  /** Building rules from the NUCA booklet. */
   rulesOverrides?: Record<string, BuildingRules>;
-  /** The source's map view per district, for districts whose plots have no coordinates. */
   sectorViews?: Record<string, SectorView>;
-  /** Approximate centres read off public maps, for districts the source has not placed at all. */
   districtCentres?: Record<string, LatLng>;
+  officialZones?: OfficialZoneEntry[];
+  officialCities?: Record<number, string>;
   log?: (...a: unknown[]) => void;
   sleep?: (ms: number) => Promise<void>;
 }
 
 export interface RunResult {
-  mode: "stats" | "full";
+  mode: "status" | "full";
+  dryRun: boolean;
   changedChunks: string[];
   newlyBooked: number;
   newlyAvailable: number;
   inserted: number;
   osmRefreshed: boolean;
+  zonesOk: number;
+  zonesFailed: number;
+  zonesSkipped: number;
+  durationMs: number;
+  /** Official news items first seen this run (newest first). */
+  officialNew: OfficialNewsItem[];
+  /** Plots that became booked this run (≤ 200). */
+  newlyBookedPlots: { id: string; city: string; sector: string | null; zone: string | null; plotNo: string; total: number }[];
   error?: string;
 }
 
@@ -89,28 +85,14 @@ const emptyMeta = (): MetaDoc => ({
   osmAt: null,
   lastError: null,
   lastErrorAt: null,
-  source: { name: SOURCE.name, url: SOURCE.apiUrl },
-  market: { total: 0, booked: 0, available: 0, allocatedCodes: null, sourceLastUpdate: null },
+  source: { name: OFFICIAL_SITE.name, url: OFFICIAL_SITE.url },
+  market: { total: 0, booked: 0, available: 0, held: 0, allocatedCodes: null, sourceLastUpdate: null },
   allocations: [],
   cities: [],
   sectors: [],
   zones: [],
   chunks: [],
 });
-
-async function fetchAllPaged(fetchJson: (p: string) => Promise<unknown>, path: string, pageSize: number, extra = "", sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))) {
-  const items: unknown[] = [];
-  let total = Infinity;
-  for (let skip = 0; skip < total; skip += pageSize) {
-    const sep = path.includes("?") ? "&" : "?";
-    const page = pagedSchema.parse(await fetchJson(`${path}${sep}SkipCount=${skip}&MaxResultCount=${pageSize}${extra}`));
-    total = page.totalCount;
-    items.push(...page.items);
-    if (!page.items.length) break;
-    if (skip + pageSize < total) await sleep(SOURCE.pageDelayMs);
-  }
-  return { items, total: total === Infinity ? 0 : total };
-}
 
 export async function loadTuples(store: Store, meta: MetaDoc): Promise<PlotTuple[]> {
   const all: PlotTuple[] = [];
@@ -121,170 +103,217 @@ export async function loadTuples(store: Store, meta: MetaDoc): Promise<PlotTuple
   return all;
 }
 
+/** Firestore rejects `undefined`; drop such keys recursively. */
+export function stripUndefined<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(stripUndefined) as T;
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (x !== undefined) out[k] = stripUndefined(x);
+    return out as T;
+  }
+  return v;
+}
+
+interface NewsStep {
+  patch: Pick<MetaDoc, "officialNews" | "officialAt" | "officialError" | "officialErrorAt">;
+  added: OfficialNewsItem[];
+}
+
+/** Fetch + parse + merge the official news. Never throws: a failure keeps the previous items and records the error. */
+async function syncNews(prev: MetaDoc, fetchHtml: FetchHtml, now: Date, log: (...a: unknown[]) => void): Promise<NewsStep> {
+  try {
+    const fresh = parseNewsList(await fetchHtml(officialUrl.news()));
+    if (!fresh.length) throw new Error("no items parsed");
+    const { items, added } = mergeOfficialNews(prev.officialNews, fresh);
+    if (added.length) log(`official news: ${added.length} new item(s): ${added.map((i) => `${i.nid} ${i.title}`).join("; ")}`);
+    return { patch: { officialNews: items, officialAt: now.toISOString(), officialError: null, officialErrorAt: prev.officialErrorAt ?? null }, added };
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+    log("official news failed:", msg);
+    return { patch: { officialNews: prev.officialNews ?? [], officialAt: prev.officialAt ?? null, officialError: msg, officialErrorAt: now.toISOString() }, added: [] };
+  }
+}
+
 export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunResult> {
   const now = opts.now ?? new Date();
-  const fetchJson = opts.fetchJson ?? ((p: string) => defaultFetchJson(p));
-  const fetchBuilt = opts.fetchBuiltPoints ?? ((c: LatLng[]) => defaultFetchBuilt(c));
-  // Roads only matter right at the plot, so a smaller radius than for buildings is enough.
-  const fetchRoads = opts.fetchMainRoads ?? ((c: LatLng[]) => defaultFetchRoads(c, 3000));
+  const t0 = Date.now();
   const log = opts.log ?? ((...a: unknown[]) => console.log("[ingest]", ...a));
   const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  // A hung connection must cost seconds, not minutes: the zone fails fast and is retried next run.
+  const fetchHtml: FetchHtml = opts.fetchHtml ?? ((url, init) => fetchText(url, { method: init?.method, body: init?.body, headers: init?.headers, timeoutMs: OFFICIAL_SITE.requestTimeoutMs, retries: 2 }));
+  const fetchJsonPost = opts.fetchJsonPost ?? ((url: string, body: unknown) => defaultFetchJsonPost(url, body));
+  const fetchBuilt = opts.fetchBuiltPoints ?? ((c: LatLng[]) => defaultFetchBuilt(c));
+  const client = createClient(fetchHtml, { delayMs: opts.delayMs ?? OFFICIAL_SITE.delayMs, sleep });
+  const cities = opts.officialCities ?? OFFICIAL_CITIES;
+  const index = buildOfficialIndex(opts.officialZones ?? OFFICIAL_ZONES, cities);
   const views = viewCentres(opts.sectorViews ?? SECTOR_VIEWS);
   const approx = new Map(Object.entries(opts.districtCentres ?? DISTRICT_CENTRES));
-  const maxFullSyncMs = opts.maxFullSyncMs ?? 2 * 3600_000;
-  const osmMaxAgeMs = opts.osmMaxAgeMs ?? 7 * 86_400_000;
-  const osmCitiesPerRun = opts.osmCitiesPerRun ?? Number(process.env.OSM_CITIES_PER_RUN ?? 3);
+  const rulesOverrides = opts.rulesOverrides ?? RULES_OVERRIDES;
+  const full = !!opts.full;
 
   const prev = (await store.getMeta()) ?? emptyMeta();
-  const osmCities: Record<string, string> = { ...(prev.osmCities ?? {}) };
-  const osmStale = (city: string) => !osmCities[city] || now.getTime() - Date.parse(osmCities[city]) >= osmMaxAgeMs;
-  const meta: MetaDoc = { ...emptyMeta(), ...prev, schema: SCHEMA_VERSION, source: { name: SOURCE.name, url: SOURCE.apiUrl } };
-  const result: RunResult = { mode: "stats", changedChunks: [], newlyBooked: 0, newlyAvailable: 0, inserted: 0, osmRefreshed: false };
+  const meta: MetaDoc = { ...emptyMeta(), ...prev, schema: SCHEMA_VERSION, source: { name: OFFICIAL_SITE.name, url: OFFICIAL_SITE.url } };
+  const result: RunResult = {
+    mode: full ? "full" : "status",
+    dryRun: !!opts.dryRun,
+    changedChunks: [],
+    newlyBooked: 0,
+    newlyAvailable: 0,
+    inserted: 0,
+    osmRefreshed: false,
+    zonesOk: 0,
+    zonesFailed: 0,
+    zonesSkipped: 0,
+    durationMs: 0,
+    officialNew: [],
+    newlyBookedPlots: [],
+  };
+  const news = await syncNews(prev, fetchHtml, now, log);
+  Object.assign(meta, news.patch);
+  result.officialNew = news.added;
 
   try {
-    // 1. cheap stats poll
-    const [rawStats, rawEnh] = await Promise.all([
-      fetchJson("/api/app/dashboard/dashboard-statistics"),
-      fetchJson("/api/app/dashboard/enhanced-dashboard-statistics").catch(() => null),
-    ]);
-    const s = statsSchema.parse(rawStats);
-    const enh = rawEnh ? enhancedStatsSchema.safeParse(rawEnh) : null;
-    const statsChanged = s.bookedPlots !== prev.market.booked || s.availablePlots !== prev.market.available || s.totalPlots !== prev.market.total;
-    meta.market = {
-      total: s.totalPlots,
-      booked: s.bookedPlots,
-      available: s.availablePlots,
-      allocatedCodes: enh?.success ? (enh.data.allocatedBookings ?? null) : prev.market.allocatedCodes,
-      sourceLastUpdate: parseSourceDate(s.lastUpdate)?.toISOString() ?? null,
-    };
-    meta.statsAt = now.toISOString();
+    if (!prev.chunks.length && !opts.bootstrap) throw new Error("no previous snapshot to freeze ids/coordinates from; run with --bootstrap to start from scratch");
 
-    const anyOsmDue = !prev.cities.length || prev.cities.some(osmStale);
-    const fullDue =
-      opts.forceFull ||
-      opts.forceOsm ||
-      anyOsmDue ||
-      !prev.fullSyncAt ||
-      !prev.chunks.length ||
-      statsChanged ||
-      now.getTime() - Date.parse(prev.fullSyncAt) >= maxFullSyncMs;
-    if (!fullDue) {
-      meta.lastError = null;
-      await store.putMeta(meta);
-      return result;
-    }
-    result.mode = "full";
-
-    // 2. reference data: allocations + sector flags
-    const a = await fetchAllPaged(fetchJson, "/api/app/booking-allocation", 1000, "", sleep);
-    const statsRaw = await fetchJson("/api/app/dashboard/allocation-statistics").catch(() => []);
-    const bookedPerBatch = new Map<string, number>();
-    for (const r of z.array(z.unknown()).catch([]).parse(statsRaw)) {
-      const p = allocationStatSchema.safeParse(r);
-      if (p.success) bookedPerBatch.set(p.data.allocationId, p.data.plotsBooked);
-    }
-    const prevBooked = new Map(prev.allocations.map((x) => [x.id, x.b]));
-    meta.allocations = a.items
-      .flatMap((i) => {
-        const r = allocationSchema.safeParse(i);
-        const d = r.success ? parseSourceDate(r.data.issueDate) : null;
-        return r.success && d ? [{ id: r.data.id, d: d.toISOString(), c: r.data.totalCodes, b: bookedPerBatch.get(r.data.id) ?? prevBooked.get(r.data.id) ?? null }] : [];
-      })
-      .sort((x, y) => x.d.localeCompare(y.d));
-    const hot = new Set<string>();
-    // Tile-bounds midpoints: the sector's location when none of its plots has geometry.
-    const tileCentres = new Map<string, LatLng>();
-    // Source rules (fresh, else last known); missing fields are filled from RULES_OVERRIDES below.
-    const rules = new Map<string, BuildingRules>(
-      prev.sectors.flatMap((x) => (x.rules && x.rules.from !== "booklet" ? [[x.id, x.rules] as const] : [])),
-    );
-    try {
-      const sec = await fetchAllPaged(fetchJson, "/api/app/sector", 1000, "", sleep);
-      const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim().replace(/\s+/g, " ") : null);
-      for (const i of sec.items) {
-        const r = sectorSchema.safeParse(i);
-        if (!r.success) continue;
-        if (r.data.isHot) hot.add(r.data.id);
-        const { tileMinLat: s0, tileMinLng: w0, tileMaxLat: n0, tileMaxLng: e0 } = r.data;
-        if (s0 != null && w0 != null && n0 != null && e0 != null) tileCentres.set(r.data.id, [(s0 + n0) / 2, (w0 + e0) / 2]);
-        const rr = { ratio: clean(r.data.buildingRatio), floors: clean(r.data.allowedFloors), setbacks: clean(r.data.setbacks) };
-        if (rr.ratio || rr.floors || rr.setbacks) rules.set(r.data.id, rr);
+    // 1. zone list (cities → available projects → zones), cached for a day
+    const zonesMaxAgeMs = opts.zonesMaxAgeMs ?? OFFICIAL_SITE.zonesMaxAgeMs;
+    const cached = prev.official?.zones ?? [];
+    const zonesStale = !prev.official?.zonesAt || now.getTime() - Date.parse(prev.official.zonesAt) >= zonesMaxAgeMs;
+    let zoneStates: OfficialZoneState[] = cached.map((z) => ({ ...z }));
+    let zonesAt = prev.official?.zonesAt ?? null;
+    let zonesError: string | null = null;
+    if (!cached.length || zonesStale || opts.forceZones) {
+      try {
+        const found = await discoverZones(client, fetchJsonPost);
+        const byZid = new Map(cached.map((z) => [z.zid, z]));
+        zoneStates = found.map((z) => ({
+          ...(byZid.get(z.zid) ?? { egpPerM: null, lastOkAt: null }),
+          zid: z.zid,
+          pid: z.pid,
+          cityId: z.cityId,
+          city: cities[z.cityId] ?? index.cityOf(z.cityId) ?? z.cityName,
+          name: z.name,
+        }));
+        const gone = cached.filter((z) => !found.some((f) => f.zid === z.zid));
+        if (gone.length) log(`zones no longer listed: ${gone.map((z) => z.zid).join(", ")} (their plots keep their status)`);
+        zonesAt = now.toISOString();
+        log(`zones: ${zoneStates.length} listed in ${new Set(zoneStates.map((z) => z.city)).size} cities`);
+      } catch (e) {
+        zonesError = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+        log("zone discovery failed:", zonesError);
       }
-    } catch {
-      /* optional: keep previous rules and centres */
-      for (const x of prev.sectors) if (x.c) tileCentres.set(x.id, x.c);
     }
-    for (const [id, o] of Object.entries(opts.rulesOverrides ?? RULES_OVERRIDES)) rules.set(id, mergeRules(rules.get(id), o));
+    if (!zoneStates.length) throw new Error(`no zones known${zonesError ? `: ${zonesError}` : ""}`);
 
-    // 3. all plots
-    const fetched = await fetchAllPaged(fetchJson, "/api/app/land-plot", SOURCE.pageSize, "&Sorting=id", sleep);
-    const { plots, rejected, errors } = validatePlots(fetched.items);
-    if (rejected) log(`rejected ${rejected} invalid plot(s)`, errors);
+    // 2. crawl: stalest zones first, within the time budget
+    const order = [...zoneStates].sort((a, b) => (a.lastOkAt ?? "").localeCompare(b.lastOkAt ?? ""));
+    const crawls = await crawlZones(
+      client,
+      order.map((z) => z.zid),
+      full ? ["available", "booked"] : ["available"],
+      { concurrency: opts.concurrency ?? OFFICIAL_SITE.concurrency, budgetMs: opts.budgetMs ?? (full ? OFFICIAL_SITE.fullBudgetMs : OFFICIAL_SITE.budgetMs), log },
+    );
+    for (const z of zoneStates) {
+      const cs = crawls.get(z.zid);
+      if (!cs) {
+        result.zonesSkipped++;
+        continue;
+      }
+      const avail = cs.find((c) => c.view === "available");
+      const booked = cs.find((c) => c.view === "booked");
+      const okAll = cs.every((c) => c.ok);
+      if (avail?.ok) {
+        z.lastOkAt = now.toISOString();
+        z.egpPerM = avail.egpPerM ?? z.egpPerM ?? null;
+      }
+      if (booked?.ok && avail?.ok) z.lastFullAt = now.toISOString();
+      if (okAll) {
+        result.zonesOk++;
+        z.lastError = null;
+      } else {
+        result.zonesFailed++;
+        z.lastError = cs.find((c) => !c.ok)?.error?.slice(0, 200) ?? "failed";
+        z.lastErrorAt = now.toISOString();
+      }
+    }
+    log(`crawl: ${result.zonesOk} zone(s) ok, ${result.zonesFailed} failed, ${result.zonesSkipped} not reached (budget)`);
+    if (result.zonesOk === 0) throw new Error(`no zone crawled successfully (${result.zonesFailed} failed, ${result.zonesSkipped} skipped)`);
+    const okCrawls = new Map<number, ZoneCrawl[]>();
+    for (const [zid, cs] of crawls) okCrawls.set(zid, cs.filter((c) => c.ok));
 
+    // 3. statuses: previous records are the universe; the official tables set free/held/booked
     const prevTuples = await loadTuples(store, prev);
-    const prevById = new Map(prevTuples.map((t) => [t[0], t]));
-    const existing = new Map<string, ExistingItem>(
-      prevTuples.map((t) => [t[0], { id: t[0], status: (t[15] ? "booked" : "available") as LandStatus, totalPrice: t[8] }]),
-    );
-    const d = diffSnapshot(
-      existing,
-      plots.map((p) => ({ id: p.id, status: p.status, totalPrice: p.totalPrice })),
-      { expectedTotal: fetched.total - rejected, allPagesOk: true },
-    );
-    if (!d.accepted) throw new Error(`snapshot rejected: ${d.reason}`);
-    result.newlyBooked = d.newlyBooked.length;
-    result.newlyAvailable = d.newlyAvailable.length;
-    result.inserted = d.inserted.length;
-
-    // 4. distance to existing buildings (OpenStreetMap): a few stale cities per run, plus cities with new plots
-    const built = new Map<string, { km: number | null; src: 0 | 1 | 2 }>();
-    const roads = new Map<string, number | null>();
-    // Cities synced before main-road distances existed need a refresh even if their buildings are fresh.
-    const noRoads = new Set<string>();
-    for (const t of prevTuples) {
-      built.set(t[0], { km: t[17], src: t[18] });
-      if (t[19] === undefined) noRoads.add(prev.cities[t[3]]);
-      else roads.set(t[0], t[19]);
+    const prevRecords = prevTuples.map((t) => tupleToRecord(t, prev));
+    const derived = deriveStatuses({
+      prev: prevRecords,
+      crawls: okCrawls,
+      index,
+      zones: zoneStates.map((z) => ({ zid: z.zid, cityId: z.cityId, city: z.city })),
+      sectorNames: new Map(prev.sectors.map((s) => [s.id, s.name])),
+      now,
+    });
+    result.newlyBooked = derived.newlyBooked.length;
+    result.newlyAvailable = derived.newlyAvailable.length;
+    result.inserted = derived.inserted.length;
+    if (derived.newSquares.length) log(`squares not in the mapping table: ${derived.newSquares.map((s) => `${s.zid} «${s.square}» ×${s.n}`).join("; ")}`);
+    if (derived.unmapped) log(`${derived.unmapped} plot(s) belong to zones with no official counterpart; their status is frozen`);
+    const max = OFFICIAL_SITE.maxNewlyBookedPerRun;
+    if (result.newlyBooked > max && !opts.acceptLarge) throw new Error(`suspicious: ${result.newlyBooked} plots newly booked in one run (> ${max}); re-run with --accept-large if the site really says so`);
+    const byId = new Map(derived.records.map((r) => [r.id, r]));
+    result.newlyBookedPlots = derived.newlyBooked.slice(0, 200).map((id) => {
+      const r = byId.get(id)!;
+      return { id, city: r.cityName, sector: r.sectorName, zone: r.zoneName, plotNo: r.plotNo, total: r.total };
+    });
+    for (const [zid, s] of derived.perZone) {
+      const z = zoneStates.find((x) => x.zid === zid);
+      if (z) z.n = s.seen;
     }
-    const insertedIds = new Set(d.inserted);
-    const allCities = [...new Set(plots.map((p) => p.cityName))];
-    // New plots, and plots the source placed or moved since last run, need distances from their own location.
-    const moved = (p: NormalizedPlot) => {
-      const t = prevById.get(p.id);
-      return !!t && (round(p.latitude, 6) !== t[13] || round(p.longitude, 6) !== t[14]);
-    };
-    const citiesWithNew = new Set(prev.chunks.length ? plots.filter((p) => insertedIds.has(p.id) || moved(p)).map((p) => p.cityName) : []);
-    const due = opts.forceOsm
-      ? allCities
-      : allCities
-          .filter((c) => osmStale(c) || citiesWithNew.has(c) || noRoads.has(c))
-          .sort((x, y) => (osmCities[x] ?? "").localeCompare(osmCities[y] ?? ""))
-          .slice(0, Math.max(osmCitiesPerRun, citiesWithNew.size));
-    if (due.length) {
-      const dueSet = new Set(due);
-      const { distances, roadDistances, failedCities } = await computeOsmDistances(
-        plots.filter((p) => dueSet.has(p.cityName)),
-        fetchBuilt,
-        fetchRoads,
-        log,
-        sleep,
-        views,
-      );
-      for (const [id, v] of distances) built.set(id, v);
-      for (const [id, v] of roadDistances) roads.set(id, v);
-      for (const c of due) if (!failedCities.includes(c)) osmCities[c] = now.toISOString();
-      result.osmRefreshed = distances.size > 0;
-      if (result.osmRefreshed) meta.osmAt = now.toISOString();
+
+    // 4. distances to existing buildings for new plots (their district centre; the site has no coordinates)
+    const records = derived.records;
+    const insertedIds = new Set(derived.inserted);
+    const osmCities: Record<string, string> = { ...(prev.osmCities ?? {}) };
+    const newBySector = new Map<string, PlotRecord[]>();
+    for (const r of records) if (insertedIds.has(r.id) && r.sectorId) newBySector.set(r.sectorId, [...(newBySector.get(r.sectorId) ?? []), r]);
+    if (newBySector.size) {
+      const centres = new Map<string, LatLng>();
+      const plotCentres = sectorCentroids(records.map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })));
+      for (const id of newBySector.keys()) {
+        const c = plotCentres.get(id) ?? views.get(id) ?? prev.sectors.find((s) => s.id === id)?.c ?? approx.get(id);
+        if (c) centres.set(id, c);
+      }
+      if (centres.size) {
+        try {
+          const points = await fetchBuilt([...centres.values()]);
+          const dist = computeBuiltDistances(
+            [...newBySector.values()].flat().map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: null, longitude: null })),
+            buildIndex(points),
+            centres,
+          );
+          for (const r of records) {
+            const d = dist.get(r.id);
+            if (d) {
+              r.builtKm = d.km;
+              r.builtSrc = d.src;
+            }
+          }
+          result.osmRefreshed = dist.size > 0;
+          if (result.osmRefreshed) meta.osmAt = now.toISOString();
+          log(`OSM: ${points.length} built points for ${centres.size} district(s) of new plots`);
+        } catch (e) {
+          log("OSM failed (new plots keep unknown distances):", e instanceof Error ? e.message : e);
+        }
+      }
     }
     meta.osmCities = osmCities;
 
-    // 5. build tuples + lookup tables
+    // 5. lookup tables + tuples
     const cityIdx = new Map<string, number>();
     const sectorIdx = new Map<string, number>();
     const zoneIdx = new Map<string, number>();
-    const cities: string[] = [];
+    const cityNames: string[] = [];
     const sectors: MetaDoc["sectors"] = [];
-    const zones: string[] = [];
+    const zoneNames: string[] = [];
     const idx = <K>(m: Map<K, number>, k: K, push: () => void) => {
       let i = m.get(k);
       if (i === undefined) {
@@ -294,52 +323,59 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       }
       return i;
     };
-    const sorted = [...plots].sort((x, y) => x.id.localeCompare(y.id));
-    const tuples: PlotTuple[] = sorted.map((p: NormalizedPlot) => {
-      const c = idx(cityIdx, p.cityName, () => cities.push(p.cityName));
-      const sct = p.projectId
-        ? idx(sectorIdx, p.projectId, () => sectors.push({ id: p.projectId!, name: p.projectName ?? "", city: c, hot: hot.has(p.projectId!), rules: rules.get(p.projectId!) ?? null }))
+    const hot = hotSectors(records, now);
+    const prevSectorById = new Map(prev.sectors.map((s) => [s.id, s]));
+    const sorted = [...records].sort((x, y) => x.id.localeCompare(y.id));
+    const tuples: PlotTuple[] = sorted.map((r) => {
+      const c = idx(cityIdx, r.cityName, () => cityNames.push(r.cityName));
+      const s = r.sectorId
+        ? idx(sectorIdx, r.sectorId, () =>
+            sectors.push({
+              id: r.sectorId!,
+              name: r.sectorName ?? prevSectorById.get(r.sectorId!)?.name ?? "",
+              city: c,
+              hot: hot.has(r.sectorId!),
+              // The booklet table first; otherwise whatever the previous snapshot knew (the official site publishes none).
+              rules: rulesOverrides[r.sectorId!] ? { ...rulesOverrides[r.sectorId!], from: "booklet" } : (prevSectorById.get(r.sectorId!)?.rules ?? null),
+            }),
+          )
         : -1;
-      const z = p.zoneName ? idx(zoneIdx, p.zoneName, () => zones.push(p.zoneName!)) : -1;
-      const b = built.get(p.id) ?? (prevById.has(p.id) ? { km: prevById.get(p.id)![17], src: prevById.get(p.id)![18] } : { km: null, src: 2 as const });
-      return [
-        p.id,
-        p.externalPlotId,
-        p.plotNumber,
-        c,
-        sct,
-        z,
-        round(p.area, 1)!,
-        round(p.pricePerMeter, 2)!,
-        round(p.totalPrice, 2)!,
-        round(p.downPayment, 2)!,
-        p.cornerPct,
-        p.gardenPct,
-        p.seaPct,
-        round(p.latitude, 6),
-        round(p.longitude, 6),
-        p.status === "booked" ? 1 : 0,
-        p.bookingDate?.getTime() ?? 0,
-        round(b.km, 3),
-        b.src,
-        roads.get(p.id) ?? null,
-      ];
+      const z = r.zoneName ? idx(zoneIdx, r.zoneName, () => zoneNames.push(r.zoneName!)) : -1;
+      return recordToTuple(r, c, s, z);
     });
-    const plotCentres = sectorCentroids(plots);
+    const plotCentres = sectorCentroids(records.map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })));
     for (const x of sectors) {
-      // The source's own placement first; our public-map centres only when it has none.
-      const ll = plotCentres.get(x.id) ?? views.get(x.id) ?? tileCentres.get(x.id) ?? approx.get(x.id);
+      const ll = plotCentres.get(x.id) ?? views.get(x.id) ?? prevSectorById.get(x.id)?.c ?? approx.get(x.id);
       if (ll) x.c = [round(ll[0], 5)!, round(ll[1], 5)!];
     }
-    meta.cities = cities;
+    meta.cities = cityNames;
     meta.sectors = sectors;
-    meta.zones = zones;
+    meta.zones = zoneNames;
 
-    // 6. chunk + write only what changed
+    // 6. market, batches, zone states
+    const booked = records.filter((r) => r.state === 1).length;
+    const held = records.filter((r) => r.state === 2).length;
+    // First run after the switch: seed the per-day counts from the old snapshot, preferring its per-batch bookings
+    // (the tracker's booking timestamps were bulk-stamped on some days) over the timestamps.
+    const seeded = prev.bookingsByDay ?? seedBookingsByDay(prevRecords, now, prev.allocations);
+    const bookingsByDay = bumpBookingsByDay(seeded, result.newlyBooked, now);
+    meta.bookingsByDay = bookingsByDay;
+    meta.allocations = synthesizeAllocations(meta.officialNews ?? [], bookingsByDay, now);
+    const oq = meta.officialNews?.length ? officialQueue(meta.officialNews, now) : null;
+    meta.market = {
+      total: records.length,
+      booked,
+      available: records.length - booked,
+      held,
+      allocatedCodes: oq?.issuedThrough ?? prev.market.allocatedCodes ?? null,
+      sourceLastUpdate: now.toISOString(),
+    };
+    meta.official = { zonesAt, zonesError, unmapped: derived.unmapped, zones: zoneStates };
+
+    // 7. chunk + write only what changed
     const groups: PlotTuple[][] = Array.from({ length: CHUNK_COUNT }, () => []);
     for (const t of tuples) groups[chunkOf(t[0])].push(t);
-    // Index tables are part of a chunk's meaning, so include them in its version.
-    const tablesHash = hashString(JSON.stringify([cities, sectors, zones]));
+    const tablesHash = hashString(JSON.stringify([cityNames, sectors, zoneNames]));
     const prevChunks = new Map(prev.chunks.map((c) => [c.id, c]));
     const writes: Record<string, ChunkDoc> = {};
     meta.chunks = [];
@@ -353,79 +389,38 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       meta.chunks.push({ id, v: version, n: groups[i].length });
     }
     meta.dataVersion = hashString(meta.chunks.map((c) => c.v).join("|") + JSON.stringify(meta.allocations));
-    meta.fullSyncAt = now.toISOString();
+    meta.statsAt = now.toISOString();
+    // The inventory is complete as of the oldest zone refresh; zones rotate across runs, so this lags a run or two.
+    const oldest = zoneStates.reduce<string | null>((m, z) => (z.lastOkAt == null ? "" : m == null || z.lastOkAt < m ? z.lastOkAt : m), null);
+    if (oldest) meta.fullSyncAt = oldest;
     meta.lastError = null;
-    await store.commit(writes, meta);
-    log(
-      `full sync: ${plots.length} plots, +${d.inserted.length} new, ${d.newlyBooked.length} newly booked, ${d.newlyAvailable.length} re-available, ${result.changedChunks.length} chunk(s) written${result.osmRefreshed ? ", OSM refreshed" : ""}`,
-    );
+    result.durationMs = Date.now() - t0;
+    const summary = `${result.mode}: ${records.length} plots (${booked} booked, ${held} held), +${result.inserted} new, ${result.newlyBooked} newly booked, ${result.newlyAvailable} re-available, ${result.changedChunks.length} chunk(s) changed, ${Math.round(result.durationMs / 1000)}s`;
+    if (opts.dryRun) {
+      log(`DRY RUN ${summary}`);
+      const perCity = new Map<string, { total: number; booked: number; held: number; newly: number; inserted: number }>();
+      for (const r of records) {
+        const c = perCity.get(r.cityName) ?? { total: 0, booked: 0, held: 0, newly: 0, inserted: 0 };
+        c.total++;
+        if (r.state === 1) c.booked++;
+        if (r.state === 2) c.held++;
+        if (derived.newlyBooked.includes(r.id)) c.newly++;
+        if (insertedIds.has(r.id)) c.inserted++;
+        perCity.set(r.cityName, c);
+      }
+      for (const [city, c] of [...perCity].sort((a, b) => b[1].total - a[1].total)) log(`  ${city}: ${c.total} plots, ${c.booked} booked, ${c.held} held, ${c.newly} newly booked, ${c.inserted} new`);
+      log(`  previous market: ${JSON.stringify(prev.market)}`);
+      return result;
+    }
+    await store.commit(writes, stripUndefined(meta));
+    log(summary);
     return result;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log("sync failed:", msg);
-    // Record the failure but keep the last good data (and its timestamps) untouched.
-    await store.putMeta({ ...prev, ...(prev.chunks.length ? {} : meta), lastError: msg.slice(0, 500), lastErrorAt: now.toISOString() }).catch(() => {});
+    result.durationMs = Date.now() - t0;
+    // Record the failure but keep the last good data (and its timestamps) untouched; the news step still lands.
+    if (!opts.dryRun) await store.putMeta(stripUndefined({ ...prev, ...(prev.chunks.length ? {} : meta), ...news.patch, lastError: msg.slice(0, 500), lastErrorAt: now.toISOString() })).catch(() => {});
     return { ...result, error: msg };
   }
-}
-
-/** Source values win; the booklet table only fills fields the source leaves empty. */
-function mergeRules(src: BuildingRules | undefined, booklet: BuildingRules): BuildingRules {
-  if (!src) return { ...booklet, from: "booklet" };
-  const r = { ratio: src.ratio ?? booklet.ratio, floors: src.floors ?? booklet.floors, setbacks: src.setbacks ?? booklet.setbacks };
-  const filled = r.ratio !== src.ratio || r.floors !== src.floors || r.setbacks !== src.setbacks;
-  return { ...r, from: filled ? "booklet" : "source" };
-}
-
-async function computeOsmDistances(
-  plots: NormalizedPlot[],
-  fetchBuilt: (centers: LatLng[]) => Promise<LatLng[]>,
-  fetchRoads: (centers: LatLng[]) => Promise<Segment[]>,
-  log: (...a: unknown[]) => void,
-  sleep: (ms: number) => Promise<void>,
-  views: Map<string, LatLng>,
-) {
-  const byCity = new Map<string, NormalizedPlot[]>();
-  for (const p of plots) {
-    if (!byCity.has(p.cityName)) byCity.set(p.cityName, []);
-    byCity.get(p.cityName)!.push(p);
-  }
-  const out = new Map<string, { km: number | null; src: 0 | 1 | 2 }>();
-  const roadOut = new Map<string, number | null>();
-  const failedCities: string[] = [];
-  let first = true;
-  for (const [city, ps] of byCity) {
-    // Plot centroids first; the source's map view fills sectors with no located plots.
-    const sectorIds = new Set(ps.map((p) => p.projectId));
-    const centres = new Map([...views].filter(([id]) => sectorIds.has(id)));
-    for (const [id, c] of sectorCentroids(ps)) centres.set(id, c);
-    const centers = [...centres.values()];
-    if (!centers.length) {
-      for (const p of ps) out.set(p.id, { km: null, src: 2 });
-      continue;
-    }
-    if (!first) await sleep(5000);
-    first = false;
-    try {
-      const t0 = Date.now();
-      const points = await fetchBuilt(centers);
-      log(`OSM ${city}: ${centers.length} district(s), ${points.length} built points, ${Math.round((Date.now() - t0) / 1000)}s`);
-      for (const [id, v] of computeBuiltDistances(ps, buildIndex(points), centres)) out.set(id, v);
-    } catch (e) {
-      // Keep this city's previous distances; retry on the next run.
-      failedCities.push(city);
-      log(`OSM ${city} failed:`, e instanceof Error ? e.message : e);
-      continue;
-    }
-    await sleep(5000);
-    try {
-      const segs = await fetchRoads(centers);
-      log(`OSM ${city}: ${segs.length} main-road segments`);
-      for (const [id, m] of computeRoadDistances(ps, buildRoadIndex(segs))) roadOut.set(id, m);
-    } catch (e) {
-      failedCities.push(city);
-      log(`OSM roads ${city} failed:`, e instanceof Error ? e.message : e);
-    }
-  }
-  return { distances: out, roadDistances: roadOut, failedCities };
 }

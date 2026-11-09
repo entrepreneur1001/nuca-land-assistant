@@ -53,4 +53,9 @@ export function areaHref(city: string, districtId?: string | null): string {
 export const OFFICIAL = {
   portal: "https://lands.nuca.gov.eg/",
   nuca: "https://www.nuca.gov.eg/",
+  /** Official news list (daily booking-code announcements). */
+  news: "https://lands.nuca.gov.eg/ar/NewsList.aspx",
+  newsItem: (nid: number) => `https://lands.nuca.gov.eg/ar/NewsItemViewer.aspx?NID=${nid}`,
+  /** The official plot table of a zone. */
+  zone: (zid: number) => `https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID=${zid}`,
 };

@@ -149,7 +149,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                       {num(l.area)} {t.card.m2} · {t.card.dp} {usd(l.downPayment)} · 🏘️ {km(l.builtKm)}
                     </div>
                   </div>
-                  <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} />
+                  <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} held={l.held} />
                   <SurvivalBar {...l.survival} />
                   <span className="text-center" title={t.card.scoreHint}>
                     <span className="font-bold">{num(l.score)}</span>

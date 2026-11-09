@@ -57,12 +57,15 @@ export function FeatureBadges({
   nearBuilt,
   street,
   units,
+  held,
 }: {
   garden: boolean;
   corner: boolean;
   sea?: boolean;
   nearBuilt?: boolean;
   street?: boolean;
+  /** Someone filed a preliminary booking on the official site; still bookable. */
+  held?: boolean;
   /** Apartments per floor; badged when 3 or more. null = city-set per plot (New Alamein), no badge. */
   units?: number | null;
 }) {
@@ -74,6 +77,11 @@ export function FeatureBadges({
       {units && units >= 3 ? <Badge tone="good">{t.badge.units(units)}</Badge> : null}
       {nearBuilt ? <Badge tone="warn">{t.badge.nearBuilt}</Badge> : null}
       {sea ? <Badge tone="accent">{t.badge.sea}</Badge> : null}
+      {held ? (
+        <span title={t.badge.heldHint}>
+          <Badge tone="warn">{t.badge.held}</Badge>
+        </span>
+      ) : null}
     </span>
   );
 }

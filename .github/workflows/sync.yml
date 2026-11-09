@@ -1,20 +1,26 @@
-# Data sync. The real trigger is cron-job.org (see README "Data sync"): it POSTs to
-#   https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches
+# Data sync from the official NUCA site (lands.nuca.gov.eg). The real trigger is cron-job.org (see README "Data sync"):
+# it POSTs to https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches
 # every 15 min Sunday–Thursday 10:00–22:00 Africa/Cairo, and hourly otherwise.
 # GitHub's own `schedule` is best-effort (observed gaps of 2–6 h with "*/15"), so it is only a backup.
+# A run crawls ~110 zone tables and takes 4–8 minutes; a dispatch that lands during a run queues behind it.
 name: Sync NUCA data
 
 on:
   schedule:
     - cron: "23 * * * *" # hourly backup, any day; cron-job.org drives the 15-minute cadence
+    - cron: "17 1 * * *" # 03:17 Cairo: full pass (booked views too)
   workflow_dispatch:
     inputs:
       full:
-        description: "Force full plot sync"
+        description: "Also crawl the booked views"
         type: boolean
         default: false
-      osm:
-        description: "Force OpenStreetMap refresh"
+      zones:
+        description: "Re-discover the zone list"
+        type: boolean
+        default: false
+      accept_large:
+        description: "Accept a run that marks more than the safety limit of plots booked"
         type: boolean
         default: false
 
@@ -26,7 +32,6 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # Runs take 1.5–20 min; a hung run must not block more than one or two 15-minute slots.
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -38,5 +43,8 @@ jobs:
       - name: Sync into Firestore
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          SOURCE_REFRESH_TOKEN: ${{ secrets.SOURCE_REFRESH_TOKEN }}
-        run: npx tsx scripts/ingest.mts ${{ inputs.full && '--full' || '' }} ${{ inputs.osm && '--osm' || '' }}
+        run: >
+          npx tsx scripts/ingest.mts
+          ${{ (inputs.full || github.event.schedule == '17 1 * * *') && '--full' || '' }}
+          ${{ inputs.zones && '--zones' || '' }}
+          ${{ inputs.accept_large && '--accept-large' || '' }}

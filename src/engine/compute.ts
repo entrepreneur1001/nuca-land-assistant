@@ -53,9 +53,11 @@ export interface Computed {
 
 /**
  * The sync runs every 15 min inside the Cairo working window and hourly outside it (see MODEL.syncWindowHours),
- * and either trigger can be delayed a little; the stale threshold allows for that.
+ * and either trigger can be delayed a little; the stale threshold allows for that. Every run refreshes the plot
+ * statuses, but a zone that keeps failing holds back the full-sync stamp, so the full-sync limit is generous: a
+ * single failing zone must not flag the whole site stale.
  */
-export const FRESHNESS = { staleAfterMs: 45 * 60_000, offHoursStaleAfterMs: 90 * 60_000, maxFullSyncMs: 2 * 3600_000 };
+export const FRESHNESS = { staleAfterMs: 45 * 60_000, offHoursStaleAfterMs: 90 * 60_000, maxFullSyncMs: 3 * 3600_000 };
 export function freshnessFor(now: Date): { staleAfterMs: number; maxFullSyncMs: number } {
   return { staleAfterMs: inSyncWindow(now) ? FRESHNESS.staleAfterMs : FRESHNESS.offHoursStaleAfterMs, maxFullSyncMs: FRESHNESS.maxFullSyncMs };
 }
@@ -110,6 +112,7 @@ export function computeDashboard(snap: Snapshot, profile: Profile, nowMs = Date.
     available,
     allocations: meta.allocations.map((a) => ({ issueDate: new Date(a.d), totalCodes: a.c, plotsBooked: a.b })),
     allocatedCodes: meta.market.allocatedCodes,
+    official: meta.officialNews,
     now,
   });
 

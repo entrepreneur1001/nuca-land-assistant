@@ -176,6 +176,7 @@ function Row({ plot: p, r, showDistrict, onHover }: { plot: Plot; r?: RankedLand
           sea={p.seaPct > 0}
           nearBuilt={r?.isNearBuilt}
           units={unitsRule(p.area, p.cityName)}
+          held={p.held}
         />
         {r ? <SurvivalBar {...r.survival} /> : null}
         {r ? <RecBadge rec={r.recommendation} /> : null}

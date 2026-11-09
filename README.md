@@ -7,8 +7,8 @@ A public, Arabic (Egyptian), phone-friendly site that answers:
 Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the sync, triggered by **cron-job.org** every 15 minutes during Cairo working hours.
 
 ```
-baytwaten4all API ─┐
-OpenStreetMap ─────┤→ cron-job.org → GitHub Actions (every 15 min Sun–Thu 10–22 Cairo; hourly otherwise) → Firestore (meta + 8 gzipped plot chunks, AI cache)
+lands.nuca.gov.eg (official: zone tables + news) ─┐
+OpenStreetMap (only for plots new to the snapshot) ┤→ cron-job.org → GitHub Actions (every 15 min Sun–Thu 10–22 Cairo; hourly otherwise) → Firestore (meta + 8 gzipped plot chunks, AI cache)
                                                           ↓ public read
           Firebase Hosting (static Next.js export) → the visitor's browser computes the ranking (Web Worker)
                                                    ↳ Gemini via Firebase AI Logic (App Check / Fraud Defense)
@@ -17,21 +17,22 @@ OpenStreetMap ─────┤→ cron-job.org → GitHub Actions (every 15 mi
 
 No Gemini API key is used or stored anywhere. AI Logic calls Gemini on behalf of the Firebase project.
 
-The site is **read-only**. It never logs in to NUCA or books anything. Each visitor's settings (rank, amount paid, preferences) live only in their own browser (localStorage, shareable via a link).
+The site is **read-only**. It reads the public pages of NUCA's official lands portal, never logs in and never books anything. Each visitor's settings (rank, amount paid, preferences) live only in their own browser (localStorage, shareable via a link).
 
 ## Develop
 
 ```bash
 npm install
-npm run sync:local -- --full   # fetch all plots + OSM into public/dev-snapshot (no Firebase needed; first run 10–30 min because of OSM)
-npm run dev:local              # http://localhost:3000 reading the local snapshot
-npm test                       # 51 tests
+npx tsx scripts/tools/pull-snapshot.mts   # copy the production snapshot into public/dev-snapshot (ids, coordinates, history)
+npm run sync:local -- --dry-run           # crawl the official site and print what would change, write nothing
+npm run sync:local                        # update public/dev-snapshot from the official site (~7 min for 111 zones, no credentials)
+npm run dev:local                         # http://localhost:3000 reading the local snapshot
+npm test
 ```
 
 `npm run dev` (without `:local`) reads the live Firestore.
 
-Seed Firestore from a local snapshot (saves the first OSM runs):
-`GOOGLE_APPLICATION_CREDENTIALS=service-account.json npx tsx scripts/seed-from-local.mts`
+Seed Firestore from a local snapshot: `GOOGLE_APPLICATION_CREDENTIALS=service-account.json npx tsx scripts/seed-from-local.mts`
 
 ## Setup (one time)
 
@@ -59,9 +60,10 @@ GitHub's own `schedule:` cron is **not** the trigger: GitHub runs scheduled work
 
 ```bash
 gh secret set FIREBASE_SERVICE_ACCOUNT < service-account.json
-gh secret set SOURCE_REFRESH_TOKEN                     # paste the OAuth refresh token; it is rotated into Firestore `private/sourceAuth` after the first run
-gh workflow run sync.yml -f full=true -f osm=true     # first seed
+gh workflow run sync.yml -f full=true                  # a full pass (available + booked views)
 ```
+
+The official site needs no credentials. (Until Nov 2026 the data came from a third-party tracker with an OAuth token; that secret and the `private/sourceAuth` document are gone.)
 
 ### One-time trigger setup
 
@@ -77,27 +79,46 @@ gh workflow run sync.yml -f full=true -f osm=true     # first seed
 
 The token lives only in cron-job.org. Nothing secret is stored in this repo.
 
-Resilience built into each run: the source's OAuth token endpoint is retried with backoff on outages (5xx/network), parallel requests share one token exchange (refresh tokens are single-use), and a failed run keeps the last good data and records `lastError` in `meta/current`. The site's "stale" badge allows 45 minutes inside the window and 90 minutes outside it (`src/engine/compute.ts`).
+### The official source
 
-Each run:
-1. Polls the source's stats (tiny).
-2. If anything changed, or 2 h have passed, re-downloads all plots (16 pages, 1 s apart). The data is validated with zod, and partial snapshots are rejected, so missing plots are never marked booked.
-3. Queries **OpenStreetMap Overpass** for existing buildings and developed land within 5 km of each district centre. It computes each plot's distance to the nearest one. Plots without coordinates use their district's centre.
-   - Each run refreshes at most 3 cities, choosing those whose data is older than 7 days or that gained new plots. That keeps every run short.
-   - If a city's query fails, that city keeps its previous distances.
-   - The same run also fetches main roads (3 km around each district centre) for the plot → main-road distance.
-4. Fills building rules (الاشتراطات البنائية) the source leaves empty from `src/data/building-rules.ts`. That table is copied from NUCA's official 11th-phase terms booklet (lands.nuca.gov.eg/Files/Handbook.pdf). Source values always win, field by field.
-5. Writes **only the chunks whose content changed**, plus `meta/current`. That's ~100–300 writes/day.
+[lands.nuca.gov.eg](https://lands.nuca.gov.eg/) is an ASP.NET WebForms site whose public pages carry everything the app needs, except coordinates:
 
-A district's map position comes from its located plots, else `src/data/sector-views.ts`, else the source's tile bounds. When districts stay unplaced, `gh workflow run probe.yml` (`scripts/tools/sector-tiles-probe.mts`) prints what the source's per-district tile endpoints return for them; on 2026-11-05 all 15 unplaced districts had no tiles and no bounds on the source either.
+- **Zone tables.** Cities (`Cities.aspx/GetSiteCities`) → projects marked available for this phase (`ViewCity.aspx`) → zones (`ViewProject.aspx`) → `ViewZone.aspx?ID=<zid>`: a 20-row paged table (square «المربع», plot number, area, base price/m², corner/garden/sea premiums, final price/m², total, down payment, status; prices in USD) plus the zone's EGP price per m². Paging and the available/booked toggle are form postbacks with the page's `__VIEWSTATE`. 111 zones in Nov 2026.
+- **Three plot states.** In the available view the status label is empty (free) or «حجز مبدئى» (someone filed a preliminary booking request; the plot is still bookable and the first down-payment transfer wins). The booked view lists «غير متاحة» plots. The app keeps all three: `held` plots count as available, show a ⏳ badge and are not scored differently (yet).
+- **News.** `NewsList.aspx` posts a daily item such as «تم الانتهاء من التسجيلات حتى مسلسل 10000 … بدء من مسلسل 10001 حتى مسلسل 10700 غدا …»: the serial («مسلسل», the applicant's rank) through which booking codes were issued and the next day's range. `src/ingest/nuca-news.ts` parses them; they are the only source of codes issued and batch size.
+- **Fetching rules.** Unknown paths and HEAD requests answer `302 → Error.aspx`, which then returns HTTP 200 with an error text, so a redirect is a failure and success means "a table/news list parsed". Requests are paced (500 ms, 2 zones at a time) and retried with backoff.
+
+The site publishes **no coordinates, no booking timestamps and no per-batch bookings**. Phase 11 is closed (NUCA announced there will be no complementary phase), so those come from the snapshot built before Nov 2026 and are frozen by plot id: `src/data/official-zones.ts` maps every official square to the district/zone of that snapshot, so plot ids, URLs, coordinates and OpenStreetMap distances stay valid. Booking times are now the first run that saw the plot booked.
+
+### Each run
+
+1. Fetches the news list and merges new items (by `NID`) into `meta.officialNews`. A failure here never fails the run.
+2. Uses the cached zone list, re-discovering it once a day (or with `--zones`).
+3. Crawls the **available view of every zone**, stalest first, within a 13-minute budget (`--full`, run nightly at 03:17 Cairo, also crawls the booked views). A zone whose pages did not all parse is skipped as a whole: its plots keep their previous status. Zones not reached wait for the next run, which starts with them. Each request times out after 15 s (the site occasionally hangs a connection), so a bad zone costs seconds, not minutes.
+4. Derives statuses: a known plot missing from its zone's available view is booked (timestamp = now); rows present take their label (free/held) and the official prices. Unknown squares get deterministic new ids with no coordinates. Safety gates: zero zones crawled → the run fails and keeps the last good data; more than 1,500 newly booked plots in one run → refused unless `--accept-large`; no previous snapshot → refused unless `--bootstrap`.
+5. For plots new to the snapshot, queries **OpenStreetMap Overpass** for buildings around their district centre (`src/data/sector-views.ts`, the previous centre, or `src/data/district-centres.ts`). Existing plots keep their stored distances.
+6. Fills building rules (الاشتراطات البنائية) from `src/data/building-rules.ts`, copied from NUCA's 11th-phase terms booklet (lands.nuca.gov.eg/Files/Handbook.pdf).
+7. Synthesizes the daily code batches from the news (`meta.allocations`: codes = the announced range, bookings = plots seen booked that Cairo day, `meta.bookingsByDay`) and writes **only the chunks whose content changed**, plus `meta/current` (`statsAt` = this run; `fullSyncAt` = the oldest zone's last successful refresh, i.e. the moment the whole inventory is complete as of).
+
+A failed run keeps the last good data and records `lastError` in `meta/current`. The site's "stale" badge allows 45 minutes inside the window and 90 minutes outside it, and 3 hours without a complete pass (`src/engine/compute.ts`).
+
+### Bootstrap / regenerating the mapping
+
+```bash
+npx tsx scripts/tools/pull-snapshot.mts                                   # production snapshot → public/dev-snapshot
+npx tsx scripts/tools/crawl-official.mts --out /tmp/official-plots.json  # every zone, both views (~40 min)
+npx tsx scripts/tools/build-official-zones.mts /tmp/official-plots.json --write   # prints the review report, writes src/data/official-zones.ts
+npm run sync:local -- --dry-run                                           # compare counts with the previous market before deploying
+```
 
 ## Model
 
 All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 
 - **Queue:**
-  - People ahead = rank − booking codes issued. Codes go out in one batch per working day, Sunday–Thursday in Cairo time (Friday and Saturday are off; public holidays are not modelled). Batches were 200 codes, 300 from 1 Oct 2026 and 700 from 8 Nov 2026. An announced size (`MODEL.announcedBatchSizes`) applies as a floor from its date even before the source reports such a batch; a larger synced batch wins.
-  - Conversion = booked ÷ codes for recently completed batches (~60–71%).
+  - People ahead = rank − booking codes issued. Codes go out in one batch per working day, Sunday–Thursday in Cairo time (Friday and Saturday are off; public holidays are not modelled). Batches were 200 codes, 300 from 1 Oct 2026 and 700 from 8 Nov 2026.
+  - Codes issued, the batch size and the next batch day come from the **official news** (`officialQueue` in `src/engine/queue.ts`): the latest «حتى مسلسل N» and the announced «من A حتى B» range, which counts as issued from its announced hour (default 11:00 Cairo). When the synthesized batches are newer than the latest news item, they are used instead. With no data at all the fallback is 700 codes per batch.
+  - Conversion = booked ÷ codes for recently completed batches (~60–71%), where "booked" is the plots seen booked on the batch's Cairo day.
   - Bookings before your turn = people ahead × conversion, plus pending bookings from people already called: today's batch still booking, and a share (10% expected, 25% worst) of earlier code holders who haven't booked and may book late (`MODEL.lateBookingShare`).
   - The ETA walks the working-day calendar. The expected and worst cases keep the latest batch size; the best case assumes NUCA grows batches by a third (700 → 933).
 - **Depletion:**
@@ -147,11 +168,14 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 |---|---|---|
 | Firestore reads | 50k/day | ~10 per first visit, 1–3 per return visit (chunks cached by version in IndexedDB) |
 | Firestore writes | 20k/day | ~100–300/day |
+| GitHub Actions | 2,000 min/month on private repos; free on public | ~60 runs/day × ~7 min (public repo) |
 | Egress | ~10 GiB/month | ~1 MB per first visit (gzipped chunks) |
 | Hosting transfer | 360 MB/day | ~0.5 MB of JS/CSS per first visit |
 
 ## Caveats
 
-- The data comes from a third-party tracker of the official NUCA inventory. Verify a plot on the NUCA site before booking.
+- The data is read from the public pages of the official NUCA site every 15 minutes; a plot can still be taken between two runs. Verify a plot on the NUCA site before booking.
+- "Booked" means the plot is not offered right now; NUCA cancels preliminary bookings whose transfer never arrives, so a plot can come back. «حجز مبدئى» (⏳) means someone has a pending request on it; you can still book it, the first transfer wins.
+- Booking times before Nov 2026 come from the earlier snapshot; later ones are the sync run that first saw the plot booked (15-minute resolution).
 - "Codes are issued in rank order" and the conversion rates are inferred, not published by NUCA.
 - OpenStreetMap coverage in new cities is incomplete. The distance shown is to the nearest *mapped* building.

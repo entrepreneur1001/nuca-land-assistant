@@ -6,6 +6,7 @@ import type { AiResponse } from "@/ai/schema";
 import { MODEL } from "@/engine/config";
 import { ago, date, num, pct, t, usd } from "@/i18n/ar";
 import { analyze, cooldownLeft } from "@/lib/ai";
+import { OFFICIAL } from "@/lib/phases";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
 import { ProfileCard } from "./profile-card";
@@ -131,7 +132,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <RecBadge rec={topChoice.recommendation} />
-                  <FeatureBadges garden={topChoice.hasGarden} corner={topChoice.hasCorner} street={topChoice.hasStreet} nearBuilt={topChoice.isNearBuilt} units={topChoice.unitsPerFloor} />
+                  <FeatureBadges garden={topChoice.hasGarden} corner={topChoice.hasCorner} street={topChoice.hasStreet} nearBuilt={topChoice.isNearBuilt} units={topChoice.unitsPerFloor} held={topChoice.held} />
                   <span className="text-xs">
                     {t.card.score} {num(topChoice.score)}/١٠٠
                   </span>
@@ -170,7 +171,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
               </div>
               <div className="mt-2">
-                <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} sea={l.seaPct > 0} />
+                <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} sea={l.seaPct > 0} held={l.held} />
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs">
                 <dt className="text-muted">{t.card.area}</dt>
@@ -202,7 +203,20 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
           <summary className="cursor-pointer text-sm font-semibold">{t.how.title}</summary>
           <div className="mt-2 space-y-2 text-sm text-muted">
             <p>{t.how.queue(q.codesPerBatch.mid, q.batchesPerWeek, q.codesIssued, pct(q.conversion.low), pct(q.conversion.high), pct(q.conversion.mid))}</p>
-            {q.announcedBatch ? <p>{t.how.announced(q.announcedBatch.codes, date(new Date(q.announcedBatch.from)))}</p> : null}
+            {q.official ? (
+              <p>
+                {q.official.applied
+                  ? t.how.official(
+                      q.official.issuedThrough,
+                      date(new Date(q.official.day)),
+                      q.official.next ? { ...q.official.next, day: date(new Date(q.official.next.day)) } : null,
+                    )
+                  : t.how.officialStale(date(new Date(q.official.day)))}{" "}
+                <a className="text-accent hover:underline" href={OFFICIAL.newsItem(q.official.nid)} target="_blank" rel="noreferrer">
+                  {t.how.officialLink} ↗
+                </a>
+              </p>
+            ) : null}
             {q.unbookedCodes > 0 ? <p>{t.how.late(q.unbookedCodes, pct(MODEL.lateBookingShare.mid), pct(MODEL.lateBookingShare.high))}</p> : null}
             <p>{t.how.demand(d.featureWeights.gardenCorner, d.featureWeights.garden, d.featureWeights.corner)}</p>
             <p>{t.how.nearBuilt}</p>
@@ -292,7 +306,7 @@ function AiPanel() {
                         · <AreaLink city={l.cityName} district={l.projectId}>{l.projectName}</AreaLink> · <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
                       </span>
                       <RecBadge rec={r.recommendation} />
-                      <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} />
+                      <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} held={l.held} />
                       <span className="text-xs text-muted">
                         {t.ai.confidence} {pct(r.confidence)}
                       </span>

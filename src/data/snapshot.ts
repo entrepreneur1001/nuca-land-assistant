@@ -19,6 +19,41 @@ export interface BuildingRules {
   from?: "source" | "booklet";
 }
 
+/** One item of the official NUCA news list (lands.nuca.gov.eg/ar/NewsList.aspx), parsed by src/ingest/nuca-news.ts. */
+export interface OfficialNewsItem {
+  /** NewsItemViewer.aspx?NID=… (stable, monotonic). */
+  nid: number;
+  /** Publication date "YYYY-MM-DD" (Cairo calendar). */
+  day: string;
+  title: string;
+  /** Brief, tags stripped, entities decoded, ≤ 300 chars; omitted when empty or equal to the title. */
+  text?: string;
+  /** «تم الانتهاء … حتى مسلسل N»: booking codes issued through serial (rank) N as of `day`. */
+  servedThrough?: number;
+  /** «بدء من مسلسل A حتى مسلسل B غدا/اليوم …»: the next batch. `to`/`day`/`hour` are null when the text lacks them. */
+  next?: { from: number; to: number | null; day: string | null; hour: number | null };
+}
+
+/** One zone of the official site (ViewZone.aspx?ID=zid) and when it was last crawled. */
+export interface OfficialZoneState {
+  zid: number;
+  pid: number;
+  cityId: number;
+  /** City name as in `MetaDoc.cities`. */
+  city: string;
+  /** Zone name from the project page. */
+  name: string;
+  /** EGP per m² shown on the zone page; null when missing. */
+  egpPerM: number | null;
+  /** Plots known in this zone. */
+  n?: number;
+  /** Last successful crawl of the available view / of both views. */
+  lastOkAt: string | null;
+  lastFullAt?: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+}
+
 export interface MetaDoc {
   schema: number;
   dataVersion: string;
@@ -30,8 +65,32 @@ export interface MetaDoc {
   lastError: string | null;
   lastErrorAt: string | null;
   source: { name: string; url: string };
-  market: { total: number; booked: number; available: number; allocatedCodes: number | null; sourceLastUpdate: string | null };
+  market: {
+    total: number;
+    booked: number;
+    available: number;
+    /** Available plots on which someone filed a preliminary booking («حجز مبدئى»); counted inside `available`. */
+    held?: number;
+    allocatedCodes: number | null;
+    sourceLastUpdate: string | null;
+  };
+  /** Daily booking-code batches: `d` issue time (ISO), `c` codes, `b` plots booked by those codes (null = unknown). */
   allocations: { id: string; d: string; c: number; b: number | null }[];
+  /** Official site crawl state (lands.nuca.gov.eg). */
+  official?: {
+    zonesAt: string | null;
+    zonesError?: string | null;
+    /** Plots whose zone has no official counterpart; their status is frozen. */
+    unmapped?: number;
+    zones: OfficialZoneState[];
+  };
+  /** Newest official news items (by NID desc, ≤ 30), merged across runs; raw HTML is never stored. */
+  officialNews?: OfficialNewsItem[];
+  officialAt?: string | null;
+  officialError?: string | null;
+  officialErrorAt?: string | null;
+  /** Plots observed newly booked per Cairo day ("YYYY-MM-DD"), last 45 days. */
+  bookingsByDay?: Record<string, number>;
   cities: string[];
   sectors: {
     id: string;
@@ -63,7 +122,8 @@ export type PlotTuple = [
   sea: number,
   lat: number | null,
   lng: number | null,
-  booked: 0 | 1,
+  /** 0 free, 1 booked, 2 available but with a preliminary booking request on it («حجز مبدئى»). */
+  booked: 0 | 1 | 2,
   bookingTs: number,
   builtKm: number | null,
   builtSrc: 0 | 1 | 2,
@@ -91,6 +151,8 @@ export interface Plot {
   /** Approximate position (its sector's centre) for plots without coordinates; null when unknown. */
   approxLoc: { lat: number; lng: number } | null;
   status: "available" | "booked";
+  /** Someone filed a preliminary booking («حجز مبدئى»): still bookable, the first down-payment transfer wins. */
+  held: boolean;
   bookingDate: string | null;
   /** km to the nearest existing building (OpenStreetMap); null = unknown */
   builtKm: number | null;
@@ -127,7 +189,8 @@ export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sector
     latitude: t[13],
     longitude: t[14],
     approxLoc: sector?.c ? { lat: sector.c[0], lng: sector.c[1] } : null,
-    status: t[15] ? "booked" : "available",
+    status: t[15] === 1 ? "booked" : "available",
+    held: t[15] === 2,
     bookingDate: t[16] ? new Date(t[16]).toISOString() : null,
     builtKm: t[17],
     builtSrc: t[18],

@@ -1,6 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { packTuples, tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple } from "@/data/snapshot";
-import { loadTuples, runSync, type ChunkDoc, type Store } from "@/ingest/run";
+import { createClient, crawlZone } from "@/ingest/nuca-plots";
+import { OFFICIAL_SITE, officialUrl } from "@/ingest/official";
+import { normalizeName, type OfficialZoneEntry } from "@/ingest/official-map";
+import { loadTuples, runSync, stripUndefined, type ChunkDoc, type RunOptions, type Store } from "@/ingest/run";
+import { recordToTuple, type PlotRecord } from "@/ingest/status";
+import { createFakeSite, genPlots, type FakeSiteData } from "./fake-site";
+
+const NEWS = readFileSync(path.join(__dirname, "fixtures/official/newslist.html"), "utf8");
+const T0 = new Date("2026-11-09T08:30:00Z"); // Mon 9 Nov 10:30 Cairo
+const later = (min: number) => new Date(T0.getTime() + min * 60_000);
+const CITY = "القاهرة الجديدة";
+const SQ = "الامتداد الجنوبى بالقرب من ديستركت 5";
 
 function memStore() {
   const chunks = new Map<string, ChunkDoc>();
@@ -22,275 +35,375 @@ function memStore() {
       writes++;
     },
   };
-  return { store, get meta() { return meta; }, get writes() { return writes; } };
+  return { store, get meta() { return meta; }, get writes() { return writes; }, chunks };
 }
 
-const plot = (i: number, booked = false) => ({
-  id: `id-${String(i).padStart(4, "0")}`,
-  externalPlotId: String(1000 + i),
-  plotNumber: String(i),
-  area: 500 + i,
-  totalPricePerMeter: 200,
-  totalPrice: (500 + i) * 200,
-  downPayment: ((500 + i) * 200) / 4,
-  corner: i % 3 === 0 ? 10 : 0,
-  gardenView: i % 5 === 0 ? 5 : 0,
-  seaOrNileView: 0,
-  cityName: i % 2 ? "مدينة أ" : "مدينة ب",
-  sectorId: `s${i % 4}`,
-  sectorName: `حي ${i % 4}`,
-  zoneName: `منطقة ${i % 6}`,
-  isBooked: booked,
-  bookingDate: booked ? "2026-10-06T10:00:00" : null,
-  geoJson: JSON.stringify({ type: "Feature", geometry: { type: "Polygon", coordinates: [[[31 + i / 1e4, 30], [31.0005 + i / 1e4, 30], [31.0005 + i / 1e4, 30.0005], [31 + i / 1e4, 30]]] } }),
+/** A tracker-era snapshot: GUID ids, coordinates, OSM distances, booking history. */
+async function seedStore(m: ReturnType<typeof memStore>, records: PlotRecord[], extra: Partial<MetaDoc> = {}) {
+  const cities = [...new Set(records.map((r) => r.cityName))];
+  const sectorIds = [...new Set(records.flatMap((r) => (r.sectorId ? [r.sectorId] : [])))];
+  const zones = [...new Set(records.flatMap((r) => (r.zoneName ? [r.zoneName] : [])))];
+  const tuples = records.map((r) => recordToTuple(r, cities.indexOf(r.cityName), r.sectorId ? sectorIds.indexOf(r.sectorId) : -1, r.zoneName ? zones.indexOf(r.zoneName) : -1));
+  const data = await packTuples(tuples);
+  const meta: MetaDoc = {
+    schema: 1,
+    dataVersion: "seed",
+    statsAt: "2026-11-09T06:00:00Z",
+    fullSyncAt: "2026-11-09T06:00:00Z",
+    osmAt: null,
+    lastError: null,
+    lastErrorAt: null,
+    source: { name: "old", url: "old" },
+    market: { total: records.length, booked: records.filter((r) => r.state === 1).length, available: records.filter((r) => r.state !== 1).length, allocatedCodes: 10000, sourceLastUpdate: null },
+    allocations: [],
+    cities,
+    sectors: sectorIds.map((id) => ({ id, name: records.find((r) => r.sectorId === id)!.sectorName ?? id, city: 0, hot: false, c: id === "sec-a" ? [30.01, 31.02] : undefined })),
+    zones,
+    chunks: [{ id: "c0", v: "seed", n: tuples.length }],
+    ...extra,
+  };
+  await m.store.commit({ c0: { version: "seed", n: tuples.length, data } }, stripUndefined(meta));
+}
+
+const rec = (plotNo: string, state: 0 | 1 | 2 = 0, extra: Partial<PlotRecord> = {}): PlotRecord => ({
+  id: `guid-${plotNo}`,
+  ext: null,
+  plotNo,
+  cityName: CITY,
+  sectorId: "sec-a",
+  sectorName: "الامتداد الجنوبى",
+  zoneName: SQ,
+  area: 500 + (Number(plotNo) % 7) * 10,
+  ppm: 450,
+  total: (500 + (Number(plotNo) % 7) * 10) * 450,
+  dp: ((500 + (Number(plotNo) % 7) * 10) * 450) / 4,
+  corner: 0,
+  garden: 0,
+  sea: 0,
+  lat: 30.01,
+  lng: 31.02,
+  state,
+  bookingTs: state === 1 ? Date.parse("2026-11-05T09:00:00Z") : 0,
+  builtKm: 0.8,
+  builtSrc: 0,
+  roadM: 25,
+  ...extra,
 });
 
-function fakeSource(n: number, bookedIds: Set<number>, opts: { failPage?: boolean; stats?: { booked: number } } = {}) {
-  const all = Array.from({ length: n }, (_, i) => plot(i, bookedIds.has(i)));
-  return async (path: string): Promise<unknown> => {
-    if (path.startsWith("/api/app/dashboard/dashboard-statistics"))
-      return { totalPlots: n, bookedPlots: opts.stats?.booked ?? bookedIds.size, availablePlots: n - (opts.stats?.booked ?? bookedIds.size), lastUpdate: "2026-10-07T10:00:00" };
-    if (path.startsWith("/api/app/dashboard/enhanced")) return { allocatedBookings: 600 };
-    if (path.startsWith("/api/app/dashboard/allocation-statistics")) return [{ allocationId: "a1", issueDate: "2026-10-05T00:00:00", totalCodesIssued: 300, plotsBooked: 200 }];
-    if (path.startsWith("/api/app/booking-allocation"))
-      return { totalCount: 2, items: [{ id: "a1", issueDate: "2026-10-05T00:00:00", totalCodes: 300 }, { id: "a2", issueDate: "2026-10-06T00:00:00", totalCodes: 300 }] };
-    if (path.startsWith("/api/app/sector")) return { totalCount: 1, items: [{ id: "s1", name: "حي 1", isHot: true, buildingRatio: "50 %", allowedFloors: "بدروم + أرضي + دورين", setbacks: "3م امامي -  5م خلفي" }] };
-    if (path.startsWith("/api/app/land-plot")) {
-      const skip = Number(/SkipCount=(\d+)/.exec(path)![1]);
-      const max = Number(/MaxResultCount=(\d+)/.exec(path)![1]);
-      if (opts.failPage && skip > 0) throw new Error("HTTP 503");
-      return { totalCount: n, items: all.slice(skip, skip + max) };
-    }
-    throw new Error(`unexpected ${path}`);
+const table: OfficialZoneEntry[] = [{ zid: 4797, pid: 2284, cityId: 1, city: CITY, name: "المرحلة الحادية عشر - الامتداد الجنوبى", squares: { [normalizeName(SQ)]: { sector: "sec-a", zone: SQ } } }];
+const officialCities = { 1: CITY, 9: "السادس من أكتوبر" };
+
+function siteData(plots = genPlots(45, { square: SQ, status: (i) => (i % 5 === 0 ? "held" : "free") })): FakeSiteData {
+  return {
+    cities: [
+      { id: 1, name: CITY },
+      { id: 9, name: "السادس من اكتوبر" },
+    ],
+    projects: {
+      2284: { cityId: 1, name: "المرحلة الحادية عشر - الامتداد الجنوبى", green: true, zones: [4797] },
+      57: { cityId: 1, name: "Cairo Walk", green: false, zones: [77] },
+      1277: { cityId: 9, name: "المرحلة الحادية عشر - الأرض 12", green: true, zones: [3789] },
+    },
+    zones: {
+      4797: { name: "الامتداد الجنوبى", egpPerM: 23455, plots },
+      77: { name: "قديم", egpPerM: null, plots: genPlots(3, { square: "x" }) },
+      3789: { name: "الأرض 12", egpPerM: 15000, plots: [] },
+    },
   };
 }
 
-// A main road running north–south along longitude 31.0003 (crosses the first plots).
-const road = [[[29.99, 31.0003], [30.01, 31.0003]]] as [[number, number], [number, number]][];
-const quiet = { log: () => {}, sleep: async () => {}, fetchMainRoads: async () => road };
-const osm = async () => [[30.0002, 31.0002]] as [number, number][];
+function harness(data = siteData(), news: string | null = NEWS) {
+  const site = createFakeSite(data);
+  const fetchHtml: NonNullable<RunOptions["fetchHtml"]> = async (url, init) => {
+    if (url === officialUrl.news()) {
+      if (news == null) throw new Error("news down");
+      return news;
+    }
+    return site.fetchHtml(url, init);
+  };
+  const opts: RunOptions = {
+    fetchHtml,
+    fetchJsonPost: site.fetchJsonPost,
+    fetchBuiltPoints: async () => [[30.0105, 31.0205]],
+    officialZones: table,
+    officialCities,
+    rulesOverrides: {},
+    sectorViews: {},
+    districtCentres: {},
+    delayMs: 0,
+    log: () => {},
+    sleep: async () => {},
+  };
+  return { site, opts };
+}
 
-describe("snapshot packing", () => {
-  it("round-trips tuples through gzip+base64", async () => {
-    const t: PlotTuple[] = [["a", null, "1", 0, -1, -1, 500, 200, 100000, 25000, 10, 0, 0, 30.1, 31.2, 1, 123, 0.5, 0]];
-    expect(await unpackTuples(await packTuples(t))).toEqual(t);
-    const p = tupleToPlot(t[0], { cities: ["مدينة"], sectors: [], zones: [] });
-    expect(p).toMatchObject({ cityName: "مدينة", status: "booked", projectId: null, builtKm: 0.5 });
-  });
+const limit = OFFICIAL_SITE.maxNewlyBookedPerRun;
+afterEach(() => {
+  OFFICIAL_SITE.maxNewlyBookedPerRun = limit;
 });
 
-describe("sync runner", () => {
-  it("first run writes every chunk; unchanged second run writes only meta", async () => {
+describe("sync runner (official site)", () => {
+  it("keeps ids, coordinates and history from the previous snapshot and applies the official statuses", async () => {
     const m = memStore();
-    const src = fakeSource(60, new Set([1, 2]));
-    const r1 = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    expect(r1.error).toBeUndefined();
-    expect(r1.mode).toBe("full");
-    expect(r1.osmRefreshed).toBe(true);
+    // 45 plots known; the site now lists 1..45 except 7 and 20 (booked), with every 5th held
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1), i + 1 === 3 ? 1 : 0)));
+    const data = siteData(genPlots(45, { square: SQ, status: (i) => (i % 5 === 0 ? "held" : "free") }).filter((p) => !["7", "20"].includes(p.plotNo)));
+    const { site, opts } = harness(data);
+    const r = await runSync(m.store, { ...opts, now: T0 });
+    expect(r.error).toBeUndefined();
+    expect(r.mode).toBe("status");
+    expect(r.zonesOk).toBe(2);
+    expect(r.inserted).toBe(0);
+    expect(r.newlyBooked).toBe(2);
+    expect(r.newlyAvailable).toBe(1); // plot 3 was booked in the snapshot but is offered again
+    expect(r.newlyBookedPlots.map((p) => p.plotNo).sort()).toEqual(["20", "7"]);
     const tuples = await loadTuples(m.store, m.meta!);
-    expect(tuples).toHaveLength(60);
-    expect(tuples.filter((x) => x[15] === 1)).toHaveLength(2);
-    expect(tuples.every((x) => x[17] != null)).toBe(true);
-    expect(m.meta!.allocations.map((a) => a.c)).toEqual([300, 300]);
-    expect(m.meta!.sectors.find((s) => s.id === "s1")?.hot).toBe(true);
-    // building regulations travel with the district and reach every plot in it
-    expect(m.meta!.sectors.find((s) => s.id === "s1")?.rules).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: "3م امامي - 5م خلفي" });
-    expect(m.meta!.sectors.find((s) => s.id === "s2")?.rules).toBeNull();
-    const plotInS1 = tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s1")!;
-    expect(tupleToPlot(plotInS1, m.meta!).rules?.floors).toBe("بدروم + أرضي + دورين");
-    // main-road distance per plot: plot 0 touches the road, plot 59 is ~570 m east of it (capped at 200)
-    const byNo = new Map(tuples.map((x) => [x[2], x]));
-    expect(byNo.get("0")![19]).toBe(0);
-    expect(byNo.get("59")![19]).toBe(200);
+    expect(tuples).toHaveLength(45);
+    const byNo = new Map(tuples.map((t) => [t[2], t]));
+    expect(byNo.get("7")![0]).toBe("guid-7");
+    expect(byNo.get("7")!.slice(13, 17)).toEqual([30.01, 31.02, 1, T0.getTime()]);
+    expect(byNo.get("7")![17]).toBe(0.8);
+    expect(byNo.get("1")![15]).toBe(2); // genPlots index 0 → held
+    expect(byNo.get("3")!.slice(15, 17)).toEqual([0, 0]);
+    expect(m.meta!.market).toMatchObject({ total: 45, booked: 2, available: 43, held: 9, allocatedCodes: 10700 });
+    expect(m.meta!.source.name).toBe("lands.nuca.gov.eg");
+    expect(m.meta!.statsAt).toBe(T0.toISOString());
+    expect(m.meta!.fullSyncAt).toBe(T0.toISOString());
+    expect(m.meta!.official!.zones.map((z) => z.zid).sort()).toEqual([3789, 4797]);
+    expect(m.meta!.official!.zones.find((z) => z.zid === 4797)).toMatchObject({ city: CITY, egpPerM: 23455, n: 45, lastOkAt: T0.toISOString(), lastError: null });
+    expect(m.meta!.official!.zones.find((z) => z.zid === 3789)!.city).toBe("السادس من أكتوبر");
+    // the official news drives the batches: codes issued through 10700 today, 700-code batches
+    expect(m.meta!.officialNews!.length).toBe(10);
+    expect(r.officialNew.length).toBe(10);
+    expect(m.meta!.allocations.at(-1)).toMatchObject({ id: "nid-9117", c: 700 });
+    expect(m.meta!.bookingsByDay).toEqual({ "2026-11-05": 1, "2026-11-09": 2 });
+    expect(site.requests.some((q) => q.url.includes("GetSiteCities"))).toBe(true);
+    const plot = tupleToPlot(byNo.get("1")!, m.meta!);
+    expect(plot).toMatchObject({ status: "available", held: true, projectId: "sec-a" });
+  });
 
+  it("refuses to start from nothing unless --bootstrap, then gives new plots deterministic ids", async () => {
+    const m = memStore();
+    const { opts } = harness();
+    const r = await runSync(m.store, { ...opts, now: T0 });
+    expect(r.error).toMatch(/bootstrap/);
+    expect(m.meta!.lastError).toMatch(/bootstrap/);
+    expect(m.meta!.officialNews!.length).toBe(10); // the news still landed
+    const r2 = await runSync(m.store, { ...opts, bootstrap: true, now: later(15) });
+    expect(r2.error).toBeUndefined();
+    expect(r2.inserted).toBe(45);
+    const tuples = await loadTuples(m.store, m.meta!);
+    expect(tuples.every((t) => t[0].startsWith("o4797-"))).toBe(true);
+    expect(tuples.every((t) => t[13] === null && t[18] !== 0)).toBe(true);
+    expect(m.meta!.sectors.map((s) => s.id)).toEqual(["sec-a"]);
+  });
+
+  it("a new booking rewrites only the affected chunk, and an unchanged run writes only meta", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 60 }, (_, i) => rec(String(i + 1))));
+    const { site, opts } = harness(siteData(genPlots(60, { square: SQ, status: () => "free" })));
+    await runSync(m.store, { ...opts, now: T0 });
     const before = m.writes;
-    const r2 = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:15:00Z") });
-    expect(r2.mode).toBe("stats");
+    const r = await runSync(m.store, { ...opts, now: later(15) });
+    expect(r.changedChunks).toEqual([]);
     expect(m.writes - before).toBe(1);
+    site.data.zones[4797].plots = site.data.zones[4797].plots.filter((p) => p.plotNo !== "9");
+    const r2 = await runSync(m.store, { ...opts, now: later(30) });
+    expect(r2.newlyBooked).toBe(1);
+    expect(r2.changedChunks).toHaveLength(1);
+    expect(m.meta!.bookingsByDay!["2026-11-09"]).toBe(1);
   });
 
-  it("a new booking rewrites only the affected chunk", async () => {
+  it("a zone whose pages fail keeps every status and records the error; the run still writes the others", async () => {
     const m = memStore();
-    await runSync(m.store, { ...quiet, fetchJson: fakeSource(60, new Set([1])), fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    const r = await runSync(m.store, { ...quiet, fetchJson: fakeSource(60, new Set([1, 7])), fetchBuiltPoints: osm, now: new Date("2026-10-07T10:15:00Z") });
-    expect(r.mode).toBe("full");
-    expect(r.newlyBooked).toBe(1);
-    expect(r.changedChunks).toHaveLength(1);
-    expect(r.osmRefreshed).toBe(false);
+    await seedStore(m, Array.from({ length: 30 }, (_, i) => rec(String(i + 1))));
+    const { site, opts } = harness(siteData(genPlots(10, { square: SQ, status: () => "free" })));
+    // every request to zone 4797 answers the error page (crawlZone retries once, then gives up)
+    site.failOnce("ViewZone.aspx?ID=4797", "no-table");
+    site.failOnce("ViewZone.aspx?ID=4797", "no-table");
+    const r = await runSync(m.store, { ...opts, now: T0 });
+    expect(r.error).toBeUndefined();
+    expect(r.zonesFailed).toBe(1);
+    expect(r.zonesOk).toBe(1);
+    expect(r.newlyBooked).toBe(0);
+    expect(m.meta!.official!.zones.find((z) => z.zid === 4797)).toMatchObject({ lastOkAt: null, lastErrorAt: T0.toISOString() });
+    expect(m.meta!.official!.zones.find((z) => z.zid === 4797)!.lastError).toBeTruthy();
+    expect(m.meta!.statsAt).toBe(T0.toISOString());
+    expect(m.meta!.fullSyncAt).toBe("2026-11-09T06:00:00Z");
+    expect((await loadTuples(m.store, m.meta!)).every((t) => t[15] === 0)).toBe(true);
+    // once the zone recovers, the complete-pass time is the oldest zone refresh
+    const r2 = await runSync(m.store, { ...opts, now: later(15) });
+    expect(r2.zonesOk).toBe(2);
+    expect(m.meta!.fullSyncAt).toBe(later(15).toISOString());
+    expect(m.meta!.official!.zones.find((z) => z.zid === 4797)!.lastError).toBeNull();
   });
 
-  it("a failed page writes no plot data and keeps the last good snapshot", async () => {
+  it("a run that does not reach every zone keeps the complete-pass time at the oldest refresh", async () => {
     const m = memStore();
-    await runSync(m.store, { ...quiet, fetchJson: fakeSource(60, new Set([1])), fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
+    await seedStore(m, [rec("1")]);
+    const { opts } = harness(siteData(genPlots(1, { square: SQ, status: () => "free" })));
+    // a 1 ms budget lets only the first zone start
+    const r = await runSync(m.store, { ...opts, budgetMs: 1, concurrency: 1, now: T0 });
+    expect(r.zonesOk).toBe(1);
+    expect(r.zonesSkipped).toBe(1);
+    expect(m.meta!.statsAt).toBe(T0.toISOString());
+    expect(m.meta!.fullSyncAt).toBe("2026-11-09T06:00:00Z");
+    const r2 = await runSync(m.store, { ...opts, budgetMs: 1, concurrency: 1, now: later(15) });
+    expect(r2.zonesOk).toBe(1);
+    expect(m.meta!.fullSyncAt).toBe(T0.toISOString()); // the zone done 15 min ago is now the oldest
+  });
+
+  it("fails the run (keeping the last good data) when no zone could be crawled", async () => {
+    const m = memStore();
+    await seedStore(m, [rec("1"), rec("2")]);
     const good = structuredClone(m.meta!);
-    const r = await runSync(m.store, {
-      ...quiet,
-      fetchJson: fakeSource(2500, new Set([1, 2, 3]), { failPage: true }),
-      fetchBuiltPoints: osm,
-      now: new Date("2026-10-07T10:15:00Z"),
-    });
-    expect(r.error).toMatch(/503/);
+    const { site, opts } = harness();
+    for (let i = 0; i < 8; i++) site.failOnce("ViewZone.aspx", "503");
+    const r = await runSync(m.store, { ...opts, now: T0 });
+    expect(r.error).toMatch(/no zone crawled/);
     expect(m.meta!.chunks).toEqual(good.chunks);
     expect(m.meta!.fullSyncAt).toBe(good.fullSyncAt);
-    expect(m.meta!.lastError).toMatch(/503/);
+    expect(m.meta!.lastError).toMatch(/no zone/);
   });
 
-  it("an OpenStreetMap failure keeps previous distances", async () => {
+  it("refuses a run that would book suspiciously many plots unless --accept-large", async () => {
     const m = memStore();
-    await runSync(m.store, { ...quiet, fetchJson: fakeSource(30, new Set()), fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    const before = (await loadTuples(m.store, m.meta!)).map((x) => x[17]);
-    await runSync(m.store, {
-      ...quiet,
-      forceFull: true,
-      forceOsm: true,
-      fetchJson: fakeSource(30, new Set()),
-      fetchBuiltPoints: async () => {
-        throw new Error("overpass down");
+    await seedStore(m, Array.from({ length: 30 }, (_, i) => rec(String(i + 1))));
+    OFFICIAL_SITE.maxNewlyBookedPerRun = 5;
+    const { opts } = harness(siteData(genPlots(10, { square: SQ, status: () => "free" })));
+    const r = await runSync(m.store, { ...opts, now: T0 });
+    expect(r.error).toMatch(/suspicious: 20/);
+    expect((await loadTuples(m.store, m.meta!)).every((t) => t[15] === 0)).toBe(true);
+    const r2 = await runSync(m.store, { ...opts, acceptLarge: true, now: later(15) });
+    expect(r2.error).toBeUndefined();
+    expect(r2.newlyBooked).toBe(20);
+  });
+
+  it("a full run also reads the booked view and stamps lastFullAt", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 12 }, (_, i) => rec(String(i + 1))));
+    const plots = genPlots(12, { square: SQ, status: (i) => (i < 4 ? "booked" : "free") });
+    const { site, opts } = harness(siteData(plots));
+    const r = await runSync(m.store, { ...opts, full: true, now: T0 });
+    expect(r.mode).toBe("full");
+    expect(r.newlyBooked).toBe(4);
+    expect(site.requests.some((q) => q.target === "ctl00$MainContent$rdShowBooked")).toBe(true);
+    expect(m.meta!.official!.zones.find((z) => z.zid === 4797)!.lastFullAt).toBe(T0.toISOString());
+  });
+
+  it("caches the zone list for a day and re-discovers on demand", async () => {
+    const m = memStore();
+    await seedStore(m, [rec("1")]);
+    const { site, opts } = harness(siteData(genPlots(1, { square: SQ, status: () => "free" })));
+    await runSync(m.store, { ...opts, now: T0 });
+    const cities = () => site.requests.filter((q) => q.url.includes("GetSiteCities")).length;
+    expect(cities()).toBe(1);
+    await runSync(m.store, { ...opts, now: later(15) });
+    expect(cities()).toBe(1);
+    await runSync(m.store, { ...opts, forceZones: true, now: later(30) });
+    expect(cities()).toBe(2);
+    await runSync(m.store, { ...opts, now: later(25 * 60) });
+    expect(cities()).toBe(3);
+    // discovery failure keeps the cached list
+    site.failOnce("GetSiteCities", "503");
+    site.failOnce("GetSiteCities", "503");
+    site.failOnce("GetSiteCities", "503");
+    site.failOnce("GetSiteCities", "503");
+    const r = await runSync(m.store, { ...opts, forceZones: true, now: later(26 * 60) });
+    expect(r.error).toBeUndefined();
+    expect(m.meta!.official!.zonesError).toBeTruthy();
+    expect(m.meta!.official!.zones).toHaveLength(2);
+  });
+
+  it("a news failure keeps the previous items and never fails the run", async () => {
+    const m = memStore();
+    await seedStore(m, [rec("1")]);
+    const { opts } = harness(siteData(genPlots(1, { square: SQ, status: () => "free" })));
+    await runSync(m.store, { ...opts, now: T0 });
+    const { opts: down } = harness(siteData(genPlots(1, { square: SQ, status: () => "free" })), null);
+    const r = await runSync(m.store, { ...down, now: later(15) });
+    expect(r.error).toBeUndefined();
+    expect(r.officialNew).toEqual([]);
+    expect(m.meta!.officialNews).toHaveLength(10);
+    expect(m.meta!.officialError).toMatch(/news down/);
+    expect(m.meta!.officialAt).toBe(T0.toISOString());
+  });
+
+  it("derives hot districts from the last week's bookings and reads rules from the booklet table only", async () => {
+    const m = memStore();
+    const recs = Array.from({ length: 40 }, (_, i) => rec(String(i + 1), i < 12 ? 1 : 0, { bookingTs: i < 12 ? T0.getTime() - 3600_000 : 0 }));
+    await seedStore(m, recs);
+    const { opts } = harness(siteData(genPlots(40, { square: SQ, status: () => "free" }).filter((p) => Number(p.plotNo) > 12)));
+    await runSync(m.store, { ...opts, rulesOverrides: { "sec-a": { ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: null } }, now: T0 });
+    const s = m.meta!.sectors.find((x) => x.id === "sec-a")!;
+    expect(s.hot).toBe(true);
+    expect(s.rules).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: null, from: "booklet" });
+    expect(s.c).toEqual([30.01, 31.02]);
+  });
+
+  it("keeps the previous snapshot's rules and per-batch bookings when the booklet and the site have none", async () => {
+    const m = memStore();
+    const recs = [rec("1", 1, { bookingTs: Date.parse("2026-11-07T23:00:00Z") }), rec("2")];
+    await seedStore(m, recs, { allocations: [{ id: "old", d: "2026-11-07T22:00:00Z", c: 700, b: 336 }] });
+    m.meta!.sectors[0].rules = { ratio: "60 %", floors: "أرضي + 3", setbacks: null, from: "source" };
+    await m.store.putMeta(m.meta!);
+    const { opts } = harness(siteData(genPlots(2, { square: SQ, status: () => "free" }).slice(1)));
+    await runSync(m.store, { ...opts, now: T0 });
+    expect(m.meta!.sectors[0].rules).toEqual({ ratio: "60 %", floors: "أرضي + 3", setbacks: null, from: "source" });
+    expect(m.meta!.bookingsByDay).toEqual({ "2026-11-08": 336 });
+  });
+
+  it("measures built-up distance for new plots from their district centre and leaves old ones alone", async () => {
+    const m = memStore();
+    await seedStore(m, [rec("1"), rec("2")]);
+    let osmCalls = 0;
+    const { opts } = harness(siteData(genPlots(4, { square: SQ, status: () => "free" })));
+    const r = await runSync(m.store, {
+      ...opts,
+      fetchBuiltPoints: async (c) => {
+        osmCalls++;
+        expect(c).toEqual([[30.01, 31.02]]);
+        return [[30.012, 31.02]];
       },
-      now: new Date("2026-10-07T11:00:00Z"),
+      now: T0,
     });
-    const after = (await loadTuples(m.store, m.meta!)).map((x) => x[17]);
-    expect(after).toEqual(before);
-  });
-
-  it("refreshes OpenStreetMap a few cities per run, oldest first", async () => {
-    const m = memStore();
-    const calls: number[] = [];
-    const countingOsm = async (c: [number, number][]) => {
-      calls.push(c.length);
-      return [[30.0002, 31.0002]] as [number, number][];
-    };
-    const src = fakeSource(60, new Set());
-    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:00:00Z") });
-    expect(calls).toHaveLength(1);
-    expect(Object.keys(m.meta!.osmCities!)).toHaveLength(1);
-    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:15:00Z") });
-    expect(calls).toHaveLength(2);
-    expect(Object.keys(m.meta!.osmCities!)).toHaveLength(2);
-    // Everything fresh → a quiet stats-only run, no OSM calls.
-    const r = await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: countingOsm, osmCitiesPerRun: 1, now: new Date("2026-10-07T10:30:00Z") });
-    expect(r.mode).toBe("stats");
-    expect(calls).toHaveLength(2);
-  });
-
-  it("a main-road failure keeps previous road distances", async () => {
-    const m = memStore();
-    await runSync(m.store, { ...quiet, fetchJson: fakeSource(30, new Set()), fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    const before = (await loadTuples(m.store, m.meta!)).map((x) => x[19]);
-    expect(before.some((x) => x != null)).toBe(true);
-    await runSync(m.store, {
-      ...quiet,
-      forceFull: true,
-      forceOsm: true,
-      fetchJson: fakeSource(30, new Set()),
-      fetchBuiltPoints: osm,
-      fetchMainRoads: async () => {
-        throw new Error("overpass down");
-      },
-      now: new Date("2026-10-07T11:00:00Z"),
-    });
-    expect((await loadTuples(m.store, m.meta!)).map((x) => x[19])).toEqual(before);
-  });
-
-  it("refreshes cities whose snapshot predates main-road distances", async () => {
-    const m = memStore();
-    const src = fakeSource(30, new Set());
-    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    // Simulate an old snapshot: strip index 19 from every tuple.
-    for (const c of m.meta!.chunks) {
-      const doc = (await m.store.getChunk(c.id))!;
-      const old = (await unpackTuples(doc.data)).map((t) => t.slice(0, 19) as PlotTuple);
-      doc.data = await packTuples(old);
-      c.v = `old-${c.v}`;
-    }
-    let roadCalls = 0;
-    await runSync(m.store, {
-      ...quiet,
-      forceFull: true,
-      fetchJson: src,
-      fetchBuiltPoints: osm,
-      fetchMainRoads: async () => (roadCalls++, road),
-      now: new Date("2026-10-07T10:15:00Z"),
-    });
-    expect(roadCalls).toBeGreaterThan(0);
-    expect((await loadTuples(m.store, m.meta!)).every((x) => x[19] !== undefined)).toBe(true);
-  });
-
-  it("refreshes distances right away for plots the source places on the map", async () => {
-    const m = memStore();
-    const base = fakeSource(30, new Set());
-    let located = false;
-    // s1 plots start without geometry, then the source draws them.
-    const src = async (path: string) => {
-      const r = (await base(path)) as { items?: Record<string, unknown>[] };
-      if (!located && path.startsWith("/api/app/land-plot")) r.items = r.items!.map((p) => (p.sectorId === "s1" ? { ...p, geoJson: null } : p));
-      return r;
-    };
-    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    const inS1 = async () => (await loadTuples(m.store, m.meta!)).filter((x) => m.meta!.sectors[x[4]]?.id === "s1");
-    expect((await inS1()).every((x) => x[13] === null && x[18] !== 0)).toBe(true);
-    located = true;
-    // Cities are fresh, so only the moved plots make OSM due.
-    await runSync(m.store, { ...quiet, forceFull: true, fetchJson: src, fetchBuiltPoints: osm, osmCitiesPerRun: 0, now: new Date("2026-10-07T10:15:00Z") });
-    expect((await inS1()).every((x) => x[13] !== null && x[18] === 0)).toBe(true);
-  });
-
-  it("booklet rules fill only what the source leaves empty", async () => {
-    const m = memStore();
-    await runSync(m.store, {
-      ...quiet,
-      fetchJson: fakeSource(30, new Set()),
-      fetchBuiltPoints: osm,
-      rulesOverrides: {
-        s1: { ratio: "40 %", floors: "x", setbacks: "y" },
-        s2: { ratio: "50 %", floors: "بدروم + أرضي + 3 أدوار", setbacks: null },
-      },
-      now: new Date("2026-10-07T10:00:00Z"),
-    });
-    const rules = (id: string) => m.meta!.sectors.find((s) => s.id === id)?.rules;
-    expect(rules("s1")).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + دورين", setbacks: "3م امامي - 5م خلفي", from: "source" });
-    expect(rules("s2")).toEqual({ ratio: "50 %", floors: "بدروم + أرضي + 3 أدوار", setbacks: null, from: "booklet" });
-  });
-  it("sectors get an approximate centre: located plots first, else the source's tile bounds", async () => {
-    const m = memStore();
-    const base = fakeSource(40, new Set());
-    // s1 and s3 plots have no geometry; only s1 publishes tile bounds.
-    const src = async (path: string) => {
-      const r = (await base(path)) as { items?: Record<string, unknown>[] };
-      if (path.startsWith("/api/app/sector")) r.items![0] = { ...r.items![0], tileMinLng: 31.5, tileMinLat: 30.2, tileMaxLng: 31.6, tileMaxLat: 30.3 };
-      if (path.startsWith("/api/app/land-plot")) r.items = r.items!.map((p) => (p.sectorId === "s1" || p.sectorId === "s3" ? { ...p, geoJson: null } : p));
-      return r;
-    };
-    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, now: new Date("2026-10-07T10:00:00Z") });
-    const c = (id: string) => m.meta!.sectors.find((s) => s.id === id)?.c;
-    expect(c("s1")).toEqual([30.25, 31.55]);
-    expect(c("s2")![0]).toBeCloseTo(30.000125, 5);
-    expect(c("s3")).toBeUndefined();
+    expect(r.inserted).toBe(2);
+    expect(osmCalls).toBe(1);
+    expect(r.osmRefreshed).toBe(true);
     const tuples = await loadTuples(m.store, m.meta!);
-    const inS1 = tupleToPlot(tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s1")!, m.meta!);
-    expect(inS1.latitude).toBeNull();
-    expect(inS1.approxLoc).toEqual({ lat: 30.25, lng: 31.55 });
+    const byNo = new Map(tuples.map((t) => [t[2], t]));
+    expect(byNo.get("1")!.slice(17, 19)).toEqual([0.8, 0]);
+    expect(byNo.get("3")![18]).toBe(1);
+    expect(byNo.get("3")![17]).toBeGreaterThan(0);
+    expect(tupleToPlot(byNo.get("3")!, m.meta!).approxLoc).toEqual({ lat: 30.01, lng: 31.02 });
   });
-  it("a public-map centre places a district the source has not placed, without feeding the ranking", async () => {
+
+  it("a dry run reports but writes nothing", async () => {
     const m = memStore();
-    const base = fakeSource(40, new Set());
-    // s1 has tile bounds and a public-map centre (the source wins); s3 has only the public-map centre.
-    const src = async (path: string) => {
-      const r = (await base(path)) as { items?: Record<string, unknown>[] };
-      if (path.startsWith("/api/app/sector")) r.items![0] = { ...r.items![0], tileMinLng: 31.5, tileMinLat: 30.2, tileMaxLng: 31.6, tileMaxLat: 30.3 };
-      if (path.startsWith("/api/app/land-plot")) r.items = r.items!.map((p) => (p.sectorId === "s1" || p.sectorId === "s3" ? { ...p, geoJson: null } : p));
-      return r;
-    };
-    const districtCentres = { s1: [10, 10] as [number, number], s3: [30.5, 31.9] as [number, number] };
-    await runSync(m.store, { ...quiet, fetchJson: src, fetchBuiltPoints: osm, districtCentres, now: new Date("2026-10-07T10:00:00Z") });
-    const c = (id: string) => m.meta!.sectors.find((s) => s.id === id)?.c;
-    expect(c("s1")).toEqual([30.25, 31.55]);
-    expect(c("s3")).toEqual([30.5, 31.9]);
-    const tuples = await loadTuples(m.store, m.meta!);
-    const inS3 = tupleToPlot(tuples.find((x) => m.meta!.sectors[x[4]]?.id === "s3")!, m.meta!);
-    expect(inS3.approxLoc).toEqual({ lat: 30.5, lng: 31.9 });
-    // Distance to built-up areas stays unknown: it is never measured from a public-map guess.
-    expect(inS3.builtSrc).toBe(2);
-    expect(inS3.builtKm).toBeNull();
+    await seedStore(m, [rec("1"), rec("2")]);
+    const before = m.writes;
+    const lines: string[] = [];
+    const { opts } = harness(siteData(genPlots(1, { square: SQ, status: () => "free" })));
+    const r = await runSync(m.store, { ...opts, dryRun: true, log: (...a) => lines.push(a.join(" ")), now: T0 });
+    expect(r.error).toBeUndefined();
+    expect(r.newlyBooked).toBe(1);
+    expect(m.writes).toBe(before);
+    expect(lines.some((l) => l.startsWith("DRY RUN"))).toBe(true);
+  });
+
+  it("strips undefined before writing and the crawl client is paced", async () => {
+    expect(stripUndefined({ a: 1, b: undefined, c: { d: undefined, e: [1, { f: undefined }] } })).toEqual({ a: 1, c: { e: [1, {}] } });
+    const { site } = harness();
+    const c = createClient(site.fetchHtml, { delayMs: 0 });
+    const z = await crawlZone(c, 4797, "available");
+    expect(z.ok).toBe(true);
+    expect(z.rows).toHaveLength(45);
+  });
+
+  it("round-trips the packed tuples with the held state", async () => {
+    const t: PlotTuple[] = [["a", null, "1", 0, -1, -1, 500, 200, 100000, 25000, 10, 0, 0, 30.1, 31.2, 2, 0, 0.5, 0, 12]];
+    expect(await unpackTuples(await packTuples(t))).toEqual(t);
+    const p = tupleToPlot(t[0], { cities: ["مدينة"], sectors: [], zones: [] });
+    expect(p).toMatchObject({ status: "available", held: true, mainRoadM: 12 });
   });
 });

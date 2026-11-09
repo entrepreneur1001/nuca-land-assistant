@@ -34,11 +34,8 @@ export const MODEL = {
   defaultConversion: 0.7,
   /** Fallback codes per batch when there is no allocation history (NUCA sends 700 a day since 8 Nov 2026; 300 from 1 Oct 2026, 200 before). */
   defaultCodesPerBatch: 700,
-  /**
-   * Batch sizes NUCA announced. From each Cairo date on, batches are at least this many codes, even before the
-   * source reports one (the announcement precedes the data). A larger synced batch always wins.
-   */
-  announcedBatchSizes: [{ from: "2026-11-08", codes: 700 }],
+  /** Cairo hour at which a day's batch counts as issued when the official news item names none; observed 10–12. */
+  defaultBatchHour: 11,
   /** Booking codes go out one batch per working day; Friday and Saturday (Cairo time) are off. */
   batchWeekdays: [0, 1, 2, 3, 4],
   batchTimeZone: "Africa/Cairo",

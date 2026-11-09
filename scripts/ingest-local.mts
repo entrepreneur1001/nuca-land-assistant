@@ -1,7 +1,8 @@
 /**
  * Runs the sync into a local JSON folder (no Firebase needed) — for development and for
  * generating `public/dev-snapshot/` that the site can load when NEXT_PUBLIC_DATA=local.
- *   npx tsx scripts/ingest-local.mts [--full] [--osm]
+ *   npx tsx scripts/ingest-local.mts [--full] [--zones] [--bootstrap] [--accept-large] [--dry-run]
+ * Start from the production snapshot with `npx tsx scripts/tools/pull-snapshot.mts` so ids and coordinates are kept.
  */
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -21,6 +22,12 @@ const store: Store = {
   putMeta: async (meta) => writeFileSync(path.join(dir, "meta.json"), JSON.stringify(meta)),
 };
 const args = new Set(process.argv.slice(2));
-const r = await runSync(store, { forceFull: args.has("--full"), forceOsm: args.has("--osm") });
-console.log(JSON.stringify({ ...r, changedChunks: r.changedChunks.length }));
+const r = await runSync(store, {
+  full: args.has("--full"),
+  forceZones: args.has("--zones"),
+  bootstrap: args.has("--bootstrap"),
+  acceptLarge: args.has("--accept-large"),
+  dryRun: args.has("--dry-run"),
+});
+console.log(JSON.stringify({ ...r, changedChunks: r.changedChunks.length, officialNew: r.officialNew.map((i) => i.nid), newlyBookedPlots: r.newlyBookedPlots.length }));
 process.exit(r.error ? 1 : 0);

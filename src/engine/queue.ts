@@ -1,3 +1,4 @@
+import type { OfficialNewsItem } from "@/data/snapshot";
 import { MODEL } from "./config";
 
 export interface AllocationBatch {
@@ -15,7 +16,7 @@ export interface Range {
 export interface QueueEstimate {
   rank: number;
   codesIssued: number;
-  codesIssuedSource: "allocations" | "estimated-from-booked";
+  codesIssuedSource: "official" | "allocations" | "estimated-from-booked";
   peopleAhead: number;
   conversion: Range;
   codesPerBatch: Range;
@@ -23,8 +24,18 @@ export interface QueueEstimate {
   /** Calendar days until the user's batch is issued. low = fastest. */
   daysToTurn: Range;
   eta: { best: Date | null; expected: Date | null; worst: Date | null };
-  /** Set while an announced batch size (MODEL.announcedBatchSizes) is what sizes future batches, i.e. the source hasn't reported such a batch yet. */
-  announcedBatch: { codes: number; from: string } | null;
+  /**
+   * The latest official NUCA news item about the queue (days as "YYYY-MM-DD"). `applied` is false when the synced
+   * batch data is newer than the item, in which case the synced data sizes the estimate.
+   */
+  official: {
+    nid: number;
+    day: string;
+    issuedThrough: number;
+    batchSize: number | null;
+    next: { from: number; to: number | null; day: string } | null;
+    applied: boolean;
+  } | null;
   /** Code holders already called (earlier batches) who haven't booked yet. */
   unbookedCodes: number;
   /** Bookings still expected from people already called: today's batch finishing + late bookers from earlier batches. */
@@ -42,28 +53,122 @@ const DAY = 86_400_000;
 
 const cairoDate = new Intl.DateTimeFormat("en-CA", { timeZone: MODEL.batchTimeZone, year: "numeric", month: "2-digit", day: "2-digit" });
 /** The Cairo calendar day of `d`, as UTC noon of that day (safe for day arithmetic and getUTCDay()). */
-function cairoDay(d: Date): number {
+export function cairoDay(d: Date): number {
   const [y, m, dd] = cairoDate.format(d).split("-").map(Number);
   return Date.UTC(y, m - 1, dd, 12);
 }
 /** "YYYY-MM-DD" as UTC noon of that day (same convention as cairoDay). */
-const isoDay = (s: string) => {
+export const isoDay = (s: string) => {
   const [y, m, d] = s.split("-").map(Number);
   return Date.UTC(y, m - 1, d, 12);
 };
+/** The inverse of isoDay / cairoDay: a day number → "YYYY-MM-DD". */
+const dayIso = (day: number) => new Date(day).toISOString().slice(0, 10);
 const isBatchDay = (day: number) => (MODEL.batchWeekdays as readonly number[]).includes(new Date(day).getUTCDay());
 
 const cairoHour = new Intl.DateTimeFormat("en-GB", { timeZone: MODEL.batchTimeZone, hour: "numeric", hourCycle: "h23" });
+/** Hour of the day (0–23) in Cairo. */
+export function cairoHourOf(d: Date): number {
+  return Number(cairoHour.format(d));
+}
 /** True during the 15-minute sync window: a batch weekday (Sun–Thu) between the configured Cairo hours. */
 export function inSyncWindow(d: Date): boolean {
-  const hour = Number(cairoHour.format(d));
+  const hour = cairoHourOf(d);
   return isBatchDay(cairoDay(d)) && hour >= MODEL.syncWindowHours.start && hour < MODEL.syncWindowHours.end;
 }
 
-/** Cairo day of the n-th batch (n ≥ 1) issued after `lastBatchDay`, never earlier than `today`. Skips Friday/Saturday. */
-function nthBatchDay(lastBatchDay: number, today: number, n: number): number {
+/**
+ * Cairo day of the n-th batch (n ≥ 1) issued after `lastBatchDay`, never earlier than `today`. Skips Friday/Saturday.
+ * With `firstDay` (an announced next batch day) the first batch is on that day whatever its weekday, and later ones
+ * walk the batch weekdays after it.
+ */
+export function nthBatchDay(lastBatchDay: number, today: number, n: number, firstDay?: number): number {
+  if (firstDay != null) {
+    if (n <= 1) return firstDay;
+    let day = firstDay + DAY;
+    for (let seen = 1; ; day += DAY) if (isBatchDay(day) && ++seen >= n) return day;
+  }
   let day = Math.max(lastBatchDay + DAY, today);
   for (let seen = 0; ; day += DAY) if (isBatchDay(day) && ++seen >= n) return day;
+}
+
+/** An official news item that says something about the code queue. */
+export const isQueueNews = (item: OfficialNewsItem) => item.servedThrough != null || item.next != null;
+
+export interface OfficialQueue {
+  /** The latest queue item. */
+  nid: number;
+  day: string;
+  /** Highest serial known to have been issued, and the Cairo day (UTC noon) it was reached. */
+  issuedThrough: number;
+  issuedDay: number;
+  /** How current this is: the later of the latest item's day and `issuedDay`. */
+  asOfDay: number;
+  /** Size of the last batch whose range is known. */
+  batchSize: number | null;
+  /** The announced next batch when it is still ahead (day ≥ today and not yet counted as issued). */
+  next: { from: number; to: number | null; day: number; hour: number | null } | null;
+  /** `batchSize` when a batch was completed today (its holders are still booking), else null. */
+  todayBatch: number | null;
+}
+
+/**
+ * Reduce the official news items to what the queue model needs. A batch announced for a day counts as issued once
+ * that day has passed, or on the day itself from its announced hour (MODEL.defaultBatchHour when none).
+ */
+export function officialQueue(items: OfficialNewsItem[], now: Date): OfficialQueue | null {
+  const queue = items.filter(isQueueNews).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.nid - b.nid));
+  if (!queue.length) return null;
+  const today = cairoDay(now);
+  const hour = cairoHourOf(now);
+
+  // Best "issued through" candidate: highest serial, then latest day, then one that marks a completed batch
+  // (a stated «حتى مسلسل N» or a next-batch range whose day has come) over a «from − 1» inference.
+  type Candidate = { value: number; day: number; completed: boolean };
+  let best = null as Candidate | null;
+  const consider = (value: number, day: number, completed: boolean) => {
+    if (!best || value > best.value || (value === best.value && (day > best.day || (day === best.day && completed && !best.completed))))
+      best = { value, day, completed };
+  };
+  for (const it of queue) {
+    const itemDay = isoDay(it.day);
+    if (it.servedThrough != null) consider(it.servedThrough, itemDay, true);
+    if (it.next) {
+      consider(it.next.from - 1, itemDay, false);
+      if (it.next.to != null && it.next.day) {
+        const batchDay = isoDay(it.next.day);
+        if (batchDay < today || (batchDay === today && hour >= (it.next.hour ?? MODEL.defaultBatchHour))) consider(it.next.to, batchDay, true);
+      }
+    }
+  }
+  const { value: issuedThrough, day: issuedDay, completed } = best as Candidate;
+
+  let batchSize: number | null = null;
+  queue.forEach((it, i) => {
+    if (!it.next) return;
+    const { from, to } = it.next;
+    if (to != null) batchSize = to - from + 1;
+    else {
+      const later = queue.slice(i + 1).find((x) => x.servedThrough != null && x.servedThrough >= from);
+      if (later) batchSize = later.servedThrough! - from + 1;
+    }
+  });
+
+  const latest = queue.at(-1)!;
+  const n = latest.next;
+  const next =
+    n && n.day && isoDay(n.day) >= today && (n.to == null || n.to > issuedThrough) ? { from: n.from, to: n.to, day: isoDay(n.day), hour: n.hour } : null;
+
+  return {
+    nid: latest.nid,
+    day: latest.day,
+    issuedThrough,
+    issuedDay,
+    asOfDay: Math.max(isoDay(latest.day), issuedDay),
+    batchSize,
+    next,
+    todayBatch: issuedDay === today && completed ? batchSize : null,
+  };
 }
 
 /**
@@ -77,6 +182,8 @@ export function estimateQueue(input: {
   allocations?: AllocationBatch[];
   /** Optional: allocated code count reported directly by the source. */
   allocatedCodes?: number | null;
+  /** Official NUCA news items (meta.officialNews); the newest information wins over the synced batches. */
+  official?: OfficialNewsItem[];
   now?: Date;
 }): QueueEstimate {
   const now = input.now ?? new Date();
@@ -107,16 +214,41 @@ export function estimateQueue(input: {
     assumptions.push(`No allocation history; assumed ${Math.round(c * 100)}% of code holders book.`);
   }
 
+  // Codes issued so far. The official news is the source whenever it is at least as current as the synced batches;
+  // the synced batches (or, failing those, booked ÷ conversion) otherwise.
+  const off = input.official?.length ? officialQueue(input.official, now) : null;
+  const trackerLastDay = batches.length ? cairoDay(batches.at(-1)!.issueDate) : null;
+  const trackerIssued = Math.max(
+    batches.reduce((a, b) => a + b.totalCodes, 0),
+    input.allocatedCodes ?? 0,
+  );
+  const useOfficial = !!off && (trackerLastDay == null || off.asOfDay >= trackerLastDay);
+  const synced = batches.at(-1)?.totalCodes ?? null;
   let codesIssued: number;
   let codesIssuedSource: QueueEstimate["codesIssuedSource"];
-  const fromBatches = batches.reduce((a, b) => a + b.totalCodes, 0);
-  if (fromBatches > 0 || (input.allocatedCodes ?? 0) > 0) {
-    codesIssued = Math.max(fromBatches, input.allocatedCodes ?? 0);
-    codesIssuedSource = "allocations";
+  let latest: number;
+  let lastBatchDay: number;
+  let firstBatchDay: number | undefined;
+  if (off && useOfficial) {
+    codesIssued = off.asOfDay === trackerLastDay ? Math.max(off.issuedThrough, trackerIssued) : off.issuedThrough;
+    codesIssuedSource = "official";
+    latest = off.batchSize ?? synced ?? MODEL.defaultCodesPerBatch;
+    lastBatchDay = off.issuedDay;
+    firstBatchDay = off.next ? off.next.day : undefined;
+    const next = off.next ? `next batch ${off.next.from}–${off.next.to ?? "…"} on ${dayIso(off.next.day)}` : "no next batch announced yet";
+    assumptions.push(`A5: official NUCA news (NID ${off.nid}, ${off.day}): codes issued through ${off.issuedThrough}; ${next}.`);
   } else {
-    codesIssued = Math.round(input.booked / conversion.mid);
-    codesIssuedSource = "estimated-from-booked";
-    assumptions.push("Codes issued estimated as booked ÷ conversion.");
+    if (trackerIssued > 0) {
+      codesIssued = trackerIssued;
+      codesIssuedSource = "allocations";
+    } else {
+      codesIssued = Math.round(input.booked / conversion.mid);
+      codesIssuedSource = "estimated-from-booked";
+      assumptions.push("Codes issued estimated as booked ÷ conversion.");
+    }
+    latest = synced ?? MODEL.defaultCodesPerBatch;
+    lastBatchDay = batches.length ? cairoDay(batches.at(-1)!.issueDate) : today - DAY;
+    if (off) assumptions.push(`A5: the official news item (NID ${off.nid}, ${off.day}) is older than the latest synced batch; synced data used.`);
   }
   assumptions.push("A1: booking codes are issued in rank order, so ranks ≤ codes issued have been served.");
   assumptions.push(`Best case assumes batch size grows ×${MODEL.optimisticBatchGrowth.toFixed(2)}; expected and worst case keep the latest batch size.`);
@@ -124,24 +256,16 @@ export function estimateQueue(input: {
 
   const peopleAhead = Math.max(0, input.rank - codesIssued);
 
-  const lastBatchDay = batches.length ? cairoDay(batches.at(-1)!.issueDate) : today - DAY;
-  const nextBatchDay = nthBatchDay(lastBatchDay, today, 1);
-
   // NUCA sends one batch per working day (Sun–Thu) and only ever grew it (200 → 300 on 1 Oct 2026, 300 → 700 on
   // 8 Nov 2026), so the latest batch size is both the expected and the worst case; the best case allows it to grow
-  // again. An announced size applies from its date as a floor, even before the source reports such a batch.
-  const synced = batches.at(-1)?.totalCodes ?? null;
-  const announcement = MODEL.announcedBatchSizes.filter((a) => isoDay(a.from) <= nextBatchDay).at(-1) ?? null;
-  const latest = Math.max(synced ?? MODEL.defaultCodesPerBatch, announcement?.codes ?? 0);
-  const announcedBatch = announcement && announcement.codes > (synced ?? 0) ? { codes: announcement.codes, from: announcement.from } : null;
-  if (announcedBatch) assumptions.push(`A5: NUCA announced ${announcedBatch.codes}-code batches from ${announcedBatch.from}; applied although the latest synced batch is ${synced ?? "unknown"}.`);
+  // again. The official news names the next batch's range and day, which fixes the first step of the walk.
   const codesPerBatch: Range = { low: latest, mid: latest, high: Math.round(latest * MODEL.optimisticBatchGrowth) };
   const batchesPerWeek = MODEL.batchWeekdays.length;
   assumptions.push("A3: one batch per working day; Friday and Saturday are off (public holidays are not modelled).");
 
   const turn = (perBatch: number) => {
     if (peopleAhead <= 0) return { days: 0, date: now };
-    const day = nthBatchDay(lastBatchDay, today, Math.ceil(peopleAhead / perBatch));
+    const day = nthBatchDay(lastBatchDay, today, Math.ceil(peopleAhead / perBatch), firstBatchDay);
     return { days: Math.max(0, (day - now.getTime()) / DAY), date: new Date(day) };
   };
   const fast = turn(codesPerBatch.high);
@@ -150,8 +274,13 @@ export function estimateQueue(input: {
   const daysToTurn: Range = { low: fast.days, mid: mid.days, high: slow.days };
 
   // People already called who haven't booked still compete: today's batch is still booking, and earlier code holders may book late.
-  const openCodes = inProgress.reduce((a, b) => a + b.totalCodes, 0);
-  const openBooked = inProgress.reduce((a, b) => a + (b.plotsBooked ?? 0), 0);
+  // When the official news reports today's batch before the tracker has it, that batch is the open one.
+  let openCodes = inProgress.reduce((a, b) => a + b.totalCodes, 0);
+  let openBooked = inProgress.reduce((a, b) => a + (b.plotsBooked ?? 0), 0);
+  if (off && useOfficial && off.todayBatch && !inProgress.length) {
+    openCodes = off.todayBatch;
+    openBooked = 0;
+  }
   const unbookedCodes = Math.max(0, codesIssued - openCodes - Math.max(0, input.booked - openBooked));
   const late = MODEL.lateBookingShare;
   const pending = (k: keyof Range) => Math.max(0, openCodes * conversion[k] - openBooked) + unbookedCodes * late[k];
@@ -181,7 +310,16 @@ export function estimateQueue(input: {
     batchesPerWeek,
     daysToTurn,
     eta: { best: fast.date, expected: mid.date, worst: slow.date },
-    announcedBatch,
+    official: off
+      ? {
+          nid: off.nid,
+          day: off.day,
+          issuedThrough: off.issuedThrough,
+          batchSize: off.batchSize,
+          next: off.next ? { from: off.next.from, to: off.next.to, day: dayIso(off.next.day) } : null,
+          applied: useOfficial,
+        }
+      : null,
     unbookedCodes,
     pendingBookings,
     bookingsAhead,
