@@ -40,6 +40,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      # Large form POSTs (the zone table's paging carries the page's ViewState) stall between GitHub's network and
+      # lands.nuca.gov.eg at the default MTU (path-MTU blackhole); 1300 makes them go through. See README "Data sync".
+      - name: Lower the MTU for the official site
+        run: sudo ip link set dev "$(ip route show default | awk '{print $5}')" mtu 1300
       - name: Sync into Firestore
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
