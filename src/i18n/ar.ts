@@ -347,7 +347,7 @@ export const t = {
     legendApprox: "مكان تقريبي (أراضي من غير إحداثيات)",
     approx: (n: number, a: number) => `${num(n)} أرض مكانها التقريبي هنا (${num(a)} متاحة)`,
     noMap: "مفيش إحداثيات للأراضي هنا ولا لمكان المنطقة، فمش هنقدر نعرضها على الخريطة.",
-    mapNote: "النقط الخضرا متاحة والرمادي اتحجزت. دوس على أي نقطة تفتح الأرض.",
+    mapNote: "النقط الخضرا متاحة والحمرا اتحجزت. دوس على أي نقطة تفتح الأرض.",
     listTitle: "الأراضي المتاحة",
     budget: "في حدود اللي دفعته",
     sorts: { ppm: "الأرخص سعر متر", dp: "أقل مقدم", area: "الأكبر", reach: "فرصة الوصول" },
@@ -467,6 +467,8 @@ export const t = {
     legendThis: "القطعة دي",
     legendAvailable: "متاحة",
     legendBooked: "اتحجزت",
+    /** Map checkbox: hide the booked plots. */
+    onlyAvailable: "اعرض المتاح بس",
     mapNote: "النقط هي باقي قطع المنطقة. دوس على أي نقطة تفتحها.",
     builtDist: "أقرب مباني قائمة",
     builtFromSector: "(محسوبة من نص المنطقة)",
@@ -490,7 +492,9 @@ export const t = {
     /** Status word on a plot shape: available but someone filed a preliminary booking on it. */
     held: "عليها حجز مبدئي",
     legendHeld: "متاحة وعليها حجز مبدئي",
-    note: "شكل القطع من مخطط الهيئة الرسمي: الأخضر متاح، البرتقالي عليه حجز مبدئي، والرمادي اتحجز. دوس على أي قطعة تفتحها.",
+    /** Tooltip on a plot shape whose number could not be read off the plan. */
+    unknown: "قطعة من المخطط لم يتم التعرف على رقمها",
+    note: "شكل القطع من مخطط الهيئة الرسمي: الأخضر متاح، البرتقالي عليه حجز مبدئي، والأحمر اتحجز. دوس على أي قطعة تفتحها.",
   },
   market: {
     title: "حالة السوق",

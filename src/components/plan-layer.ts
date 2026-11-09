@@ -14,7 +14,7 @@ type L = typeof Leaflet;
 export interface PlanColors {
   good: string;
   warn: string;
-  muted: string;
+  bad: string;
   accent: string;
 }
 
@@ -33,6 +33,8 @@ export interface PlanLayer {
   bounds: Leaflet.LatLngBounds;
   setHighlight(plotId: string | null): void;
   setImageVisible(on: boolean): void;
+  /** Shows/hides the booked plots' shapes (never the `self` plot). */
+  setBookedVisible(on: boolean): void;
   remove(): void;
 }
 
@@ -162,7 +164,7 @@ type Style = Pick<Leaflet.PathOptions, "color" | "weight" | "fillColor" | "fillO
 
 function baseStyle(p: Plot, self: boolean, c: PlanColors): Style {
   if (self) return { color: "#fff", weight: 3, fillColor: c.accent, fillOpacity: 0.6 };
-  if (p.status === "booked") return { color: "#fff", weight: 1, fillColor: c.muted, fillOpacity: 0.55 };
+  if (p.status === "booked") return { color: "#fff", weight: 1, fillColor: c.bad, fillOpacity: 0.8 };
   return { color: "#fff", weight: 1, fillColor: p.held ? c.warn : c.good, fillOpacity: 0.5 };
 }
 
@@ -181,7 +183,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
 
   // One SVG renderer per zone: hover/highlight restyle single paths without redrawing the canvas the dots use.
   const renderer = L.svg({ pane: "overlayPane" });
-  const polys = new Map<string, { poly: Leaflet.Polygon; base: Style; hover: boolean; lit: boolean }>();
+  const polys = new Map<string, { poly: Leaflet.Polygon; base: Style; hover: boolean; lit: boolean; booked: boolean }>();
   const apply = (id: string) => {
     const e = polys.get(id);
     if (!e) return;
@@ -215,11 +217,22 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
         .on("click", () => opts.onClick?.(id));
     }
     poly.addTo(map);
-    polys.set(id, { poly, base, hover: false, lit: false });
+    polys.set(id, { poly, base, hover: false, lit: false, booked: !self && p.status === "booked" });
+  }
+  // Plots the plan shows but whose number could not be read: neutral outlines, so the block still looks complete.
+  for (const pixels of zone.unassigned ?? []) {
+    if (!Array.isArray(pixels) || pixels.length < 3) continue;
+    L.polygon(
+      pixels.map(([x, y]) => toLatLng(x, y)),
+      { color: "#fff", weight: 1, fillColor: "#9ca3af", fillOpacity: 0.25, renderer, pane: "overlayPane" },
+    )
+      .bindTooltip(t.plan.unknown, { sticky: true, direction: "top" })
+      .addTo(map);
   }
   if (opts.self) polys.get(opts.self)?.poly.bringToFront();
 
   let lit: string | null = null;
+  let bookedOn = true;
   return {
     zid,
     ids: new Set(polys.keys()),
@@ -242,6 +255,18 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
     setImageVisible(on) {
       if (on && !image._failed) image.addTo(map);
       else map.removeLayer(image);
+    },
+    setBookedVisible(on) {
+      if (on === bookedOn) return;
+      bookedOn = on;
+      for (const e of polys.values()) {
+        if (!e.booked) continue;
+        if (on) e.poly.addTo(map);
+        else map.removeLayer(e.poly);
+      }
+      // Re-added shapes land on top: put the emphasised ones back above them.
+      if (on && opts.self) polys.get(opts.self)?.poly.bringToFront();
+      if (on && lit) apply(lit);
     },
     remove() {
       map.removeLayer(image);
