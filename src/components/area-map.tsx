@@ -25,6 +25,7 @@ export function AreaMap({
   availableOnly,
   onDistrict,
   onPlan,
+  onApprox,
 }: {
   plots: Plot[];
   /** Districts shown, for the plan lookup and the approximate circles. */
@@ -36,6 +37,8 @@ export function AreaMap({
   onDistrict?: (id: string | null) => void;
   /** Whether any plot ended up drawn from an official plan (for the legend). */
   onPlan?: (hasPlan: boolean) => void;
+  /** Whether any approximate district circle is on the map (for the legend). */
+  onApprox?: (hasCircle: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -79,9 +82,12 @@ export function AreaMap({
       L.tileLayer(LABELS, { maxZoom: 19 }).addTo(map);
 
       // The view must be set before layers are added (Leaflet can't place them otherwise).
+      // A district whose plan is on the map needs no approximate circle: the plan itself shows where its
+      // unidentified plots are, and its old guessed centre must not pull the view away either.
+      const covered = new Set(zones.map((z) => z.info.sector).filter((s): s is string => !!s));
       const pts: [number, number][] = [
         ...located.map((p): [number, number] => [p.latitude!, p.longitude!]),
-        ...approx.map((d): [number, number] => [d.centre!.lat, d.centre!.lng]),
+        ...approx.filter((d) => !covered.has(d.id ?? "")).map((d): [number, number] => [d.centre!.lat, d.centre!.lng]),
       ];
       const bounds = L.latLngBounds(pts);
       for (const z of zones) bounds.extend(z.info.bounds);
@@ -100,8 +106,9 @@ export function AreaMap({
       }
       onPlan?.(shaped.size > 0);
 
+      let circles = 0;
       for (const d of districts) {
-        if (!d.centre) continue;
+        if (!d.centre || covered.has(d.id ?? "")) continue;
         // Only plots that have neither coordinates nor a shape are left to the circle.
         const rest = plots.filter((p) => p.projectId === d.id && (p.latitude == null || p.longitude == null) && !shaped.has(p.id));
         if (!rest.length) continue;
@@ -111,7 +118,9 @@ export function AreaMap({
           .bindTooltip(`${d.name}: ${t.area.approx(rest.length, avail)}`, { permanent: true, direction: "top" })
           .on("click", () => onDistrict?.(d.id))
           .addTo(map);
+        circles++;
       }
+      onApprox?.(circles > 0);
       // Booked first so available dots sit on top.
       const ordered = located.filter((p) => !shaped.has(p.id)).sort((a, b) => Number(b.status === "booked") - Number(a.status === "booked"));
       byId.clear();
