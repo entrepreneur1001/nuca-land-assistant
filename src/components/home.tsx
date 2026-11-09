@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { CURRENT_PHASE, OFFICIAL, phasePath } from "@/lib/phases";
 import { useState } from "react";
 import type { AiResponse } from "@/ai/schema";
 import { MODEL } from "@/engine/config";
 import { ago, date, num, pct, t, usd } from "@/i18n/ar";
 import { analyze, cooldownLeft } from "@/lib/ai";
-import { OFFICIAL } from "@/lib/phases";
+
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
 import { ProfileCard } from "./profile-card";
@@ -30,6 +31,12 @@ export function Home() {
     <div className="space-y-5">
       <p className="text-sm text-muted">{t.tagline}</p>
       <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn">{t.disclaimer.short}</p>
+      <p className="rounded-xl bg-good-soft px-3 py-2 text-sm text-good">
+        <span className="font-bold">{t.plansNotice.lead}</span> {t.plansNotice.text}{" "}
+        <Link href={phasePath.available(CURRENT_PHASE)} className="font-bold underline">
+          {t.plansNotice.link}
+        </Link>
+      </p>
       <ProfileCard profile={profile} setProfile={setProfile} cities={snapshot?.meta.cities ?? []} />
       {profile.bookingRank == null || profile.moneyPaid == null ? (
         <Card className="text-center text-muted">{t.profile.missing}</Card>

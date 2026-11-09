@@ -88,6 +88,12 @@ export const t = {
     noteBooklet: "منقولة من كراسة شروط الطرح أو بروشور المنطقة الرسمي (المصدر مانشرهاش للمنطقة دي)، اتأكد منها قبل الحجز.",
   },
   tagline: "بترتيبك وفلوسك… إيه أحسن أرض تقدر تحجزها؟",
+  /** Home-page notice: every plot now has its exact place and shape on the map, from the official plans. */
+  plansNotice: {
+    lead: "جديد:",
+    text: "أماكن كل قطع الأراضي اتحدّثت على الخريطة من مخططات الهيئة الرسمية. افتح أي مدينة وشوف شكل كل قطعة ومكانها بالظبط: الأخضر متاح، والأحمر اتحجز.",
+    link: "شوف الأراضي على الخريطة",
+  },
   nav: { home: "الرئيسية", market: "السوق", available: "المتاح", guide: "دليل الحجز" },
   /** Static, crawlable pages (phase hub pages and page metadata). `p` is the phase: {num: "11", numAr: "١١", ordinal: "الحادية عشرة"}. */
   seo: {
