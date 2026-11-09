@@ -3,6 +3,8 @@
  * with timeout and jittered exponential backoff. The site answers unknown paths and HEAD
  * requests with `302 → ~/Error.aspx`, so any redirect is a failure and is never retried.
  */
+import "./tls";
+
 export class FetchError extends Error {
   constructor(
     message: string,
@@ -67,7 +69,15 @@ async function fetchBody(url: string, accept: string, opts: FetchTextOptions): P
     }
     if (attempt < retries) await sleep(delay ?? baseDelayMs * 2 ** attempt * (0.5 + Math.random()));
   }
-  throw lastErr instanceof Error ? lastErr : new FetchError(String(lastErr));
+  throw lastErr instanceof Error ? describe(lastErr, url) : new FetchError(String(lastErr));
+}
+
+/** Node reports every network failure as "fetch failed"; the useful part (ECONNRESET, ETIMEDOUT, …) is the cause. */
+function describe(e: Error, url: string): Error {
+  if (e instanceof FetchError) return e;
+  const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+  const detail = cause?.code ?? cause?.message;
+  return detail ? new FetchError(`${e.message}: ${detail} for ${url}`) : e;
 }
 
 /** GET (or POST a form) and return the HTML/text body. */

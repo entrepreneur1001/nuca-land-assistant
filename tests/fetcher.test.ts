@@ -1,3 +1,4 @@
+import tls from "node:tls";
 import { describe, expect, it } from "vitest";
 import { FetchError, fetchJsonPost, fetchText } from "@/ingest/fetcher";
 
@@ -107,5 +108,18 @@ describe("fetchJsonPost", () => {
     const s = server([() => html("busy", 503), () => new Response("[1]", { headers: { "content-type": "application/json" } })]);
     expect(await fetchJsonPost("https://x/a", {}, s.opts)).toEqual([1]);
     expect(s.calls).toHaveLength(2);
+  });
+});
+
+describe("TLS cap for the official site", () => {
+  it("caps the default TLS version at 1.2 once the fetcher is imported", () => {
+    expect(tls.DEFAULT_MAX_VERSION).toBe("TLSv1.2");
+  });
+
+  it("names the network error code instead of a bare 'fetch failed'", async () => {
+    const failing = (async () => {
+      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+    }) as unknown as typeof fetch;
+    await expect(fetchText("https://x.test/", { fetchImpl: failing, retries: 0 })).rejects.toThrow(/fetch failed: ECONNRESET for https:\/\/x.test\//);
   });
 });
