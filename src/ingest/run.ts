@@ -3,7 +3,7 @@ import { RULES_OVERRIDES } from "@/data/building-rules";
 import { DISTRICT_CENTRES } from "@/data/district-centres";
 import { OFFICIAL_CITIES, OFFICIAL_ZONES } from "@/data/official-zones";
 import { SECTOR_VIEWS, viewCentres, type SectorView } from "@/data/sector-views";
-import { computeBuiltDistances, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
+import { computeBuiltDistances, distanceKm, sectorCentroids, type LatLng } from "@/engine/nearbuilt";
 import { officialQueue } from "@/engine/queue";
 import { fetchJsonPost as defaultFetchJsonPost, fetchText } from "./fetcher";
 import { mergeOfficialNews, parseNewsList } from "./nuca-news";
@@ -12,6 +12,9 @@ import { OFFICIAL_SITE, officialUrl } from "./official";
 import { buildOfficialIndex, type OfficialZoneEntry } from "./official-map";
 import { buildIndex, fetchBuiltPoints as defaultFetchBuilt } from "./osm";
 import { loadPlanFiles, planCentroids } from "./plan-places";
+
+/** A plan-placed plot whose plan moved it by more than this gets its distances measured again. */
+const PLAN_MOVE_KM = 0.02;
 import { bumpBookingsByDay, deriveStatuses, hotSectors, recordToTuple, seedBookingsByDay, synthesizeAllocations, tupleToRecord, type PlotRecord } from "./status";
 
 export interface ChunkDoc {
@@ -275,20 +278,26 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       if (z) z.n = s.seen;
     }
 
-    // 3b. positions from the official zone plans for plots the snapshot never placed (the site publishes none)
+    // 3b. positions from the official zone plans. The plan is the source of truth for every plot drawn on one:
+    // a corrected plan moves its plots on the next run (the site itself publishes no coordinates). Plots that
+    // moved more than a few metres, or had no position, get their building distances measured again.
     const records = derived.records;
     const places = opts.planPlaces ?? planCentroids(loadPlanFiles());
     const newlyLocated: string[] = [];
+    let moved = 0;
     for (const r of records) {
-      if (r.lat != null && r.lng != null) continue;
       const ll = places.get(r.id);
       if (!ll) continue;
+      const had = r.lat != null && r.lng != null;
+      const far = !had || distanceKm([r.lat!, r.lng!], ll) > PLAN_MOVE_KM;
       r.lat = ll[0];
       r.lng = ll[1];
+      if (!far) continue;
+      if (had) moved++;
       newlyLocated.push(r.id);
     }
     result.located = newlyLocated.length;
-    if (newlyLocated.length) log(`plans: ${newlyLocated.length} plot(s) placed from the official zone plans`);
+    if (newlyLocated.length) log(`plans: ${newlyLocated.length} plot(s) placed from the official zone plans (${moved} moved from an earlier position)`);
 
     // 4. distances to existing buildings for new and newly placed plots (from the plot, else its district centre)
     const insertedIds = new Set([...derived.inserted, ...newlyLocated]);

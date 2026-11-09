@@ -406,4 +406,23 @@ describe("sync runner (official site)", () => {
     const p = tupleToPlot(t[0], { cities: ["مدينة"], sectors: [], zones: [] });
     expect(p).toMatchObject({ status: "available", held: true, mainRoadM: 12 });
   });
+  it("takes every plot's position from the zone plans, re-measuring distances only for plots that moved", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 10 }, (_, i) => rec(String(i + 1), 0, i + 1 === 9 ? { lat: null, lng: null, builtKm: null, builtSrc: 2 } : {})));
+    const { opts } = harness(siteData(genPlots(10, { square: SQ })));
+    const planPlaces = new Map<string, [number, number]>([
+      ["guid-1", [30.01001, 31.02001]], // ~1.5 m from the stored position: moved, not re-measured
+      ["guid-2", [30.02, 31.03]], // ~1.4 km away: a corrected plan moved it
+      ["guid-9", [30.015, 31.025]], // never had a position
+    ]);
+    const r = await runSync(m.store, { ...opts, planPlaces, now: T0 });
+    expect(r.error).toBeUndefined();
+    expect(r.located).toBe(2);
+    const byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
+    expect([byNo.get("1")![13], byNo.get("1")![14]]).toEqual([30.01001, 31.02001]);
+    expect([byNo.get("2")![13], byNo.get("2")![14]]).toEqual([30.02, 31.03]);
+    expect([byNo.get("9")![13], byNo.get("9")![14]]).toEqual([30.015, 31.025]);
+    expect(byNo.get("9")![18]).toBe(0); // measured from the plot itself
+    expect([byNo.get("3")![13], byNo.get("3")![14]]).toEqual([30.01, 31.02]); // not on a plan: untouched
+  });
 });
