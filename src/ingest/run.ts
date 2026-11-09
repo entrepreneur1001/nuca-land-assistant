@@ -11,6 +11,7 @@ import { createClient, crawlZones, discoverZones, type FetchHtml, type ZoneCrawl
 import { OFFICIAL_SITE, officialUrl } from "./official";
 import { buildOfficialIndex, type OfficialZoneEntry } from "./official-map";
 import { buildIndex, fetchBuiltPoints as defaultFetchBuilt } from "./osm";
+import { loadPlanFiles, planCentroids } from "./plan-places";
 import { bumpBookingsByDay, deriveStatuses, hotSectors, recordToTuple, seedBookingsByDay, synthesizeAllocations, tupleToRecord, type PlotRecord } from "./status";
 
 export interface ChunkDoc {
@@ -52,6 +53,8 @@ export interface RunOptions {
   rulesOverrides?: Record<string, BuildingRules>;
   sectorViews?: Record<string, SectorView>;
   districtCentres?: Record<string, LatLng>;
+  /** Plot id → position read off the official zone plans (default: public/plans/*.json). */
+  planPlaces?: Map<string, LatLng>;
   officialZones?: OfficialZoneEntry[];
   officialCities?: Record<number, string>;
   log?: (...a: unknown[]) => void;
@@ -65,6 +68,8 @@ export interface RunResult {
   newlyBooked: number;
   newlyAvailable: number;
   inserted: number;
+  /** Plots that got coordinates from the official zone plans this run. */
+  located: number;
   osmRefreshed: boolean;
   zonesOk: number;
   zonesFailed: number;
@@ -160,6 +165,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     newlyBooked: 0,
     newlyAvailable: 0,
     inserted: 0,
+    located: 0,
     osmRefreshed: false,
     zonesOk: 0,
     zonesFailed: 0,
@@ -269,9 +275,23 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       if (z) z.n = s.seen;
     }
 
-    // 4. distances to existing buildings for new plots (their district centre; the site has no coordinates)
+    // 3b. positions from the official zone plans for plots the snapshot never placed (the site publishes none)
     const records = derived.records;
-    const insertedIds = new Set(derived.inserted);
+    const places = opts.planPlaces ?? planCentroids(loadPlanFiles());
+    const newlyLocated: string[] = [];
+    for (const r of records) {
+      if (r.lat != null && r.lng != null) continue;
+      const ll = places.get(r.id);
+      if (!ll) continue;
+      r.lat = ll[0];
+      r.lng = ll[1];
+      newlyLocated.push(r.id);
+    }
+    result.located = newlyLocated.length;
+    if (newlyLocated.length) log(`plans: ${newlyLocated.length} plot(s) placed from the official zone plans`);
+
+    // 4. distances to existing buildings for new and newly placed plots (from the plot, else its district centre)
+    const insertedIds = new Set([...derived.inserted, ...newlyLocated]);
     const osmCities: Record<string, string> = { ...(prev.osmCities ?? {}) };
     const newBySector = new Map<string, PlotRecord[]>();
     for (const r of records) if (insertedIds.has(r.id) && r.sectorId) newBySector.set(r.sectorId, [...(newBySector.get(r.sectorId) ?? []), r]);
@@ -286,7 +306,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
         try {
           const points = await fetchBuilt([...centres.values()]);
           const dist = computeBuiltDistances(
-            [...newBySector.values()].flat().map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: null, longitude: null })),
+            [...newBySector.values()].flat().map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })),
             buildIndex(points),
             centres,
           );

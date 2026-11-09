@@ -482,6 +482,16 @@ export const t = {
     source: (when: string) => `آخر تحديث للأرض من موقع الهيئة الرسمي ${when}`,
     notFound: "الأرض دي مش موجودة.",
   },
+  /** Official zone plans drawn over the satellite maps (public/plans). */
+  plan: {
+    /** Map button that shows/hides the plan image (the plot shapes stay). */
+    toggle: "المخطط",
+    toggleTitle: "إظهار أو إخفاء صورة المخطط الرسمي",
+    /** Status word on a plot shape: available but someone filed a preliminary booking on it. */
+    held: "عليها حجز مبدئي",
+    legendHeld: "متاحة وعليها حجز مبدئي",
+    note: "شكل القطع من مخطط الهيئة الرسمي: الأخضر متاح، البرتقالي عليه حجز مبدئي، والرمادي اتحجز. دوس على أي قطعة تفتحها.",
+  },
   market: {
     title: "حالة السوق",
     last24: "اتحجز في آخر ٢٤ ساعة",

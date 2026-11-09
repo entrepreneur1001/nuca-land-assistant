@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { FACTOR, ago, km, num, pct, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
@@ -17,6 +17,7 @@ export function LandDetail() {
   const id = useSearchParams().get("id") ?? "";
   const app = useApp();
   const now = useNow();
+  const [hasPlan, setHasPlan] = useState(false);
   useEffect(() => {
     if (id) void track("land_view", { id });
   }, [id]);
@@ -132,19 +133,20 @@ export function LandDetail() {
         <Card>
           <h2 className="font-bold">📍 {t.detail.mapTitle}</h2>
           <div className="mt-2">
-            <PlotMap plot={plot} plots={app.snapshot.plots} />
+            <PlotMap plot={plot} plots={app.snapshot.plots} onPlan={setHasPlan} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
             <Legend className="bg-accent" label={t.detail.legendThis} />
             <Legend className="bg-good" label={t.detail.legendAvailable} />
+            {hasPlan ? <Legend className="bg-warn" label={t.plan.legendHeld} /> : null}
             <Legend className="bg-muted" label={t.detail.legendBooked} />
             <a className="ms-auto text-accent hover:underline" target="_blank" rel="noreferrer" href={mapLink(plot)}>
               {t.detail.map}
             </a>
           </div>
           <p className="mt-1 text-xs text-muted">
-            {plot.latitude == null ? `${t.detail.approxSector} ` : ""}
-            {t.detail.mapNote}
+            {plot.latitude == null && !hasPlan ? `${t.detail.approxSector} ` : ""}
+            {hasPlan ? t.plan.note : t.detail.mapNote}
           </p>
         </Card>
       ) : null}

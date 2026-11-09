@@ -8,10 +8,13 @@ export const OFFICIAL_SITE = {
   name: "lands.nuca.gov.eg",
   url: "https://lands.nuca.gov.eg/",
   base,
-  /** Pause between two requests of the same worker. */
-  delayMs: Number(process.env.OFFICIAL_DELAY_MS ?? 500),
-  /** Zones crawled at the same time. */
-  concurrency: Number(process.env.OFFICIAL_CONCURRENCY ?? 2),
+  /**
+   * Pace: the site's firewall drops connections from a datacenter IP above roughly one request per second
+   * (2 workers at 500 ms got ECONNRESET/timeouts from GitHub's runners; 1 request per 1.5 s was 60/60 fine), so
+   * one worker with a 1 s pause. Zones not reached within the budget roll over to the next run.
+   */
+  delayMs: Number(process.env.OFFICIAL_DELAY_MS ?? 1000),
+  concurrency: Number(process.env.OFFICIAL_CONCURRENCY ?? 1),
   /** Time budget for the per-run crawl of the available views; zones not reached wait for the next run. */
   budgetMs: Number(process.env.OFFICIAL_BUDGET_MS ?? 13 * 60_000),
   /** Budget for a `--full` run (available + booked views). */
