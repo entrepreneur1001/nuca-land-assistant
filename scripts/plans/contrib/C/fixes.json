@@ -1,0 +1,7 @@
+{
+ "_doc": "Numbers read by eye on upscaled crops: [x, y, number] in plan pixels. segment.py adds a seed at x,y when no OCR number site is there; resolve.py assigns the number to the polygon containing x,y (method manual).",
+ "4810": [[1066, 349, "147"]],
+ "4811": [[1061, 539, "367"]],
+ "4812": [[866, 949, "286"], [888, 1011, "283"]],
+ "4813": [[923.3, 905, "269"], [934.2, 925.4, "264"], [947.9, 920, "265"], [1729, 632, "493"], [438, 988, "5"], [468, 1243, "58"]]
+}
