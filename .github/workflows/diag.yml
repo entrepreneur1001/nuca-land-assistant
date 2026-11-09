@@ -1,4 +1,5 @@
-# Manual network diagnostic from a GitHub runner: how reliably can it fetch the official NUCA site?
+# Manual network diagnostic from a GitHub runner: do large WebForms POSTs (paging) reach the official NUCA site,
+# and does a smaller interface MTU help?
 name: Diagnose reachability
 on:
   workflow_dispatch:
@@ -7,20 +8,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Sequential fetch reliability
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Page-2 postback before and after lowering the MTU
         run: |
           set +e
           echo "== egress $(curl -s --max-time 10 https://api.ipify.org)"
-          echo "== 20 x curl --tls-max 1.2, 1.5 s apart"
-          ok=0; for i in $(seq 1 20); do c=$(curl -4 -s -o /dev/null --tls-max 1.2 --max-time 15 -w "%{http_code} %{time_total}" "https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID=$((3580+i))"); echo "  $i: $c"; case "$c" in 200*|302*) ok=$((ok+1));; esac; sleep 1.5; done; echo "curl ok=$ok/20"
-          echo "== 20 x node fetch capped at TLS 1.2, 1.5 s apart"
-          node --tls-max-v1.2 -e '
-            const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-            (async()=>{let ok=0;for(let i=1;i<=20;i++){const t0=Date.now();try{const r=await fetch("https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID="+(3600+i),{signal:AbortSignal.timeout(15000),redirect:"manual",headers:{"user-agent":"Mozilla/5.0"}});const t=await r.text();ok++;console.log("  "+i+": "+r.status+" "+t.length+"b "+(Date.now()-t0)+"ms");}catch(e){console.log("  "+i+": ERR "+(e.cause&&e.cause.code||e.message)+" "+(Date.now()-t0)+"ms");}await sleep(1500);}console.log("node ok="+ok+"/20");})()'
-          echo "== 20 x node fetch TLS1.2 + connection: close"
-          node --tls-max-v1.2 -e '
-            const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-            (async()=>{let ok=0;for(let i=1;i<=20;i++){const t0=Date.now();try{const r=await fetch("https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID="+(3620+i),{signal:AbortSignal.timeout(15000),redirect:"manual",headers:{connection:"close"}});const t=await r.text();ok++;console.log("  "+i+": "+r.status+" "+t.length+"b "+(Date.now()-t0)+"ms");}catch(e){console.log("  "+i+": ERR "+(e.cause&&e.cause.code||e.message)+" "+(Date.now()-t0)+"ms");}await sleep(1500);}console.log("node-close ok="+ok+"/20");})()'
+          DEV=$(ip route show default | awk '{print $5}'); echo "== dev $DEV mtu $(cat /sys/class/net/$DEV/mtu)"
+          cat > /tmp/probe.mts <<'JS'
+          import { fetchText } from "/home/runner/work/nuca-land-assistant/nuca-land-assistant/src/ingest/fetcher";
+          import { createClient, crawlZone, parseZonePage } from "/home/runner/work/nuca-land-assistant/nuca-land-assistant/src/ingest/nuca-plots";
+          const url = (id: number) => `https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID=${id}`;
+          const client = createClient((u, init) => fetchText(u, { method: init?.method, body: init?.body, headers: init?.headers, timeoutMs: 20_000, retries: 0 }), { delayMs: 800 });
+          for (const zid of [3698, 3583]) {
+            let t0 = Date.now();
+            try {
+              const p1 = parseZonePage(await client.get(url(zid)));
+              const vs = p1.hidden.__VIEWSTATE?.length ?? 0;
+              console.log(`zone ${zid}: GET ok, ${p1.rows.length} rows, pages ${p1.pages.join(",")}, viewstate ${vs} chars, ${Date.now() - t0} ms`);
+              t0 = Date.now();
+              const p2 = parseZonePage(await client.postback(url(zid), p1.hidden, "ctl00$MainContent$grdPlots", "Page$2", { "ctl00$MainContent$PlotType": "rdShowAvailable", "ctl00$MainContent$txtPlotNumber": "" }));
+              console.log(`zone ${zid}: POST page 2 ok, ${p2.rows.length} rows, ${Date.now() - t0} ms`);
+            } catch (e) {
+              console.log(`zone ${zid}: FAILED ${(e as Error).message.slice(0, 120)} after ${Date.now() - t0} ms`);
+            }
+          }
+          const t0 = Date.now();
+          const c = await crawlZone(client, 3583, "available");
+          console.log(`crawlZone 3583: ok=${c.ok} rows=${c.rows.length} pages=${c.pages} ${Date.now() - t0} ms ${c.error ?? ""}`);
+          JS
+          echo "== default MTU"; npx tsx /tmp/probe.mts
+          echo "== set MTU 1300"; sudo ip link set dev "$DEV" mtu 1300 && echo "mtu now $(cat /sys/class/net/$DEV/mtu)"
+          npx tsx /tmp/probe.mts
+          echo "== set MTU 1200"; sudo ip link set dev "$DEV" mtu 1200 && npx tsx /tmp/probe.mts
