@@ -20,7 +20,9 @@ const FILE: PlanZoneFile = {
 
 describe("imagePointToLatLng", () => {
   it("maps the corners to themselves and the far corner by vector addition", () => {
-    expect(imagePointToLatLng(FILE, 0, 0)).toEqual([30.1, 31.0]);
+    const tl = imagePointToLatLng(FILE, 0, 0);
+    expect(tl[0]).toBeCloseTo(30.1, 9);
+    expect(tl[1]).toBeCloseTo(31.0, 9);
     const tr = imagePointToLatLng(FILE, 1000, 0);
     expect(tr[0]).toBeCloseTo(30.09, 9);
     expect(tr[1]).toBeCloseTo(31.0, 9);

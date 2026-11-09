@@ -59,7 +59,7 @@ interface RotatedImage {
   _img?: HTMLImageElement;
   _failed?: boolean;
   /** The map while added (set in onAdd, cleared in onRemove). */
-  _on?: Leaflet.Map;
+  _host?: Leaflet.Map;
   /** Set by Leaflet before getEvents() runs. */
   _zoomAnimated?: boolean;
   options: Leaflet.LayerOptions & { opacity: number };
@@ -99,7 +99,7 @@ function rotatedImage(L: L): RotatedImageCtor {
     },
     onAdd(this: RotatedImage, map: Leaflet.Map) {
       if (this._failed) return;
-      this._on = map;
+      this._host = map;
       if (!this._img) {
         const img = L.DomUtil.create("img", "leaflet-image-layer" + (this._zoomAnimated ? " leaflet-zoom-animated" : "")) as HTMLImageElement;
         img.alt = "";
@@ -117,7 +117,7 @@ function rotatedImage(L: L): RotatedImageCtor {
         img.onmousemove = L.Util.falseFn;
         img.onerror = () => {
           this._failed = true;
-          this._on?.removeLayer(this as unknown as Leaflet.Layer);
+          this._host?.removeLayer(this as unknown as Leaflet.Layer);
         };
         img.src = this._url;
         this._img = img;
@@ -126,7 +126,7 @@ function rotatedImage(L: L): RotatedImageCtor {
       this._reset();
     },
     onRemove(this: RotatedImage) {
-      this._on = undefined;
+      this._host = undefined;
       if (this._img) L.DomUtil.remove(this._img);
     },
     getEvents(this: RotatedImage) {
@@ -135,11 +135,11 @@ function rotatedImage(L: L): RotatedImageCtor {
       return events;
     },
     _reset(this: RotatedImage) {
-      const map = this._on;
+      const map = this._host;
       if (map) this._place((ll) => map.latLngToLayerPoint(ll));
     },
     _animateZoom(this: RotatedImage, e: Leaflet.ZoomAnimEvent) {
-      const map = this._on as unknown as AnimatedMap | undefined;
+      const map = this._host as unknown as AnimatedMap | undefined;
       if (map) this._place((ll) => map._latLngToNewLayerPoint(ll, e.zoom, e.center));
     },
     /** matrix(a, b, c, d, e, f): columns are the per-pixel vectors along the top and left edges, then the top-left corner. */
