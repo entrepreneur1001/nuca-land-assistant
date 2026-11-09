@@ -1,24 +1,26 @@
-# Manual network diagnostic from a GitHub runner: can it reach the official NUCA site, and with which TLS settings?
+# Manual network diagnostic from a GitHub runner: how reliably can it fetch the official NUCA site?
 name: Diagnose reachability
 on:
   workflow_dispatch:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: TLS variants
+      - name: Sequential fetch reliability
         run: |
           set +e
-          echo "== node $(node -v), openssl $(node -p process.versions.openssl)"
-          echo "== curl --tlsv1.3"; curl -4 -sv -o /dev/null --tlsv1.3 --max-time 20 https://lands.nuca.gov.eg/ 2>&1 | grep -E "SSL connection|HTTP/1|error|reset|alert|Recv failure" | head -4
-          echo "== curl --tls-max 1.2"; curl -4 -sv -o /dev/null --tls-max 1.2 --max-time 20 https://lands.nuca.gov.eg/ 2>&1 | grep -E "SSL connection|HTTP/1" | head -2
-          echo "== node tls.connect default"; node -e 'const tls=require("tls");const s=tls.connect(443,"lands.nuca.gov.eg",{servername:"lands.nuca.gov.eg"},()=>{console.log("OK",s.getProtocol(),s.getCipher().name);s.end()});s.on("error",e=>console.log("ERR",e.code,e.message))'
-          echo "== node tls.connect maxVersion TLSv1.2"; node -e 'const tls=require("tls");const s=tls.connect(443,"lands.nuca.gov.eg",{servername:"lands.nuca.gov.eg",maxVersion:"TLSv1.2"},()=>{console.log("OK",s.getProtocol(),s.getCipher().name);s.end()});s.on("error",e=>console.log("ERR",e.code,e.message))'
-          echo "== node fetch default"; node -e 'fetch("https://lands.nuca.gov.eg/",{signal:AbortSignal.timeout(15000),redirect:"manual"}).then(r=>console.log("OK status",r.status)).catch(e=>console.log("ERR",e.cause&&(e.cause.code||e.cause.message)))'
-          echo "== node fetch with --tls-max-v1.2"; node --tls-max-v1.2 -e 'fetch("https://lands.nuca.gov.eg/",{signal:AbortSignal.timeout(15000),redirect:"manual"}).then(r=>console.log("OK status",r.status)).catch(e=>console.log("ERR",e.cause&&(e.cause.code||e.cause.message)))'
-          echo "== node fetch via undici Agent maxVersion"; node -e 'const {Agent,fetch}=require("undici");const a=new Agent({connect:{maxVersion:"TLSv1.2"}});fetch("https://lands.nuca.gov.eg/",{dispatcher:a,signal:AbortSignal.timeout(15000),redirect:"manual"}).then(r=>console.log("OK status",r.status)).catch(e=>console.log("ERR",e.cause&&(e.cause.code||e.cause.message)))' 2>&1 | head -3
-          echo "== node fetch, 3 tries default (flakiness?)"; for i in 1 2 3; do node -e 'fetch("https://lands.nuca.gov.eg/ar/NewsList.aspx",{signal:AbortSignal.timeout(15000),redirect:"manual"}).then(r=>r.text()).then(t=>console.log("OK bytes",t.length)).catch(e=>console.log("ERR",e.cause&&(e.cause.code||e.cause.message)))'; done
+          echo "== egress $(curl -s --max-time 10 https://api.ipify.org)"
+          echo "== 20 x curl --tls-max 1.2, 1.5 s apart"
+          ok=0; for i in $(seq 1 20); do c=$(curl -4 -s -o /dev/null --tls-max 1.2 --max-time 15 -w "%{http_code} %{time_total}" "https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID=$((3580+i))"); echo "  $i: $c"; case "$c" in 200*|302*) ok=$((ok+1));; esac; sleep 1.5; done; echo "curl ok=$ok/20"
+          echo "== 20 x node fetch capped at TLS 1.2, 1.5 s apart"
+          node --tls-max-v1.2 -e '
+            const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+            (async()=>{let ok=0;for(let i=1;i<=20;i++){const t0=Date.now();try{const r=await fetch("https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID="+(3600+i),{signal:AbortSignal.timeout(15000),redirect:"manual",headers:{"user-agent":"Mozilla/5.0"}});const t=await r.text();ok++;console.log("  "+i+": "+r.status+" "+t.length+"b "+(Date.now()-t0)+"ms");}catch(e){console.log("  "+i+": ERR "+(e.cause&&e.cause.code||e.message)+" "+(Date.now()-t0)+"ms");}await sleep(1500);}console.log("node ok="+ok+"/20");})()'
+          echo "== 20 x node fetch TLS1.2 + connection: close"
+          node --tls-max-v1.2 -e '
+            const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+            (async()=>{let ok=0;for(let i=1;i<=20;i++){const t0=Date.now();try{const r=await fetch("https://lands.nuca.gov.eg/ar/ViewZone.aspx?ID="+(3620+i),{signal:AbortSignal.timeout(15000),redirect:"manual",headers:{connection:"close"}});const t=await r.text();ok++;console.log("  "+i+": "+r.status+" "+t.length+"b "+(Date.now()-t0)+"ms");}catch(e){console.log("  "+i+": ERR "+(e.cause&&e.cause.code||e.message)+" "+(Date.now()-t0)+"ms");}await sleep(1500);}console.log("node-close ok="+ok+"/20");})()'
