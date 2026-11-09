@@ -111,6 +111,12 @@ npx tsx scripts/tools/build-official-zones.mts /tmp/official-plots.json --write 
 npm run sync:local -- --dry-run                                           # compare counts with the previous market before deploying
 ```
 
+### Zone plans on the map (public/plans)
+
+The official site publishes a plan image per zone (`ViewZone.aspx` → OpenSeadragon Deep Zoom tiles): every offered plot in yellow with its number, on the zone's street layout. These are georeferenced offline and shipped as `public/plans/<zid>.webp` (the plan, cropped) + `public/plans/<zid>.json` (`w`, `h`, the map position of three image corners, and one polygon per plot id in image pixels) + `public/plans/index.json` (zone → city, district, bounds). The maps draw the plan as a rotated image overlay with one polygon per plot (`src/components/plan-layer.ts`, `src/lib/plans.ts`), and the sync gives plots that never had coordinates the centroid of their polygon (`src/ingest/plan-places.ts`, step 3b of the run), so building distances and the area maps work for them too. Existing coordinates are never overwritten.
+
+How a plan is georeferenced (tools kept outside the repo, see the session notes): the yellow plots are extracted as polygons and their numbers read with Apple Vision; for zones whose plots already have coordinates, a similarity transform (scale, rotation, translation) is fitted to those coordinates (typical rms 2–4 m); zones without coordinates are placed by matching the plan's roads to OpenStreetMap, by chaining to a neighbouring plan that shows the same drawing, or from hand control points, and every placement is checked against satellite imagery before export. Plans are north-up except where noted (Sadat's districts are drawn rotated).
+
 ## Model
 
 All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
