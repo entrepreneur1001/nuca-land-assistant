@@ -299,11 +299,20 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     result.located = newlyLocated.length;
     if (newlyLocated.length) log(`plans: ${newlyLocated.length} plot(s) placed from the official zone plans (${moved} moved from an earlier position)`);
 
-    // 4. distances to existing buildings for new and newly placed plots (from the plot, else its district centre)
-    const insertedIds = new Set([...derived.inserted, ...newlyLocated]);
+    // 4. distances to existing buildings for new and newly placed plots (from the plot, else its district centre).
+    // Ids whose measurement failed in an earlier run (OpenStreetMap down) are carried in meta.distancePending and
+    // retried here, so a failure never leaves a plot with an unknown or stale distance for good.
+    const known = new Set(records.map((r) => r.id));
+    // `["*"]` = every plan-placed plot (a failed run with too many ids to list); undefined = first run with this
+    // code, which also re-measures every plan-placed plot once (earlier runs could not retry after a failure).
+    const pendingAll = prev.distancePending === undefined || prev.distancePending.includes("*");
+    const pending = pendingAll ? [...places.keys()] : prev.distancePending!;
+    const unmeasured = records.filter((r) => r.lat != null && r.lng != null && r.builtSrc !== 0).map((r) => r.id);
+    const insertedIds = new Set([...derived.inserted, ...newlyLocated, ...unmeasured, ...pending.filter((id) => known.has(id))]);
     const osmCities: Record<string, string> = { ...(prev.osmCities ?? {}) };
     const newBySector = new Map<string, PlotRecord[]>();
     for (const r of records) if (insertedIds.has(r.id) && r.sectorId) newBySector.set(r.sectorId, [...(newBySector.get(r.sectorId) ?? []), r]);
+    meta.distancePending = [];
     if (newBySector.size) {
       const centres = new Map<string, LatLng>();
       const plotCentres = sectorCentroids(records.map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })));
@@ -330,7 +339,8 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
           if (result.osmRefreshed) meta.osmAt = now.toISOString();
           log(`OSM: ${points.length} built points for ${centres.size} district(s) of new plots`);
         } catch (e) {
-          log("OSM failed (new plots keep unknown distances):", e instanceof Error ? e.message : e);
+          meta.distancePending = insertedIds.size > 3000 ? ["*"] : [...insertedIds];
+          log(`OSM failed (${meta.distancePending.length} plot(s) keep their distances until the next run):`, e instanceof Error ? e.message : e);
         }
       }
     }

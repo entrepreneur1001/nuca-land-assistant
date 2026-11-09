@@ -425,4 +425,21 @@ describe("sync runner (official site)", () => {
     expect(byNo.get("9")![18]).toBe(0); // measured from the plot itself
     expect([byNo.get("3")![13], byNo.get("3")![14]]).toEqual([30.01, 31.02]); // not on a plan: untouched
   });
+  it("retries building distances next run when OpenStreetMap was down", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 5 }, (_, i) => rec(String(i + 1), 0, i + 1 === 2 ? { lat: null, lng: null, builtKm: null, builtSrc: 2 } : {})));
+    const { opts } = harness(siteData(genPlots(5, { square: SQ })));
+    const planPlaces = new Map<string, [number, number]>([["guid-2", [30.015, 31.025]]]);
+    const down = await runSync(m.store, { ...opts, planPlaces, now: T0, fetchBuiltPoints: async () => { throw new Error("fetch failed"); } });
+    expect(down.error).toBeUndefined();
+    expect(m.meta!.distancePending).toEqual(["guid-2"]);
+    let byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
+    expect(byNo.get("2")![18]).toBe(2); // still unknown
+    const up = await runSync(m.store, { ...opts, planPlaces, now: later(15) });
+    expect(up.error).toBeUndefined();
+    expect(up.osmRefreshed).toBe(true);
+    expect(m.meta!.distancePending).toEqual([]);
+    byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
+    expect(byNo.get("2")![18]).toBe(0); // measured from the plot on the retry
+  });
 });
