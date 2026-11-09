@@ -9,6 +9,7 @@ import { isOnMainRoad } from "@/engine/roads";
 import { unitsRule } from "@/engine/units";
 import { num, t, usd } from "@/i18n/ar";
 import { areaPlots } from "@/lib/area-stats";
+import { useAvailableOnly } from "@/lib/map-prefs";
 import { areaHref } from "@/lib/phases";
 import { useApp } from "./app-state";
 import { AreaMap } from "./area-map";
@@ -29,6 +30,7 @@ export function AreaView() {
   const [shown, setShown] = useState(PAGE);
   const [hover, setHover] = useState<string | null>(null);
   const [hasPlan, setHasPlan] = useState(false);
+  const [availableOnly, setAvailableOnly] = useAvailableOnly();
 
   const snapshot = app?.snapshot ?? null;
   const result = app?.result ?? null;
@@ -108,13 +110,16 @@ export function AreaView() {
       <Card>
         <h2 className="font-bold">📍 {t.area.mapTitle}</h2>
         <div className="mt-2">
-          <AreaMap plots={area.plots} districts={mapDistricts} highlight={hover} onDistrict={(d) => go(d)} onPlan={setHasPlan} />
+          <AreaMap plots={area.plots} districts={mapDistricts} highlight={hover} availableOnly={availableOnly} onDistrict={(d) => go(d)} onPlan={setHasPlan} />
         </div>
         <div className={`mt-2 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted ${mappable ? "flex" : "hidden"}`}>
           <Dot className="bg-good" label={t.detail.legendAvailable} />
           {hasPlan ? <Dot className="bg-warn" label={t.plan.legendHeld} /> : null}
-          <Dot className="bg-muted" label={t.detail.legendBooked} />
+          {availableOnly ? null : <Dot className="bg-bad" label={t.detail.legendBooked} />}
           {mapDistricts.some((d) => d.unlocated > 0) ? <Dot className="border-2 border-dashed border-accent" label={t.area.legendApprox} /> : null}
+          <span className="ms-auto text-sm text-text">
+            <Check checked={availableOnly} onChange={setAvailableOnly} label={t.detail.onlyAvailable} />
+          </span>
         </div>
         {mappable ? <p className="mt-1 text-xs text-muted">{hasPlan ? t.plan.note : t.area.mapNote}</p> : null}
       </Card>

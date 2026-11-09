@@ -18,15 +18,22 @@ const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/W
 export function PlotMap({
   plot,
   plots,
+  availableOnly,
   onPlan,
 }: {
   plot: Plot;
   plots: Plot[];
+  /** Hide the booked neighbours (dots and shapes); the plot itself always shows. */
+  availableOnly?: boolean;
   /** Whether the plot itself is drawn from an official plan (then its place isn't approximate). */
   onPlan?: (hasPlan: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const plans = useRef<PlanLayer[]>([]);
+  const bookedDots = useRef<import("leaflet").CircleMarker[]>([]);
+  const host = useRef<import("leaflet").Map | null>(null);
+  const hideBooked = useRef(false);
   const exact = plot.latitude != null && plot.longitude != null;
   const centre = exact ? { lat: plot.latitude!, lng: plot.longitude! } : plot.approxLoc;
 
@@ -36,6 +43,7 @@ export function PlotMap({
       return;
     }
     const el = ref.current;
+    const dots = bookedDots.current;
     let map: import("leaflet").Map | null = null;
     let cancelled = false;
     void Promise.all([import("leaflet"), loadPlans(plot.cityName, [plot.projectId], new Set([plot.id]))]).then(([L, zones]) => {
@@ -43,7 +51,7 @@ export function PlotMap({
       const css = getComputedStyle(document.documentElement);
       const color = (name: string) => css.getPropertyValue(name).trim();
       const good = color("--good");
-      const muted = color("--muted");
+      const bad = color("--bad");
       const accent = color("--accent");
       const warn = color("--warn") || good;
 
@@ -63,28 +71,33 @@ export function PlotMap({
       const byPlot = new Map([plot, ...neighbours].map((p) => [p.id, p]));
       const layers: PlanLayer[] = zones.map((z) =>
         addPlanLayer(L, map!, z.zid, z.zone, z.image, byPlot, {
-          colors: { good, warn, muted, accent },
+          colors: { good, warn, bad, accent },
           self: plot.id,
           onClick: (id) => router.push(`/land?id=${encodeURIComponent(id)}`),
         }),
       );
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
       if (layers.length) addPlanToggle(L, map, layers);
+      for (const l of layers) l.setBookedVisible(!hideBooked.current);
+      plans.current = layers;
+      host.current = map;
+      dots.length = 0;
       onPlan?.(shaped.has(plot.id));
 
       for (const p of dotted) {
         if (shaped.has(p.id)) continue;
         const booked = p.status === "booked";
-        L.circleMarker([p.latitude!, p.longitude!], {
+        const m = L.circleMarker([p.latitude!, p.longitude!], {
           radius: 5,
           weight: 1,
           color: "#fff",
-          fillColor: booked ? muted : good,
-          fillOpacity: booked ? 0.7 : 0.9,
+          fillColor: booked ? bad : good,
+          fillOpacity: booked ? 0.75 : 0.9,
         })
           .bindTooltip(plotTooltip(p))
-          .on("click", () => router.push(`/land?id=${encodeURIComponent(p.id)}`))
-          .addTo(map);
+          .on("click", () => router.push(`/land?id=${encodeURIComponent(p.id)}`));
+        if (booked) dots.push(m);
+        if (!booked || !hideBooked.current) m.addTo(map);
       }
 
       if (shaped.has(plot.id)) return; // Its shape, labelled, is on the plan.
@@ -101,11 +114,25 @@ export function PlotMap({
     });
     return () => {
       cancelled = true;
+      dots.length = 0;
+      plans.current = [];
+      host.current = null;
       map?.remove();
     };
     // Rebuild only when the shown plot changes; snapshot refreshes don't move plots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plot.id, centre?.lat, centre?.lng]);
+
+  useEffect(() => {
+    hideBooked.current = !!availableOnly;
+    for (const l of plans.current) l.setBookedVisible(!availableOnly);
+    const map = host.current;
+    if (!map) return; // Not built yet: the build reads hideBooked.
+    for (const m of bookedDots.current) {
+      if (availableOnly) map.removeLayer(m);
+      else m.addTo(map);
+    }
+  }, [availableOnly]);
 
   if (!centre) return null;
   return <div ref={ref} dir="ltr" className="relative z-0 h-72 w-full overflow-hidden rounded-xl sm:h-96" />;

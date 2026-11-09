@@ -45,8 +45,8 @@ export function AreaLink({ city, district, children, className = "" }: { city: s
 export const recTone = (r: string) => (r === "STRONG_BUY" ? "good" : r === "GOOD" ? "accent" : r === "WATCH" ? "warn" : "bad");
 
 export function RecBadge({ rec }: { rec: string }) {
-  // «تحت المراقبة» isn't shown; such plots just carry no recommendation badge.
-  if (rec === "WATCH") return null;
+  // «تحت المراقبة» and «سيبها» aren't shown; such plots just carry no recommendation badge.
+  if (rec === "WATCH" || rec === "SKIP") return null;
   return <Badge tone={recTone(rec)}>{REC[rec] ?? rec}</Badge>;
 }
 

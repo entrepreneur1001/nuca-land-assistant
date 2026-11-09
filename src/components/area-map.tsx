@@ -15,13 +15,14 @@ const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/W
 /**
  * Satellite map of every plot in a city or district. Where an official zone plan exists (public/plans) the plan
  * image is laid over the tiles and each plot is a shape coloured by status; other plots are dots (available green,
- * booked grey). Plots the source left without coordinates and no shape are summed into one dashed circle per
+ * booked red). Plots the source left without coordinates and no shape are summed into one dashed circle per
  * district at its approximate centre.
  */
 export function AreaMap({
   plots,
   districts,
   highlight,
+  availableOnly,
   onDistrict,
   onPlan,
 }: {
@@ -30,6 +31,8 @@ export function AreaMap({
   districts: AreaDistrict[];
   /** Plot id to emphasise (e.g. the hovered list row). */
   highlight?: string | null;
+  /** Hide booked plots (dots and shapes). */
+  availableOnly?: boolean;
   onDistrict?: (id: string | null) => void;
   /** Whether any plot ended up drawn from an official plan (for the legend). */
   onPlan?: (hasPlan: boolean) => void;
@@ -39,6 +42,9 @@ export function AreaMap({
   const markers = useRef(new Map<string, import("leaflet").CircleMarker>());
   const plans = useRef<PlanLayer[]>([]);
   const lit = useRef<string | null>(null);
+  const bookedDots = useRef<import("leaflet").CircleMarker[]>([]);
+  const host = useRef<import("leaflet").Map | null>(null);
+  const hideBooked = useRef(false);
   const key = `${plots.length}|${districts.map((d) => d.id).join(",")}`;
   const located = plots.filter((p) => p.latitude != null && p.longitude != null);
   const approx = districts.filter((d) => d.unlocated > 0 && d.centre);
@@ -52,6 +58,7 @@ export function AreaMap({
     const el = ref.current;
     const byId = markers.current;
     const layers = plans.current;
+    const dots = bookedDots.current;
     let map: import("leaflet").Map | null = null;
     let cancelled = false;
     const city = plots[0]?.cityName ?? "";
@@ -62,7 +69,7 @@ export function AreaMap({
       const css = getComputedStyle(document.documentElement);
       const color = (name: string) => css.getPropertyValue(name).trim();
       const good = color("--good");
-      const muted = color("--muted");
+      const bad = color("--bad");
       const accent = color("--accent");
       const warn = color("--warn") || good;
 
@@ -84,10 +91,13 @@ export function AreaMap({
       const byPlot = new Map(plots.map((p) => [p.id, p]));
       const open = (id: string) => router.push(`/land?id=${encodeURIComponent(id)}`);
       layers.length = 0;
-      for (const z of zones) layers.push(addPlanLayer(L, map, z.zid, z.zone, z.image, byPlot, { colors: { good, warn, muted, accent }, onClick: open }));
+      for (const z of zones) layers.push(addPlanLayer(L, map, z.zid, z.zone, z.image, byPlot, { colors: { good, warn, bad, accent }, onClick: open }));
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
       if (layers.length) addPlanToggle(L, map, layers);
-      for (const l of layers) l.setHighlight(lit.current);
+      for (const l of layers) {
+        l.setHighlight(lit.current);
+        l.setBookedVisible(!hideBooked.current);
+      }
       onPlan?.(shaped.size > 0);
 
       for (const d of districts) {
@@ -105,30 +115,51 @@ export function AreaMap({
       // Booked first so available dots sit on top.
       const ordered = located.filter((p) => !shaped.has(p.id)).sort((a, b) => Number(b.status === "booked") - Number(a.status === "booked"));
       byId.clear();
+      dots.length = 0;
       for (const p of ordered) {
         const booked = p.status === "booked";
         const m = L.circleMarker([p.latitude!, p.longitude!], {
           radius: 5,
           weight: 1,
           color: "#fff",
-          fillColor: booked ? muted : good,
-          fillOpacity: booked ? 0.6 : 0.95,
+          fillColor: booked ? bad : good,
+          fillOpacity: booked ? 0.75 : 0.95,
         })
           .bindTooltip(plotTooltip(p))
-          .on("click", () => open(p.id))
-          .addTo(map);
+          .on("click", () => open(p.id));
+        if (booked) dots.push(m);
+        if (!booked || !hideBooked.current) m.addTo(map);
         byId.set(p.id, m);
       }
+      host.current = map;
     });
     return () => {
       cancelled = true;
       byId.clear();
+      dots.length = 0;
       layers.length = 0;
+      host.current = null;
       map?.remove();
     };
     // Rebuild when the area changes; snapshot refreshes don't move plots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, empty]);
+
+  useEffect(() => {
+    hideBooked.current = !!availableOnly;
+    for (const l of plans.current) l.setBookedVisible(!availableOnly);
+    const map = host.current;
+    if (!map) return; // Not built yet: the build reads hideBooked.
+    for (const m of bookedDots.current) {
+      if (availableOnly) map.removeLayer(m);
+      else m.addTo(map);
+    }
+    // Re-added booked dots land on top: lift the available ones back above them.
+    if (!availableOnly && bookedDots.current.length) {
+      const booked = new Set(bookedDots.current);
+      for (const m of markers.current.values()) if (!booked.has(m)) m.bringToFront();
+    }
+  }, [availableOnly]);
 
   useEffect(() => {
     lit.current = highlight ?? null;
