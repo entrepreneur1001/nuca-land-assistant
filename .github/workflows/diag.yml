@@ -1,0 +1,20 @@
+# Manual network diagnostic from a GitHub runner: can it reach the official NUCA site?
+name: Diagnose reachability
+on:
+  workflow_dispatch:
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: DNS and connection attempts
+        run: |
+          set +e
+          echo "== runner egress IP"; curl -s --max-time 10 https://api.ipify.org; echo
+          echo "== dig"; dig +short lands.nuca.gov.eg A; dig +short lands.nuca.gov.eg AAAA
+          echo "== curl -4 https"; curl -4 -sv -o /dev/null --max-time 20 https://lands.nuca.gov.eg/ 2>&1 | grep -E "Trying|Connected|SSL connection|HTTP/|timed out|refused|Failed" | head
+          echo "== curl -4 http (port 80)"; curl -4 -sv -o /dev/null --max-time 15 http://lands.nuca.gov.eg/ 2>&1 | grep -E "Trying|Connected|HTTP/|timed out|refused|Failed" | head
+          echo "== tcp 443 via nc"; timeout 10 nc -vz -w 8 lands.nuca.gov.eg 443 2>&1
+          echo "== other gov host"; curl -4 -s -o /dev/null -w "nuca.gov.eg http=%{http_code} total=%{time_total}s\n" --max-time 20 https://www.nuca.gov.eg/
+          echo "== node fetch cause"; node -e 'fetch("https://lands.nuca.gov.eg/",{signal:AbortSignal.timeout(15000)}).then(r=>console.log("status",r.status)).catch(e=>console.log("ERR",e.message,"cause:",e.cause&&(e.cause.code||e.cause.message)))'
+          echo "== traceroute"; sudo apt-get install -y -qq traceroute >/dev/null 2>&1; traceroute -4 -w 2 -m 20 lands.nuca.gov.eg 2>&1 | tail -12
