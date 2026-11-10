@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { GridIndex, type LatLng } from "@/engine/nearbuilt";
 import type { Segment } from "@/engine/roads";
 
@@ -9,24 +11,31 @@ export type BBox = [south: number, west: number, north: number, east: number];
 /** Search radius: the near-built score is zero beyond 5 km, so nothing farther matters. */
 export const OSM_RADIUS_M = 5000;
 
-/** POST an Overpass query (with retries across endpoints) and return the response body. */
+/** Per-query timeout: a single district answers in 30–40 s from a fast client, slower from a shared runner. */
+export const OVERPASS_TIMEOUT_MS = 120_000;
+
+/**
+ * POST an Overpass query and return the response body. Each endpoint gets one try per round; a busy answer
+ * (502/503/504/429) or a reset moves on to the next endpoint after a short pause rather than waiting out the
+ * timeout, so one bad mirror does not burn the run's budget.
+ */
 async function overpass(query: string, fetchImpl: typeof fetch): Promise<string> {
   let lastErr: unknown;
-  // Two tries, one minute each (one district per query): a hung Overpass must not eat the run's budget.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const url = ENDPOINTS[attempt % ENDPOINTS.length];
-    try {
-      const res = await fetchImpl(url, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "nuca-land-assistant/1.0 (personal, read-only)" },
-        body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(60_000),
-      });
-      if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-      return await res.text();
-    } catch (e) {
-      lastErr = e;
-      await sleep(5_000);
+  for (let round = 0; round < 2; round++) {
+    for (const url of ENDPOINTS) {
+      try {
+        const res = await fetchImpl(url, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "nuca-land-assistant/1.0 (personal, read-only)" },
+          body: new URLSearchParams({ data: query }),
+          signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
+        });
+        if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+        return await res.text();
+      } catch (e) {
+        lastErr = e;
+        await sleep(2_000);
+      }
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
@@ -85,4 +94,26 @@ export function buildIndex(points: LatLng[]): GridIndex<null> {
   const g = new GridIndex<null>(0.01);
   for (const p of points) g.add(p, null);
   return g;
+}
+
+/** Shape of a committed built-points file: src/data/osm-built/<sector id>.json. */
+export interface BuiltCacheFile {
+  centre: LatLng;
+  radiusM: number;
+  fetchedAt: string;
+  points: LatLng[];
+}
+
+/**
+ * Built points committed for a district (fetched offline with patient retries when Overpass would not answer the
+ * runner). null when there is no file; the sync then asks Overpass.
+ */
+export function loadBuiltCache(sectorId: string, dir = path.join(process.cwd(), "src", "data", "osm-built")): LatLng[] | null {
+  if (!/^[0-9a-f-]+$/i.test(sectorId)) return null;
+  try {
+    const f = JSON.parse(readFileSync(path.join(dir, `${sectorId}.json`), "utf8")) as BuiltCacheFile;
+    return Array.isArray(f.points) ? f.points.filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) : null;
+  } catch {
+    return null;
+  }
 }

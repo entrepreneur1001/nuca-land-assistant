@@ -10,7 +10,7 @@ import { mergeOfficialNews, parseNewsList } from "./nuca-news";
 import { createClient, crawlZones, discoverZones, type FetchHtml, type ZoneCrawl } from "./nuca-plots";
 import { OFFICIAL_SITE, officialUrl } from "./official";
 import { buildOfficialIndex, type OfficialZoneEntry } from "./official-map";
-import { buildIndex, fetchBuiltPoints as defaultFetchBuilt } from "./osm";
+import { buildIndex, fetchBuiltPoints as defaultFetchBuilt, loadBuiltCache } from "./osm";
 import { loadPlanFiles, planCentroids } from "./plan-places";
 
 /** A plan-placed plot whose plan moved it by more than this gets its distances measured again. */
@@ -56,6 +56,8 @@ export interface RunOptions {
   fetchJsonPost?: (url: string, body: unknown) => Promise<unknown>;
   /** Built points near the given district centres (OpenStreetMap). */
   fetchBuiltPoints?: (centers: LatLng[]) => Promise<LatLng[]>;
+  /** Built points committed for a district (src/data/osm-built/<sector id>.json), used before asking Overpass. */
+  builtCache?: (sectorId: string) => LatLng[] | null;
   /** Building rules from the NUCA booklet. */
   rulesOverrides?: Record<string, BuildingRules>;
   sectorViews?: Record<string, SectorView>;
@@ -155,6 +157,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
   const fetchHtml: FetchHtml = opts.fetchHtml ?? ((url, init) => fetchText(url, { method: init?.method, body: init?.body, headers: init?.headers, timeoutMs: OFFICIAL_SITE.requestTimeoutMs, retries: 2 }));
   const fetchJsonPost = opts.fetchJsonPost ?? ((url: string, body: unknown) => defaultFetchJsonPost(url, body));
   const fetchBuilt = opts.fetchBuiltPoints ?? ((c: LatLng[]) => defaultFetchBuilt(c));
+  const builtCache = opts.builtCache ?? loadBuiltCache;
   const client = createClient(fetchHtml, { delayMs: opts.delayMs ?? OFFICIAL_SITE.delayMs, sleep });
   const cities = opts.officialCities ?? OFFICIAL_CITIES;
   const index = buildOfficialIndex(opts.officialZones ?? OFFICIAL_ZONES, cities);
@@ -331,6 +334,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       const left: string[] = [];
       let measured = 0;
       let fetched = 0;
+      let fromCache = 0;
       let lastError: string | null = null;
       for (const sid of order) {
         const c = centreOf(sid);
@@ -340,7 +344,9 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
           continue;
         }
         try {
-          const points = await fetchBuilt([c]);
+          const cached = builtCache(sid);
+          const points = cached ?? (await fetchBuilt([c]));
+          if (cached) fromCache++;
           const recs = newBySector.get(sid)!;
           const dist = computeBuiltDistances(
             recs.map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })),
@@ -366,7 +372,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
         meta.osmAt = now.toISOString();
       }
       meta.distancePending = left.map((sid) => PENDING_SECTOR + sid);
-      log(`OSM: ${measured} plot(s) in ${fetched} district(s) measured in ${Math.round((Date.now() - t0) / 1000)} s; ${left.length} district(s) left for the next run${lastError ? ` (last error: ${lastError})` : ""}`);
+      log(`OSM: ${measured} plot(s) in ${fetched} district(s) measured in ${Math.round((Date.now() - t0) / 1000)} s (${fromCache} from the committed cache); ${left.length} district(s) left for the next run${lastError ? ` (last error: ${lastError})` : ""}`);
     }
     meta.osmCities = osmCities;
 
