@@ -22,9 +22,10 @@ export interface Compound {
   ring: [number, number][];
   /**
    * The master plan laid inside the outline (compoundImageUrl). A marketing drawing, so approximate: "shape" was
-   * matched to the outline, "rough" is the best such match, "cover" is simply stretched over the outline.
+   * matched to the outline, "rough" is the best such match, "cover" is simply stretched over the outline, and
+   * "reviewed" was placed by a person checking it against the satellite.
    */
-  plan: { kind: "shape" | "rough" | "cover"; w: number; h: number; corners: PlanCorners; clip: [number, number][] } | null;
+  plan: { kind: "shape" | "rough" | "cover" | "reviewed"; w: number; h: number; corners: PlanCorners; clip: [number, number][] } | null;
   /** Lowest unit price Nawy lists, in EGP; null when it lists none. A moving figure: approximate as of the last fetch. */
   price: number | null;
 }

@@ -14,7 +14,13 @@ SRC, OUT = sys.argv[1:3]
 IMAGES = "--no-images" not in sys.argv
 ALL = "--all-images" in sys.argv
 FITS = json.load(open(f"{SRC}/fits.json")) if os.path.exists(f"{SRC}/fits.json") else {}
-def fitted(cid): return FITS.get(str(cid))
+# A person's review of the uncertain placements (review.py): a better placement, or "hide" for an image that is no site plan.
+REVIEWED = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "reviewed.json")))
+def fitted(cid):
+    r = REVIEWED.get(str(cid))
+    if r == "hide": return None
+    f = FITS.get(str(cid))
+    return {**f, "kind": "reviewed", **r} if f and r else f
 TOL_M, MAX_PX, MIN_PX, QUALITY = 5.0, 1400, 500, 72
 def load(lang):
     out, p = [], 1

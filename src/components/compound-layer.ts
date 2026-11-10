@@ -21,17 +21,18 @@ const LABEL_ZOOM = 14;
 /** How far from the land the map opened on a compound still counts as its neighbour. */
 const NEAR_M = 3000;
 
-/** Zoom at which a typical phone screen shows about one city across. */
-const CITY_ZOOM = 11;
+/** The widest the maps ever go: about one city across (some 40 km on a laptop, 14 km on a phone). */
+const CITY_ZOOM = 12;
 /** How far past the opening view the map may be dragged. */
-const ROAM_M = 30000;
+const ROAM_M = 15000;
 
 /**
- * Keeps a map to its city: no zooming out to the whole country, no dragging far away. Call once the opening view is
- * set. A view that already opens wider than a city (many scattered districts) stays reachable.
+ * Keeps a map on its land: it opens on the plots and can zoom out to city level at most (never the whole country),
+ * nor be dragged far away. Call once the opening view is set; an opening view wider than a city is narrowed to one.
  */
 export function limitToCity(map: Leaflet.Map): void {
-  map.setMinZoom(Math.min(CITY_ZOOM, map.getZoom()));
+  if (map.getZoom() < CITY_ZOOM) map.setView(map.getCenter(), CITY_ZOOM, { animate: false });
+  map.setMinZoom(CITY_ZOOM);
   const b = map.getBounds();
   const dLat = ROAM_M / 110540;
   const dLng = ROAM_M / (111320 * Math.cos((b.getCenter().lat * Math.PI) / 180));
@@ -39,6 +40,7 @@ export function limitToCity(map: Leaflet.Map): void {
     [b.getSouth() - dLat, b.getWest() - dLng],
     [b.getNorth() + dLat, b.getEast() + dLng],
   ]);
+  map.options.maxBoundsViscosity = 1;
 }
 
 export interface CompoundLayer {
