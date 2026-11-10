@@ -1,6 +1,6 @@
 # The 1-minute loop for the peak hours (see README "Data sync" and src/ingest/live.ts). cron-job.org dispatches it
-# Sunday–Thursday at 10:00 and 15:55 Africa/Cairo; each job loops for LIVE_MINUTES (355) and the 15:55 dispatch waits
-# in the shared `sync` group until the morning job ends, so the two cover 10:00–21:50 back to back. While a loop runs,
+# Sunday–Thursday at 10:00 and 15:52 Africa/Cairo; each job loops for LIVE_MINUTES (350) and the 15:52 dispatch waits
+# in the shared `sync` group until the morning job ends, so the two cover ~10:00–21:45 back to back. While a loop runs,
 # normal sync runs queue behind it (one writer to meta/current at a time) and run when it ends.
 name: Live sync (1 min)
 
@@ -9,7 +9,7 @@ on:
     inputs:
       minutes:
         description: "How long to loop (max ~355: a job may run 6 h)"
-        default: "355"
+        default: "350"
       dry_run:
         description: "Crawl and log only, write nothing"
         type: boolean

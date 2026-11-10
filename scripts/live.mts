@@ -1,16 +1,16 @@
 /**
  * The 1-minute loop (GitHub Actions `live.yml`, started by cron-job.org at the start of the peak hours):
- *   FIREBASE_SERVICE_ACCOUNT='<json>' LIVE_MINUTES=355 npx tsx scripts/live.mts [--dry-run]
+ *   FIREBASE_SERVICE_ACCOUNT='<json>' LIVE_MINUTES=350 npx tsx scripts/live.mts [--dry-run]
  * Probes every zone's last page about once a minute and re-walks only the zones that changed, so a booked plot shows
  * on the site (and fires the «مفضلتك» push) within about a minute. See src/ingest/live.ts and README "Data sync".
- *   LIVE_MINUTES     how long to loop (default 355: one GitHub job, which may run 6 h)
+ *   LIVE_MINUTES     how long to loop (default 350: one GitHub job may run 6 h; the margin keeps it ending before the hourly run at :05)
  *   --dry-run        crawl and log, write nothing, send nothing
  */
 import { notifyWatchers, store, updateCensus } from "@/ingest/firestore-sync";
 import { runLive } from "@/ingest/live";
 
 const dryRun = process.argv.includes("--dry-run");
-const minutes = Number(process.env.LIVE_MINUTES ?? 355);
+const minutes = Number(process.env.LIVE_MINUTES ?? 350);
 let runs = 0;
 
 const stats = await runLive(store, {
