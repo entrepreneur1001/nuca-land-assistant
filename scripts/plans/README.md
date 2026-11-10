@@ -82,5 +82,8 @@ district sheets whose plots are too fine to outline; used for the Beit El Watan 
 13 drawings are crops of one master drawing; zone 82 via zone 83), and placement through the project overview slide
 for the Narges extension (165, 166, 172, 175). North Rehab is the least certain: Google's newer streets there differ
 from the old drawing in places.
+Zone 1475 (6th district M) was removed on review: it had been given a sheet-mate's position that its own streets did
+not confirm. New Obour (2026-11-10): 14 of 27 zones (projects 70 and 80 publish the same six zones, so they are drawn
+twice in the same place); 358–360 rejected for the same reason as 1475.
 Not placed: 8th-stage Narges extension (250–256), Amal triangle (288–292), and the small 8th/9th/10th-stage pockets
 (315, 316, 350–353, 429–433, 1509): no unique match, and Google has few streets at several of them.

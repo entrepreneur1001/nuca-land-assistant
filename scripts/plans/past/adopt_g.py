@@ -2,8 +2,9 @@
 - clear matches (score ≥ 0.4 and the best place ≥ 1.15 × the next best),
 - zones accepted by eye from their preview (--accept zid,zid),
 - zones drawn on the same sheet as an accepted zone of their project (several projects publish one district
-  drawing per zone, with only the highlight changing): refined from that zone's placement, or, when the zone's
-  plots cannot be outlined, given that placement as it is.
+  drawing per zone, with only the highlight changing): refined from that zone's placement, and kept only when the
+  zone's own streets confirm it (score ≥ 0.4). Equal image size alone proves nothing: New Obour's neighbourhood
+  sheets all share one size.
 usage: python3 adopt_g.py <work dir> <zones.tsv> <raster prefix> <reg-past dir> [--accept zid,..] [--reject zid,..] [--skip-pid pid,..]
 """
 import sys, os, json, subprocess, math
@@ -30,8 +31,9 @@ for r in rows:
     fin = f"{work}/place/zg_{z}.fin2.json"
     subprocess.run([sys.executable, f"{here}/place_g.py", f"{work}/plans/zone_{z}.jpg", ras, fin, "--refine", tmp, "--preview", f"{work}/place/zg_{z}.jpg"], capture_output=True)
     c = json.load(open(fin))["candidates"] if os.path.exists(fin) else []
+    # Only when the zone's own streets confirm the borrowed position: drawings of equal size are often different
+    # neighbourhoods (New Obour 358-360), and a borrowed position that the streets don't confirm was wrong there.
     if c and c[0]["score"] >= 0.4: out[z] = {"affine": c[0]["affine"], "score": c[0]["score"], "ratio": None, "how": f"gmap-roads:sheet-of-{ref}"}
-    else: out[z] = {"affine": res[ref]["affine"], "score": c[0]["score"] if c else 0, "ratio": None, "how": f"sheet-of-{ref}"}
 n = 0
 for r in rows:
     z, pid = r[0], r[1]
