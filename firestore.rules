@@ -35,16 +35,31 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // «نبهني لما تتحجز»: a browser's push token + the plots it saved, one doc per anonymous visitor (src/lib/push.ts).
-    // Only the owner writes it; nobody reads it from the client. The sync job (Admin SDK) reads it and sends the pushes.
+    // «نبهني لما تتحجز»: a browser's push token + the plots it saved and the cities / districts it follows, one doc per
+    // anonymous visitor (src/lib/push.ts). Only the owner writes it; nobody reads it from the client. The sync job
+    // (Admin SDK) reads it and sends the pushes.
     match /watchers/{uid} {
       allow create, update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['token', 'plots', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['token', 'plots', 'areas', 'updatedAt'])
         && request.resource.data.token is string && request.resource.data.token.size() > 0 && request.resource.data.token.size() < 4096
         && request.resource.data.plots is list && request.resource.data.plots.size() <= 50
+        && (!('areas' in request.resource.data) || (request.resource.data.areas is list && request.resource.data.areas.size() <= 20))
         && request.resource.data.updatedAt == request.time;
       allow delete: if request.auth != null && request.auth.uid == uid;
       allow read: if false;
+    }
+
+    // /impact: totals the sync job writes (notifications sent, people with alerts on, what they save and follow). Public, no personal data.
+    match /stats/{doc} { allow read: if true; allow write: if false; }
+
+    // Notification opens per Cairo day (src/lib/usage.ts): a visitor arriving from a push adds exactly one.
+    match /opens/{day} {
+      allow read: if true;
+      allow create: if request.auth != null && day.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly(['n']) && request.resource.data.n == 1;
+      allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['n']) && request.resource.data.n == resource.data.n + 1;
+      allow delete: if false;
     }
 
     // Sync job's source credentials (Admin SDK only).

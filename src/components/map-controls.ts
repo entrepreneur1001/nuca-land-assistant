@@ -3,6 +3,7 @@
  * remembered on the device (map-prefs.ts). Plain TypeScript: the maps import Leaflet dynamically.
  */
 import type * as Leaflet from "leaflet";
+import { track } from "@/lib/firebase";
 import type { MapPref } from "@/lib/map-prefs";
 
 type L = typeof Leaflet;
@@ -41,6 +42,7 @@ export function addToggle(L: L, map: Leaflet.Map, opts: ToggleOptions): Leaflet.
       opts.pref.set(on);
       render();
       opts.onChange(on);
+      void track("map_layer", { layer: opts.label, on, page: location.pathname });
     });
     return div;
   };

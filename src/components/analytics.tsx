@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { initAnalytics, track } from "@/lib/firebase";
+import { startUsageTracking, trackPushOpen } from "@/lib/usage";
 
 /**
  * GA4 page views for a static, client-navigated site. Initialising Analytics logs the landing page view;
@@ -15,6 +16,8 @@ export function Analytics() {
   useEffect(() => {
     if (!started.current) {
       started.current = true;
+      startUsageTracking();
+      trackPushOpen();
       const start = () => void initAnalytics();
       if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 4000 });
       else setTimeout(start, 1500);

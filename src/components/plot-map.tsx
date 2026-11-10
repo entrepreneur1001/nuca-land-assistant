@@ -1,6 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import { track } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { t } from "@/i18n/ar";
@@ -97,7 +98,10 @@ export function PlotMap({
         addPlanLayer(L, map!, z.zid, z.zone, z.image, byPlot, {
           colors: { good, warn, bad, accent },
           self: plot.id,
-          onClick: (id) => router.push(`/land?id=${encodeURIComponent(id)}`),
+          onClick: (id) => {
+            void track("map_plot_click", { id, page: location.pathname });
+            router.push(`/land?id=${encodeURIComponent(id)}`);
+          },
         }),
       );
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
@@ -138,7 +142,10 @@ export function PlotMap({
           fillOpacity: booked ? 0.75 : 0.9,
         })
           .bindTooltip(plotTooltip(p))
-          .on("click", () => router.push(`/land?id=${encodeURIComponent(p.id)}`));
+          .on("click", () => {
+            void track("map_plot_click", { id: p.id, page: location.pathname });
+            router.push(`/land?id=${encodeURIComponent(p.id)}`);
+          });
         if (booked) dots.push(m);
         if (!booked || !hideBooked.current) m.addTo(map);
       }

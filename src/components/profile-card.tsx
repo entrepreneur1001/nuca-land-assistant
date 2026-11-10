@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/firebase";
 import { useEffect, useState } from "react";
 import type { FeatureMode, Profile } from "@/engine/scoring";
 import { num, t } from "@/i18n/ar";
@@ -72,6 +73,7 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
   const setPref = (k: "garden" | "corner" | "nearBuilt" | "units" | "facing", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
   const share = async () => {
     const url = `${location.origin}${location.pathname}?${toQuery(profile)}`;
+    void track("share_link");
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);

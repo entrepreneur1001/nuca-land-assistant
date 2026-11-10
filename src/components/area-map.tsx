@@ -1,6 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import { track } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { t } from "@/i18n/ar";
@@ -113,7 +114,10 @@ export function AreaMap({
       else map.setView(pts[0], 15);
 
       const byPlot = new Map(plots.map((p) => [p.id, p]));
-      const open = (id: string) => router.push(`/land?id=${encodeURIComponent(id)}`);
+      const open = (id: string) => {
+        void track("map_plot_click", { id, page: location.pathname });
+        router.push(`/land?id=${encodeURIComponent(id)}`);
+      };
       layers.length = 0;
       for (const z of zones) layers.push(addPlanLayer(L, map, z.zid, z.zone, z.image, byPlot, { colors: { good, warn, bad, accent }, onClick: open }));
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));

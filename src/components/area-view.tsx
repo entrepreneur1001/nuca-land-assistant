@@ -14,7 +14,9 @@ import { useAvailableOnly } from "@/lib/map-prefs";
 import { areaHref } from "@/lib/phases";
 import { useApp } from "./app-state";
 import { AreaMap } from "./area-map";
-import { FavoriteButton } from "./favorite-button";
+import { FavoriteButton, FollowButton } from "./favorite-button";
+import { PushPrompt } from "./favorites";
+import { useFollows, followKey } from "@/lib/follows";
 import { Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
 
 type Sort = keyof typeof t.area.sorts;
@@ -39,6 +41,7 @@ export function AreaView() {
   const [hasPlaces, setHasPlaces] = useState(false);
   const [hasApprox, setHasApprox] = useState(true);
   const [availableOnly, setAvailableOnly] = useAvailableOnly();
+  const follows = useFollows();
 
   const snapshot = app?.snapshot ?? null;
   const result = app?.result ?? null;
@@ -80,6 +83,7 @@ export function AreaView() {
     setShown(PAGE);
     router.replace(areaHref(city, d), { scroll: false });
   };
+  const following = !!follows[followKey(area.city, area.district?.id)];
   const s = area.stats;
   const mapDistricts = area.district ? [area.district] : area.districts;
   const mappable = area.plots.some((p) => p.latitude != null && p.longitude != null) || mapDistricts.some((d) => d.unlocated > 0 && d.centre);
@@ -102,6 +106,14 @@ export function AreaView() {
           )}
           {area.district?.hot ? <span className="ms-2 align-middle"><Badge tone="warn">{t.seo.hot}</Badge></span> : null}
         </h1>
+        <div className="mt-3">
+          <FollowButton city={area.city} district={area.district?.id ? { id: area.district.id, name: area.district.name } : null} />
+          {following ? (
+            <div className="mt-2">
+              <PushPrompt compact />
+            </div>
+          ) : null}
+        </div>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label={t.detail.legendAvailable} value={num(s.available)} sub={t.area.available(s.available, s.total)} tone="good" />
           <Stat label={t.area.ppm} value={s.ppmMin != null ? usd(s.ppmMin) : "—"} sub={s.ppmMax != null && s.ppmMax !== s.ppmMin ? `— ${usd(s.ppmMax)}` : undefined} />

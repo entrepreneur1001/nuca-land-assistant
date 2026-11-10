@@ -2,12 +2,14 @@
 
 import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { useSyncExternalStore } from "react";
-import { MAX_FAVORITES } from "./favorites";
+import { MAX_FAVORITES, getFavorites } from "./favorites";
+import { MAX_FOLLOWS, getFollows } from "./follows";
 import { ensureAnonymousAuth, firebaseApp, firestore, track, whenAppCheckReady } from "./firebase";
 
 /**
  * «نبهني لما تتحجز»: web push through Firebase Cloud Messaging. The browser's FCM token and the saved plot ids go to
- * `watchers/{anonymous uid}`; the sync job (scripts/ingest.mts) pushes to it when one of those plots gets booked.
+ * `watchers/{anonymous uid}` with the followed areas; the sync job (scripts/ingest.mts) pushes to it when one of those
+ * plots, or any plot in a followed city / district, gets booked.
  */
 const ON_KEY = "nuca.push";
 const SW_URL = "/firebase-messaging-sw.js";
@@ -69,16 +71,18 @@ async function token(): Promise<string> {
   return getToken(getMessaging(firebaseApp()), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
 }
 
-async function writeWatcher(ids: string[]) {
+async function writeWatcher() {
+  const plots = Object.keys(getFavorites()).slice(0, MAX_FAVORITES);
+  const areas = Object.keys(getFollows()).slice(0, MAX_FOLLOWS);
   await whenAppCheckReady();
   const user = await ensureAnonymousAuth();
   const ref = doc(firestore(), "watchers", user.uid);
-  if (!ids.length) return deleteDoc(ref);
-  await setDoc(ref, { token: await token(), plots: ids.slice(0, MAX_FAVORITES), updatedAt: serverTimestamp() });
+  if (!plots.length && !areas.length) return deleteDoc(ref);
+  await setDoc(ref, { token: await token(), plots, areas, updatedAt: serverTimestamp() });
 }
 
-/** Asks for permission and registers this browser for the saved plots. Resolves to the resulting state. */
-export async function enablePush(ids: string[]): Promise<PushSupport> {
+/** Asks for permission and registers this browser for the saved plots and followed areas. Resolves to the resulting state. */
+export async function enablePush(): Promise<PushSupport> {
   const perm = await Notification.requestPermission();
   if (perm !== "granted") {
     setStored(false);
@@ -86,9 +90,9 @@ export async function enablePush(ids: string[]): Promise<PushSupport> {
     return pushSupport();
   }
   try {
-    await writeWatcher(ids);
+    await writeWatcher();
     setStored(true);
-    void track("push_enabled", { plots: ids.length });
+    void track("push_enabled", { plots: Object.keys(getFavorites()).length, areas: Object.keys(getFollows()).length });
   } catch (e) {
     console.warn("push: enable failed", e);
     setStored(false);
@@ -97,11 +101,11 @@ export async function enablePush(ids: string[]): Promise<PushSupport> {
   return pushSupport();
 }
 
-/** Keeps the Firestore copy in step with the saved list (and the token fresh). Does nothing unless push is on. */
-export async function syncWatcher(ids: string[]) {
+/** Keeps the Firestore copy in step with the saved plots and followed areas (and the token fresh). Does nothing unless push is on. */
+export async function syncWatcher() {
   if (pushSupport() !== "on") return;
   try {
-    await writeWatcher(ids);
+    await writeWatcher();
   } catch (e) {
     console.warn("push: sync failed", e);
   }

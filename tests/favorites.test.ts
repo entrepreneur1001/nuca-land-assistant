@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bookedChanges, parseFavorites, type Favorites } from "@/lib/favorites";
+import { followKey, parseFollows, plotKeys } from "@/lib/follows";
 
 describe("parseFavorites", () => {
   it("reads a saved list and drops junk", () => {
@@ -25,5 +26,22 @@ describe("bookedChanges", () => {
   });
   it("ignores plots missing from the data", () => {
     expect([...r.newly, ...r.reopened]).not.toContain("gone");
+  });
+});
+
+
+describe("follows", () => {
+  it("keys match what the sync job queries", () => {
+    expect(followKey("العبور")).toBe("c:العبور");
+    expect(followKey("العبور", "s3")).toBe("d:s3");
+    expect(plotKeys("العبور", "s3")).toEqual(["c:العبور", "d:s3"]);
+    expect(plotKeys("العبور", null)).toEqual(["c:العبور"]);
+  });
+  it("parses storage and drops junk", () => {
+    expect(parseFollows('{"c:بدر":{"at":1,"city":"بدر"},"d:s3":{"at":2,"city":"العبور","district":{"id":"s3","name":"الحي ٣"}},"x":{"city":"y"},"c:z":{}}')).toEqual({
+      "c:بدر": { at: 1, city: "بدر" },
+      "d:s3": { at: 2, city: "العبور", district: { id: "s3", name: "الحي ٣" } },
+    });
+    expect(parseFollows("nope")).toEqual({});
   });
 });

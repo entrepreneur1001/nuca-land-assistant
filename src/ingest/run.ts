@@ -284,7 +284,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     const byId = new Map(derived.records.map((r) => [r.id, r]));
     result.newlyBookedLabels = derived.newlyBooked.map((id) => {
       const r = byId.get(id)!;
-      return { id, plotNo: r.plotNo, sector: r.sectorName, city: r.cityName };
+      return { id, plotNo: r.plotNo, sector: r.sectorName, sectorId: r.sectorId, city: r.cityName };
     });
     result.newlyBookedPlots = derived.newlyBooked.slice(0, 200).map((id) => {
       const r = byId.get(id)!;

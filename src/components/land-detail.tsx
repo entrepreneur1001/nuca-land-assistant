@@ -13,7 +13,7 @@ import { useFavorites } from "@/lib/favorites";
 import { useAvailableOnly } from "@/lib/map-prefs";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
-import { FavoriteButton } from "./favorite-button";
+import { FavoriteButton, FollowButton } from "./favorite-button";
 import { PushPrompt } from "./favorites";
 import { NearbyPlaces } from "./nearby-places";
 import { PlotMap } from "./plot-map";
@@ -87,6 +87,11 @@ export function LandDetail() {
           />
           {s && personal ? <span className="text-xs text-muted">{t.detail.rankOf(pos + 1)}</span> : null}
         </div>
+        {plot.projectId && plot.projectName ? (
+          <div className="mt-3">
+            <FollowButton city={plot.cityName} district={{ id: plot.projectId, name: plot.projectName }} />
+          </div>
+        ) : null}
         {saved && !booked ? (
           <div className="mt-3">
             <PushPrompt compact />

@@ -5,11 +5,14 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { num, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
-import { acknowledge, bookedChanges, getFavorites, onFavoritesChange, removeFavorite, reopen, useFavorites } from "@/lib/favorites";
+import { acknowledge, bookedChanges, onFavoritesChange, removeFavorite, reopen, useFavorites } from "@/lib/favorites";
+import { followName, onFollowsChange, toggleFollow, useFollows, type Follow } from "@/lib/follows";
 import { CURRENT_PHASE, phasePath } from "@/lib/phases";
 import { enablePush, syncWatcher, usePushSupport } from "@/lib/push";
 import { useApp } from "./app-state";
 import { FavoriteButton } from "./favorite-button";
+import { track } from "@/lib/firebase";
+import { areaHref } from "@/lib/phases";
 import { Badge, Card } from "./ui";
 
 const label = (p: Plot) => t.fav.label(p.plotNumber, p.projectName, p.cityName);
@@ -32,14 +35,17 @@ export function FavoritesWatcher() {
   const onFavPage = path === "/favorites";
 
   useEffect(() => {
-    void syncWatcher(Object.keys(getFavorites()));
+    void syncWatcher();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const off = onFavoritesChange((ids) => {
+    const later = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => void syncWatcher(ids), 1500);
-    });
+      timer = setTimeout(() => void syncWatcher(), 1500);
+    };
+    const offFav = onFavoritesChange(later);
+    const offFollow = onFollowsChange(later);
     return () => {
-      off();
+      offFav();
+      offFollow();
       clearTimeout(timer);
     };
   }, []);
@@ -70,7 +76,6 @@ export function FavoritesWatcher() {
 /** «🔔 فعّل الإشعارات», or why it can't be turned on here. */
 export function PushPrompt({ compact = false }: { compact?: boolean }) {
   const support = usePushSupport();
-  const favs = useFavorites();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   if (support === "unsupported" && compact) return null;
@@ -88,7 +93,7 @@ export function PushPrompt({ compact = false }: { compact?: boolean }) {
     setBusy(true);
     setFailed(false);
     try {
-      await enablePush(Object.keys(favs));
+      await enablePush();
     } catch {
       setFailed(true);
     } finally {
@@ -108,11 +113,72 @@ export function PushPrompt({ compact = false }: { compact?: boolean }) {
 }
 
 /** The /favorites page: every saved plot with its live status. */
+/** The plain «إزاي بتشتغل؟» explanation. */
+export function HowItWorks() {
+  return (
+    <Card className="text-sm">
+      <h2 className="mb-2 font-bold">{t.fav.how.title}</h2>
+      <ul className="space-y-1.5">
+        <li>{t.fav.how.plot}</li>
+        <li>{t.fav.how.area}</li>
+        <li>📲 {t.fav.how.tap}</li>
+        <li className="text-muted">🔒 {t.fav.how.local}</li>
+      </ul>
+    </Card>
+  );
+}
+
+function FollowedAreas({ plots }: { plots: Plot[] | null }) {
+  const follows = useFollows();
+  const keys = Object.keys(follows).sort((a, b) => follows[b].at - follows[a].at);
+  if (!keys.length) return null;
+  const counts = (f: Follow) => {
+    if (!plots) return null;
+    const inArea = plots.filter((p) => p.cityName === f.city && (!f.district || p.projectId === f.district.id));
+    const since = inArea.filter((p) => p.status === "booked" && p.bookingDate && Date.parse(p.bookingDate) >= f.at).length;
+    return { since, left: inArea.filter((p) => p.status === "available").length };
+  };
+  return (
+    <div>
+      <h2 className="mb-2 font-bold">🔔 {t.fav.follow.title}</h2>
+      <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+        {keys.map((k) => {
+          const f = follows[k];
+          const c = counts(f);
+          return (
+            <li key={k} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-surface-2">
+              <div className="min-w-0 flex-1">
+                <Link href={areaHref(f.city, f.district?.id)} className="font-semibold after:absolute after:inset-0">
+                  {followName(f)}
+                </Link>
+                {c ? <div className="text-xs text-muted">{t.fav.follow.since(c.since)}</div> : null}
+              </div>
+              {c ? <Badge tone="good">{t.fav.follow.left(c.left)}</Badge> : null}
+              <button
+                type="button"
+                onClick={() => {
+                  toggleFollow(f.city, f.district);
+                  void track("follow_remove", { kind: f.district ? "district" : "city", city: f.city });
+                }}
+                className="relative z-10 text-xs text-muted hover:text-bad"
+              >
+                {t.fav.follow.stop}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export function FavoritesList() {
   const app = useApp();
   const favs = useFavorites();
+  const follows = useFollows();
   const plots = usePlotIndex();
   const ids = Object.keys(favs).sort((a, b) => favs[b].at - favs[a].at);
+  const any = ids.length > 0 || Object.keys(follows).length > 0;
 
   return (
     <div className="space-y-4">
@@ -120,7 +186,10 @@ export function FavoritesList() {
         <h1 className="text-xl font-bold">♥ {t.fav.title}</h1>
         <p className="mt-1 text-sm text-muted">{t.fav.intro}</p>
       </div>
-      {ids.length ? <PushPrompt /> : null}
+      {any ? <PushPrompt /> : null}
+      <HowItWorks />
+      <FollowedAreas plots={app?.snapshot?.plots ?? null} />
+      {ids.length && Object.keys(follows).length ? <h2 className="font-bold">♥ {t.fav.plotsTitle}</h2> : null}
       {!ids.length ? (
         <Card>
           <p>{t.fav.empty}</p>

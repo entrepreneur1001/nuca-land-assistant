@@ -9,10 +9,10 @@
  *   --dry-run       crawl and report, write nothing
  */
 import { cert, initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import type { MetaDoc } from "@/data/snapshot";
-import { QUERY_CHUNK, buildPushes, chunks, isDeadToken, type PlotLabel, type Watcher } from "@/ingest/notify";
+import { QUERY_CHUNK, areaKeys, buildPushes, census, chunks, isDeadToken, type PlotLabel, type Watcher } from "@/ingest/notify";
 import { runSync, type ChunkDoc, type Store } from "@/ingest/run";
 import { SITE_URL } from "@/lib/site";
 
@@ -50,47 +50,87 @@ const r = await runSync(store, {
   dryRun: args.has("--dry-run"),
 });
 /**
- * «اتحجزت أرض من مفضلتك»: one push per browser that saved a plot booked this run (watchers written by src/lib/push.ts).
- * Reads only the matching watcher docs. Never fails the sync: errors are logged and the count is returned.
+ * «اتحجزت أرض من مفضلتك / في منطقة بتتابعها»: pushes to every browser that saved a plot booked this run or follows its
+ * city / district (watchers written by src/lib/push.ts), each opening that plot. Reads only the matching watcher docs.
+ * Counts go to `stats/impact` for /impact. Never fails the sync: errors are logged.
  */
-async function notifyWatchers(booked: PlotLabel[]): Promise<number> {
+const cairoDay = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+
+async function notifyWatchers(booked: PlotLabel[]) {
   const seen = new Map<string, Watcher>();
-  for (const ids of chunks(booked.map((b) => b.id), QUERY_CHUNK)) {
-    const snap = await db.collection("watchers").where("plots", "array-contains-any", ids).get();
-    for (const d of snap.docs) seen.set(d.id, { id: d.id, ...(d.data() as Omit<Watcher, "id">) });
-  }
+  const collect = async (field: "plots" | "areas", values: string[]) => {
+    for (const vs of chunks(values, QUERY_CHUNK)) {
+      const snap = await db.collection("watchers").where(field, "array-contains-any", vs).get();
+      for (const d of snap.docs) seen.set(d.id, { id: d.id, ...(d.data() as Omit<Watcher, "id">) });
+    }
+  };
+  await collect("plots", booked.map((b) => b.id));
+  await collect("areas", areaKeys(booked));
   const pushes = buildPushes([...seen.values()], booked);
   let sent = 0;
+  let failed = 0;
+  const people = new Set<string>();
+  const plots = new Set<string>();
+  const dead = new Set<string>();
   for (const batch of chunks(pushes, 500)) {
     const res = await getMessaging().sendEach(
       batch.map((p) => ({
         token: p.token,
         webpush: {
-          notification: { title: p.title, body: p.body, icon: "/icon-192.png", lang: "ar", dir: "rtl" as const, tag: p.link },
+          notification: { title: p.title, body: p.body, icon: "/icon-192.png", badge: "/icon-192.png", lang: "ar", dir: "rtl" as const, tag: p.plotId ?? "more" },
           fcmOptions: { link: SITE_URL + p.link },
         },
+        data: { link: p.link, kind: p.kind },
       })),
     );
-    const dead: string[] = [];
     res.responses.forEach((x, i) => {
-      if (x.success) sent++;
-      else if (isDeadToken(x.error?.code)) dead.push(...batch[i].watcherIds);
-      else console.warn(`push failed: ${x.error?.code} ${x.error?.message}`);
+      const p = batch[i];
+      if (x.success) {
+        sent++;
+        people.add(p.token);
+        if (p.plotId) plots.add(p.plotId);
+      } else {
+        failed++;
+        if (isDeadToken(x.error?.code)) for (const id of p.watcherIds) dead.add(id);
+        else console.warn(`push failed: ${x.error?.code} ${x.error?.message}`);
+      }
     });
-    for (const ids of chunks(dead, 400)) {
-      const wb = db.batch();
-      for (const id of ids) wb.delete(db.collection("watchers").doc(id));
-      await wb.commit();
-    }
-    if (dead.length) console.log(`push: removed ${dead.length} watcher(s) with dead tokens`);
   }
-  return sent;
+  for (const ids of chunks([...dead], 400)) {
+    const wb = db.batch();
+    for (const id of ids) wb.delete(db.collection("watchers").doc(id));
+    await wb.commit();
+  }
+  if (dead.size) console.log(`push: removed ${dead.size} watcher(s) with dead tokens`);
+  if (sent || failed) {
+    const inc = FieldValue.increment;
+    const day = { sent: inc(sent), people: inc(people.size), plots: inc(plots.size) };
+    await db.doc("stats/impact").set({ totals: { sent: inc(sent), failed: inc(failed), people: inc(people.size), plots: inc(plots.size) }, daily: { [cairoDay()]: day }, updatedAt: new Date().toISOString() }, { merge: true });
+  }
+  return { sent, failed, people: people.size, plots: plots.size };
 }
 
-let pushes = 0;
-if (!r.error && !r.dryRun && r.newlyBookedLabels.length && !process.env.NO_PUSH) {
+/** How many browsers have alerts on (cheap count every run) and, on full runs, what they save and follow. */
+async function updateCensus(full: boolean) {
+  const count = (await db.collection("watchers").count().get()).data().count;
+  const patch: Record<string, unknown> = { watchers: count, watchersAt: new Date().toISOString() };
+  if (full) {
+    const all = await db.collection("watchers").get();
+    const c = census(all.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Watcher, "id">) })));
+    // Readable names for the most-followed areas: `c:<city>` already is one; `d:<id>` → «district · city».
+    const meta = (await db.doc("meta/current").get()).data() as MetaDoc | undefined;
+    const sectors = new Map((meta?.sectors ?? []).map((x) => [x.id, `${x.name} · ${meta!.cities[x.city] ?? ""}`]));
+    const topAreas = c.topAreas.map((a) => ({ ...a, name: a.key.startsWith("d:") ? (sectors.get(a.key.slice(2)) ?? a.key) : a.key.slice(2) }));
+    patch.census = { ...c, topAreas, at: new Date().toISOString() };
+  }
+  await db.doc("stats/impact").set(patch, { merge: true });
+}
+
+let pushes: Awaited<ReturnType<typeof notifyWatchers>> | null = null;
+if (!r.error && !r.dryRun && !process.env.NO_PUSH) {
   try {
-    pushes = await notifyWatchers(r.newlyBookedLabels);
+    if (r.newlyBookedLabels.length) pushes = await notifyWatchers(r.newlyBookedLabels);
+    await updateCensus(args.has("--full"));
   } catch (e) {
     console.warn(`push: skipped (${e instanceof Error ? e.message : e})`);
   }
