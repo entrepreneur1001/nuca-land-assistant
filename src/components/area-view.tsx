@@ -22,7 +22,9 @@ const PAGE = 50;
 export function AreaView() {
   const params = useSearchParams();
   const city = params.get("city") ?? "";
-  const districtId = params.get("d");
+  // No district in the URL → the first district (most available plots), so the map opens on one plan rather than
+  // every area of the city; «كل المناطق» is d=all.
+  const dParam = params.get("d");
   const router = useRouter();
   const app = useApp();
   const [sort, setSort] = useState<Sort>("ppm");
@@ -35,6 +37,12 @@ export function AreaView() {
 
   const snapshot = app?.snapshot ?? null;
   const result = app?.result ?? null;
+  const districtId = useMemo(() => {
+    if (dParam === "all") return null;
+    if (dParam) return dParam;
+    const first = snapshot ? areaPlots(snapshot, city, null)?.districts.find((d) => d.id) : null;
+    return first?.id ?? null;
+  }, [snapshot, city, dParam]);
   const area = useMemo(() => (snapshot ? areaPlots(snapshot, city, districtId) : null), [snapshot, city, districtId]);
   // Chance and recommendation are personal; only shown once the user entered their rank and payment.
   const personal = app?.profile.bookingRank != null && app?.profile.moneyPaid != null;
@@ -80,7 +88,7 @@ export function AreaView() {
         <h1 className="text-xl font-bold">
           {area.district ? (
             <>
-              <button type="button" className="text-accent hover:underline" onClick={() => go(null)}>{area.city}</button>
+              <button type="button" className="text-accent hover:underline" onClick={() => go("all")}>{area.city}</button>
               {" › "}
               {area.district.name}
             </>
@@ -98,7 +106,7 @@ export function AreaView() {
 
         {area.districts.length > 1 ? (
           <div className="mt-4 flex flex-wrap gap-2">
-            <Chip active={!area.district} onClick={() => go(null)}>{t.area.allDistricts}</Chip>
+            <Chip active={!area.district} onClick={() => go("all")}>{t.area.allDistricts}</Chip>
             {area.districts.map((d) => (
               <Chip key={d.id ?? "none"} active={area.district?.id === d.id} onClick={() => go(d.id)}>
                 {d.name} <span className="text-muted">({num(d.available)})</span>
