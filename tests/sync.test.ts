@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { packTuples, tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple } from "@/data/snapshot";
-import { createClient, crawlZone } from "@/ingest/nuca-plots";
+import { createClient, crawlZone, probeZone } from "@/ingest/nuca-plots";
+import { runLive } from "@/ingest/live";
 import { OFFICIAL_SITE, officialUrl } from "@/ingest/official";
 import { normalizeName, type OfficialZoneEntry } from "@/ingest/official-map";
 import { loadTuples, runSync, stripUndefined, type ChunkDoc, type RunOptions, type Store } from "@/ingest/run";
@@ -468,5 +469,100 @@ describe("sync runner (official site)", () => {
     expect(m.meta!.distancePending).toEqual([]);
     const byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
     expect(byNo.get("2")![18]).toBe(0);
+  });
+});
+
+describe("live loop: one-request probes", () => {
+  it("probeZone replays the last page with one request and sees a booking anywhere in the zone", async () => {
+    const data = siteData(genPlots(45, { square: SQ, status: () => "free" }));
+    const site = createFakeSite(data);
+    const client = createClient(site.fetchHtml);
+    const c = await crawlZone(client, 4797, "available");
+    expect(c.probe).toMatchObject({ pages: 3 });
+    expect(c.probe!.hidden).not.toBeNull();
+    const n = site.requests.length;
+    expect(await probeZone(client, 4797, c.probe!)).toEqual({ changed: false });
+    expect(site.requests.slice(n).map((r) => `${r.method} ${r.argument}`)).toEqual(["POST Page$3"]);
+    // a plot on page 1 gets booked: every later page shifts, so the last page changes
+    data.zones[4797].plots.find((p) => p.plotNo === "7")!.status = "booked";
+    expect((await probeZone(client, 4797, c.probe!)).changed).toBe(true);
+    // the zone shrinks to 2 pages: the replayed postback hits the error page, which also counts as a change
+    data.zones[4797].plots.splice(30);
+    expect(await probeZone(client, 4797, c.probe!)).toMatchObject({ changed: true, error: expect.any(String) });
+    // a connection reset or a 503 says nothing about the zone
+    site.failOnce("ViewZone.aspx", "reset");
+    expect(await probeZone(client, 4797, c.probe!)).toMatchObject({ changed: false, error: expect.any(String) });
+    site.failOnce("ViewZone.aspx", "503");
+    expect(await probeZone(client, 4797, c.probe!)).toMatchObject({ changed: false, error: expect.any(String) });
+    // a held flag on the last page counts too
+    const fresh = (await crawlZone(client, 4797, "available")).probe!;
+    data.zones[4797].plots.at(-1)!.status = "held";
+    expect((await probeZone(client, 4797, fresh)).changed).toBe(true);
+  });
+
+  it("probes a one-page or empty zone with a plain GET", async () => {
+    const site = createFakeSite(siteData());
+    const client = createClient(site.fetchHtml);
+    const c = await crawlZone(client, 3789, "available");
+    expect(c.probe).toEqual({ pages: 1, hidden: null, sig: "" });
+    const n = site.requests.length;
+    expect(await probeZone(client, 3789, c.probe!)).toEqual({ changed: false });
+    expect(site.requests.slice(n).map((r) => r.method)).toEqual(["GET"]);
+    site.data.zones[3789].plots.push(...genPlots(2, { square: "س" }));
+    expect((await probeZone(client, 3789, c.probe!)).changed).toBe(true);
+  });
+
+  it("runSync with onlyZones walks just those zones, skips the news on request and returns their probes", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1))));
+    const { site, opts } = harness();
+    await runSync(m.store, { ...opts, now: T0 });
+    const n = site.requests.length;
+    const r = await runSync(m.store, { ...opts, now: later(1), onlyZones: [4797], skipNews: true });
+    expect(r.error).toBeUndefined();
+    expect(r.zonesOk).toBe(1);
+    expect(new Set(site.requests.slice(n).map((q) => q.zid))).toEqual(new Set([4797]));
+    expect([...r.probes.keys()]).toEqual([4797]);
+    expect(m.meta!.officialNews?.length).toBeGreaterThan(0); // kept from the first run
+  });
+
+  it("runLive seeds, then walks only the zone whose probe changed and reports the booking", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1))));
+    const data = siteData(genPlots(45, { square: SQ, status: () => "free" }));
+    const { site, opts } = harness(data);
+    let t = T0.getTime();
+    const booked: string[][] = [];
+    const lines: string[] = [];
+    const stats = await runLive(m.store, {
+      durationMs: 3 * 60_000,
+      delayMs: 0,
+      fetchHtml: opts.fetchHtml,
+      sync: { ...opts, log: () => {} },
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+      log: (...a) => {
+        const line = a.join(" ");
+        lines.push(line);
+        // plot 7 is booked right after the seed walk
+        if (line.startsWith("seed:")) data.zones[4797].plots.find((p) => p.plotNo === "7")!.status = "booked";
+      },
+      onRun: async (r) => {
+        if (r.newlyBookedLabels.length) booked.push(r.newlyBookedLabels.map((l) => l.plotNo));
+      },
+    });
+    expect(booked).toEqual([["7"]]);
+    expect(stats.ticks).toBe(3);
+    expect(stats.newlyBooked).toBe(1);
+    // tick 1: every zone was just walked by the seed, nothing is due yet
+    expect(lines[1]).toMatch(/^tick 1: 0\/0 probed/);
+    // tick 2: only the zone with plots is due (the empty one waits 5 min): one request, the change, one walk
+    expect(lines[2]).toMatch(/^tick 2: 1\/1 probed .* 1 changed \[4797\].* 1 newly booked/);
+    expect(lines[3]).toMatch(/^tick 3: 1\/1 probed .* 0 changed$/);
+    const tuples = await loadTuples(m.store, m.meta!);
+    expect(tuples.find((x) => x[2] === "7")).toBeDefined();
+    void site;
   });
 });

@@ -7,7 +7,7 @@ import { computeBuiltDistances, distanceKm, sectorCentroids, type LatLng } from 
 import { officialQueue } from "@/engine/queue";
 import { fetchJsonPost as defaultFetchJsonPost, fetchText } from "./fetcher";
 import { mergeOfficialNews, parseNewsList } from "./nuca-news";
-import { createClient, crawlZones, discoverZones, type FetchHtml, type ZoneCrawl } from "./nuca-plots";
+import { createClient, crawlZones, discoverZones, type FetchHtml, type ZoneCrawl, type ZoneProbe } from "./nuca-plots";
 import { OFFICIAL_SITE, officialUrl } from "./official";
 import { buildOfficialIndex, type OfficialZoneEntry } from "./official-map";
 import { buildIndex, fetchBuiltPoints as defaultFetchBuilt, loadBuiltCache } from "./osm";
@@ -45,6 +45,10 @@ export interface RunOptions {
   dryRun?: boolean;
   /** Re-discover the zone list even if the cached one is fresh. */
   forceZones?: boolean;
+  /** Crawl exactly these zones, in this order (within the budget), instead of all zones stalest first. */
+  onlyZones?: number[];
+  /** Leave the official news as they are (the live loop reads them only now and then). */
+  skipNews?: boolean;
   /** Accept a run that marks more plots booked than OFFICIAL_SITE.maxNewlyBookedPerRun. */
   acceptLarge?: boolean;
   budgetMs?: number;
@@ -93,6 +97,8 @@ export interface RunResult {
   newlyBookedPlots: { id: string; city: string; sector: string | null; zone: string | null; plotNo: string; total: number }[];
   /** Every plot that became booked this run, labelled for the «مفضلتك» push alerts (not capped). */
   newlyBookedLabels: PlotLabel[];
+  /** One-request change probes for the zones whose available view was walked completely this run. */
+  probes: Map<number, ZoneProbe>;
   error?: string;
 }
 
@@ -189,8 +195,11 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     officialNew: [],
     newlyBookedPlots: [],
     newlyBookedLabels: [],
+    probes: new Map(),
   };
-  const news = await syncNews(prev, fetchHtml, now, log);
+  const news: NewsStep = opts.skipNews
+    ? { patch: { officialNews: prev.officialNews ?? [], officialAt: prev.officialAt ?? null, officialError: prev.officialError ?? null, officialErrorAt: prev.officialErrorAt ?? null }, added: [] }
+    : await syncNews(prev, fetchHtml, now, log);
   Object.assign(meta, news.patch);
   result.officialNew = news.added;
 
@@ -228,10 +237,13 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     if (!zoneStates.length) throw new Error(`no zones known${zonesError ? `: ${zonesError}` : ""}`);
 
     // 2. crawl: stalest zones first, within the time budget
-    const order = [...zoneStates].sort((a, b) => (a.lastOkAt ?? "").localeCompare(b.lastOkAt ?? ""));
+    const listed = new Set(zoneStates.map((z) => z.zid));
+    const order = opts.onlyZones
+      ? opts.onlyZones.filter((zid) => listed.has(zid))
+      : [...zoneStates].sort((a, b) => (a.lastOkAt ?? "").localeCompare(b.lastOkAt ?? "")).map((z) => z.zid);
     const crawls = await crawlZones(
       client,
-      order.map((z) => z.zid),
+      order,
       full ? ["available", "booked"] : ["available"],
       { concurrency: opts.concurrency ?? OFFICIAL_SITE.concurrency, budgetMs: opts.budgetMs ?? (full ? OFFICIAL_SITE.fullBudgetMs : OFFICIAL_SITE.budgetMs), now: opts.clock, log },
     );
@@ -245,6 +257,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       const booked = cs.find((c) => c.view === "booked");
       const okAll = cs.every((c) => c.ok);
       if (avail?.ok) {
+        if (avail.probe) result.probes.set(z.zid, avail.probe);
         z.lastOkAt = now.toISOString();
         z.egpPerM = avail.egpPerM ?? z.egpPerM ?? null;
       }

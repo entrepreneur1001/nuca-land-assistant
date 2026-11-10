@@ -273,6 +273,21 @@ export function createClient(fetchHtml: FetchHtml, opts: { delayMs?: number; sle
 
 // ---- crawlers ----
 
+/**
+ * What it takes to tell, with one request, whether a zone's available view changed since it was walked: a booking
+ * removes a row and shifts every later page, so the last page changes whenever any plot in the zone is booked or
+ * offered again. The site accepts the same postback state again later, so the hidden fields of the page before the
+ * last one replay "go to the last page" (a single-page zone is a plain GET). See `probeZone`.
+ */
+export interface ZoneProbe {
+  /** Pages in the view when it was walked. */
+  pages: number;
+  /** Hidden fields of page `pages - 1` (null when the zone has one page). */
+  hidden: Record<string, string> | null;
+  /** Signature of the last page (`lastPageSig`). */
+  sig: string;
+}
+
 export interface ZoneCrawl {
   zid: number;
   view: ZoneView;
@@ -283,13 +298,20 @@ export interface ZoneCrawl {
   egpPerM: number | null;
   error?: string;
   ms: number;
+  /** Set on a complete walk. */
+  probe?: ZoneProbe;
 }
 
 const GRID = "ctl00$MainContent$grdPlots";
 const RADIO_BOOKED = "ctl00$MainContent$rdShowBooked";
 const formFields = (view: ZoneView) => ({ "ctl00$MainContent$PlotType": view === "booked" ? "rdShowBooked" : "rdShowAvailable", "ctl00$MainContent$txtPlotNumber": "" });
 
-async function walkZone(client: WebFormsClient, url: string, view: ZoneView, maxPages: number): Promise<{ rows: ZoneRow[]; pages: number; egpPerM: number | null }> {
+/** Rows (plot + status) of a zone's last page, plus whether the pager links a page after it. */
+export function lastPageSig(page: ZonePage, n: number): string {
+  return page.rows.map((r) => `${r.square}|${r.plotNo}|${r.status}`).join(";") + (page.pages.includes(n + 1) ? ";+" : "");
+}
+
+async function walkZone(client: WebFormsClient, url: string, view: ZoneView, maxPages: number): Promise<{ rows: ZoneRow[]; pages: number; egpPerM: number | null; probe?: ZoneProbe }> {
   let page = parseZonePage(await client.get(url));
   if (view === "booked") {
     page = parseZonePage(await client.postback(url, page.hidden, RADIO_BOOKED, "", formFields("booked")));
@@ -305,14 +327,37 @@ async function walkZone(client: WebFormsClient, url: string, view: ZoneView, max
   };
   add(page.rows);
   let n = 1;
+  let before: Record<string, string> | null = null;
   while (page.pages.includes(n + 1) && n < maxPages) {
+    before = page.hidden;
     page = parseZonePage(await client.postback(url, page.hidden, GRID, `Page$${n + 1}`, formFields(view)));
     if (page.view !== view) throw new ParseError(`page ${n + 1}: the ${page.view} radio is checked`);
     if (!page.rows.length) throw new ParseError(`page ${n + 1} has no rows`);
     n++;
     add(page.rows);
   }
-  return { rows: [...seen.values()], pages: n, egpPerM: page.egpPerM };
+  const complete = !page.pages.includes(n + 1);
+  const probe = view === "available" && complete ? { pages: n, hidden: before, sig: lastPageSig(page, n) } : undefined;
+  return { rows: [...seen.values()], pages: n, egpPerM: page.egpPerM, probe };
+}
+
+/**
+ * One request: has the zone's available view changed since `probe` was taken? The site answers a postback for a page
+ * that no longer exists with its error page (a redirect) or a page without the table: that counts as a change, so the
+ * caller walks the zone. A timeout, reset or 5xx says nothing about the zone: `changed` false with `error` set.
+ */
+export async function probeZone(client: WebFormsClient, zid: number, probe: ZoneProbe, opts: { url?: string } = {}): Promise<{ changed: boolean; error?: string }> {
+  const { url = officialUrl.zone(zid) } = opts;
+  try {
+    const html = probe.hidden ? await client.postback(url, probe.hidden, GRID, `Page$${probe.pages}`, formFields("available")) : await client.get(url);
+    const page = parseZonePage(html);
+    if (page.view !== "available") throw new ParseError(`the ${page.view} radio is checked`);
+    return { changed: lastPageSig(page, probe.pages) !== probe.sig };
+  } catch (e) {
+    const status = (e as { status?: unknown }).status;
+    const answered = e instanceof ParseError || (e instanceof Error && e.name === "FetchError" && typeof status === "number" && status >= 300 && status < 500);
+    return { changed: answered, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /**
@@ -326,7 +371,7 @@ export async function crawlZone(client: WebFormsClient, zid: number, view: ZoneV
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const r = await walkZone(client, url, view, maxPages);
-      return { zid, view, ok: true, rows: r.rows, pages: r.pages, egpPerM: r.egpPerM, ms: Date.now() - t0 };
+      return { zid, view, ok: true, rows: r.rows, pages: r.pages, egpPerM: r.egpPerM, ms: Date.now() - t0, ...(r.probe ? { probe: r.probe } : {}) };
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }

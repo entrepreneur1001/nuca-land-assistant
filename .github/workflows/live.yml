@@ -1,0 +1,40 @@
+# The 1-minute loop for the peak hours (see README "Data sync" and src/ingest/live.ts). cron-job.org dispatches it
+# Sunday–Thursday at 10:00 and 15:55 Africa/Cairo; each job loops for LIVE_MINUTES (355) and the 15:55 dispatch waits
+# in the shared `sync` group until the morning job ends, so the two cover 10:00–21:50 back to back. While a loop runs,
+# normal sync runs queue behind it (one writer to meta/current at a time) and run when it ends.
+name: Live sync (1 min)
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long to loop (max ~355: a job may run 6 h)"
+        default: "355"
+      dry_run:
+        description: "Crawl and log only, write nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Same path-MTU workaround as sync.yml: the zone table's paging POSTs stall at the default MTU.
+      - name: Lower the MTU for the official site
+        run: sudo ip link set dev "$(ip route show default | awk '{print $5}')" mtu 1300
+      - name: Loop
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          LIVE_MINUTES: ${{ inputs.minutes }}
+        run: npx tsx scripts/live.mts ${{ inputs.dry_run && '--dry-run' || '' }}

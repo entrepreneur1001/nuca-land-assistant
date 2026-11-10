@@ -1,6 +1,7 @@
 # Data sync from the official NUCA site (lands.nuca.gov.eg). The real trigger is cron-job.org (see README "Data sync"):
 # it POSTs to https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches
-# every 5 min Sunday–Thursday 10:00–22:00 Africa/Cairo as a quick run, and hourly (minute 5) as a normal run.
+# hourly (minute 5) as a normal run. Sunday–Thursday 10:00–22:00 Africa/Cairo the 1-minute loop (live.yml) runs instead;
+# dispatches that land meanwhile queue behind it in the shared `sync` group. (The 5-min quick runs below are kept for manual use.)
 # GitHub's own `schedule` is best-effort (observed gaps of 2–6 h with "*/15"), so it is only a backup.
 # A normal run crawls all ~110 zone tables (~7 min) plus OpenStreetMap work; a quick run crawls the stalest zones for
 # 3 min and skips OpenStreetMap, so it fits the 5-minute slot. A dispatch that lands during a run queues behind it.
