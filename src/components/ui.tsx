@@ -85,6 +85,11 @@ export function FeatureBadges({
       {street ? <Badge tone="accent">{t.badge.street}</Badge> : null}
       {faces?.built != null ? <Badge tone="warn">{t.badge.facingBuilt}</Badge> : null}
       {faces?.servicesLand != null ? <Badge tone="accent">{t.badge.servicesLand}</Badge> : null}
+      {faces?.nearCompound ? (
+        <span title={faces.nearCompound.name}>
+          <Badge tone={faces.nearCompound.premium ? "good" : "accent"}>{faces.nearCompound.premium ? t.badge.nearPremiumCompound : t.badge.nearCompound}</Badge>
+        </span>
+      ) : null}
       {units && units >= 3 ? <Badge tone="good">{t.badge.units(units)}</Badge> : null}
       {nearBuilt ? <Badge tone="warn">{t.badge.nearBuilt}</Badge> : null}
       {sea ? <Badge tone="accent">{t.badge.sea}</Badge> : null}

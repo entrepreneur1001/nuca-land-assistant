@@ -14,6 +14,8 @@ export const FACING = {
   roadM: 100,
   /** Plot edge to a compound's outline: across one street. */
   compoundM: 120,
+  /** Plot edge to a compound's outline for "near a compound" (across a highway, behind services land…): no view needed. */
+  nearCompoundM: 500,
   /** Plot edge to an existing building's outline: across one street. */
   builtM: 80,
   /** Plot edge to services land («اراضي خدمات», pink on the official plan): across one street. */
@@ -48,6 +50,8 @@ export interface Faces {
   /** Metres from the plot to the main road it faces; null = faces none. */
   road: number | null;
   compound: FacingCompound | null;
+  /** The nearest compound within FACING.nearCompoundM when the plot does not face one directly; null = none. */
+  nearCompound?: FacingCompound | null;
   /** Metres to the existing buildings it faces; null = faces none. */
   built: number | null;
   /** Metres to the services land («اراضي خدمات»: a future mosque, school, mall…) it faces on the plan; null = none. */
@@ -68,6 +72,8 @@ export const SURROUNDINGS_VALUES = {
   road: 0.8,
   built: 0.75,
   servicesLand: 0.75,
+  nearPremiumCompound: 0.8,
+  nearCompound: 0.7,
   /** Added when two or more of the above apply (a road-front plot facing a compound). */
   combo: 0.1,
   /** Added when a major service is within FACING.serviceM. */
@@ -79,7 +85,7 @@ export const SURROUNDINGS_VALUES = {
 };
 
 export const facesSomething = (f: Faces | null | undefined) =>
-  !!f && (f.road != null || f.compound != null || f.built != null || f.servicesLand != null);
+  !!f && (f.road != null || f.compound != null || f.built != null || f.servicesLand != null || f.nearCompound != null);
 export const hasMajorService = (f: Faces | null | undefined) => !!f && f.services.some((s) => MAJOR_SERVICES.has(s.sub));
 
 /** 0–1: how good the plot's frontage and surroundings are. */
@@ -90,6 +96,7 @@ export function surroundingsFactor(f: Faces | null | undefined, v = SURROUNDINGS
     f.road != null ? v.road : 0,
     f.built != null ? v.built : 0,
     f.servicesLand != null ? v.servicesLand : 0,
+    f.nearCompound ? (f.nearCompound.premium ? v.nearPremiumCompound : v.nearCompound) : 0,
   ];
   const hits = parts.filter((x) => x > 0).length;
   let s = hits ? Math.max(...parts) : v.none;

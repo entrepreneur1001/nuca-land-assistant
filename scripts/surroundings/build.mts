@@ -6,7 +6,7 @@
  * Inputs: public/plans/<zid>.json (plot outlines), public/compounds/index.json, public/places/*.json, and
  * OpenStreetMap main roads + buildings around each zone (Overpass, cached in data/surroundings/osm, git-ignored;
  * --refresh asks again). Writes public/surroundings.json:
- *   { v: 2, generated, compounds: { <id>: [name, premium 0|1] }, plots: { <plotId>: [roadM, compoundId, compoundM, builtM, services, servicesLandM] },
+ *   { v: 2, generated, compounds: { <id>: [name, premium 0|1] }, plots: { <plotId>: [roadM, compoundId, compoundM, builtM, services, servicesLandM, nearCompoundId, nearCompoundM] },
  *     plain: "<12-char id prefixes of measured plots that face nothing, concatenated>" }
  * nulls/0 for the parts that don't apply; services = [[cat, sub, name, m], …].
  * Plots missing from the file were not measured (no outline) and score neutral.
@@ -198,7 +198,7 @@ const places: Place[] = existsSync(placesDir)
 console.log(`${compounds.length} compounds (${[...premium.values()].filter(Boolean).length} premium), ${places.length} major places`);
 
 // ---------- measure ----------
-type Row = 0 | [number | null, number, number | null, number | null, [string, string, string, number][], number | null];
+type Row = 0 | [number | null, number, number | null, number | null, [string, string, string, number][], number | null, number, number | null];
 const PREFIX = 12;
 const prev = existsSync(OUT) ? (JSON.parse(readFileSync(OUT, "utf8")) as { v: number; plots: Record<string, Row>; plain?: string }) : null;
 const rows: Record<string, Row> = {};
@@ -208,7 +208,7 @@ if (onlyZones && prev?.v === 2) {
   for (const p of plots) if (plainSet.has(p.id.slice(0, PREFIX))) rows[p.id] = 0;
 }
 const usedCompounds = new Set<number>();
-const stats = { plots: 0, road: 0, compound: 0, premium: 0, built: 0, servicesLand: 0, service: 0, any: 0 };
+const stats = { plots: 0, road: 0, compound: 0, premium: 0, nearCompound: 0, built: 0, servicesLand: 0, service: 0, any: 0 };
 
 const byZone = new Map<number, PlotGeo[]>();
 for (const p of plots) byZone.set(p.zid, [...(byZone.get(p.zid) ?? []), p]);
@@ -240,7 +240,7 @@ for (const [zid, zonePlots] of byZone) {
   const roads = osm.roads.map((r) => r.map(P));
   const buildings = osm.buildings.map((r) => r.map(P));
   const zoneCompounds = compounds
-    .filter((c) => near({ x0: c.bounds[0][1], y0: c.bounds[0][0], x1: c.bounds[1][1], y1: c.bounds[1][0] }, 0.002))
+    .filter((c) => near({ x0: c.bounds[0][1], y0: c.bounds[0][0], x1: c.bounds[1][1], y1: c.bounds[1][0] }, 0.006))
     .map((c) => ({ c, ring: [...c.ring, c.ring[0]].map(P) }));
   const planFile = files.find((f) => f.zid === zid)!;
   const zoneServicesLand = (servicesLand[String(zid)] ?? []).map((poly) => {
@@ -266,6 +266,14 @@ for (const [zid, zonePlots] of byZone) {
       const m = facingDistance(ring, [cr], localOthers, FACING.compoundM);
       if (m != null && (!comp || m < comp.m || (m === comp.m && premium.get(c.id) && !premium.get(comp.id)))) comp = { id: c.id, m };
     }
+    // Near a compound: its wall within reach regardless of what is in between (plain distance, edge to edge).
+    let nearComp: { id: number; m: number } | null = null;
+    if (!comp)
+      for (const { c, ring: cr } of zoneCompounds) {
+        if (pointInPolygon(cen, cr)) continue;
+        const m = facingDistance(ring, [cr], [], FACING.nearCompoundM, [], 10);
+        if (m != null && (!nearComp || m < nearComp.m)) nearComp = { id: c.id, m };
+      }
     const services: [string, string, string, number][] = [];
     const seen = new Set<string>();
     const svc = zonePlaces
@@ -287,8 +295,15 @@ for (const [zid, zonePlots] of byZone) {
     }
     if (services.length) stats.service++;
     if (landM != null) stats.servicesLand++;
-    if (roadM != null || builtM != null || comp || landM != null) stats.any++;
-    rows[p.id] = roadM == null && builtM == null && !comp && !services.length && landM == null ? 0 : [roadM, comp?.id ?? 0, comp?.m ?? null, builtM, services, landM];
+    if (nearComp) {
+      stats.nearCompound++;
+      usedCompounds.add(nearComp.id);
+    }
+    if (roadM != null || builtM != null || comp || landM != null || nearComp) stats.any++;
+    rows[p.id] =
+      roadM == null && builtM == null && !comp && !services.length && landM == null && !nearComp
+        ? 0
+        : [roadM, comp?.id ?? 0, comp?.m ?? null, builtM, services, landM, nearComp?.id ?? 0, nearComp?.m ?? null];
   }
   if (flag("--debug")) {
     const dir = path.join(ROOT, "data", "surroundings", "debug");
@@ -303,7 +318,12 @@ for (const [zid, zonePlots] of byZone) {
   process.stdout.write(`zone ${zid}: ${zonePlots.length} plots, ${osm.roads.length} roads, ${osm.buildings.length} buildings, ${zoneCompounds.length} compounds\n`);
 }
 
-if (onlyZones && prev) for (const r of Object.values(rows)) if (r !== 0 && r[1]) usedCompounds.add(r[1]);
+if (onlyZones && prev)
+  for (const r of Object.values(rows))
+    if (r !== 0) {
+      if (r[1]) usedCompounds.add(r[1]);
+      if (r[6]) usedCompounds.add(r[6]);
+    }
 const compoundsOut: Record<number, [string, 0 | 1]> = {};
 for (const c of compounds) if (usedCompounds.has(c.id)) compoundsOut[c.id] = [c.nameAr || c.name, premium.get(c.id) ? 1 : 0];
 // Most plots face nothing: list those by a 12-character id prefix (unique among the plots) instead of a full row.

@@ -272,6 +272,10 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     if (hasStreet) reasons.push(R.street);
     if (faces?.built != null) reasons.push(R.facingBuilt);
     if (faces?.servicesLand != null) reasons.push(R.servicesLand);
+    if (faces?.nearCompound) {
+      const nc = faces.nearCompound;
+      reasons.push(nc.premium ? R.nearPremiumCompound(nc.name, nc.m) : R.nearCompound(nc.name, nc.m));
+    }
     if (hasMajorService(faces)) {
       const sv = faces!.services.find((x) => MAJOR_SERVICES.has(x.sub))!;
       reasons.push(R.service(sv.name, sv.m));
