@@ -7,6 +7,7 @@
 import type * as Leaflet from "leaflet";
 import type { Plot } from "@/data/snapshot";
 import { num, t, usd } from "@/i18n/ar";
+import { pastImageUrl, pastZoneInView, type PastPlanZone } from "@/lib/past-plans";
 import { planClip, planProjector, type PlanZone } from "@/lib/plans";
 import { polygonArea, polygonCentroid, type PlanLabel, type PlanLabelSource } from "./plan-labels";
 
@@ -50,6 +51,10 @@ let imagesOn = true;
 const PANE = "nucaPlan";
 /** Below the overlay pane (400) so the polygons and dots always sit on the image. */
 const PANE_Z = "390";
+/** The drawn site of each plan, cut out and stacked above every whole plan image: where plans overlap, a zone's
+ *  site is never hidden under a neighbour's margins or title banner, while roads and context still show. */
+const SITE_PANE = "nucaPlanSite";
+const SITE_PANE_Z = "391";
 
 // ---- rotated image overlay ----
 
@@ -67,7 +72,7 @@ interface RotatedImage {
   _host?: Leaflet.Map;
   /** Set by Leaflet before getEvents() runs. */
   _zoomAnimated?: boolean;
-  options: Leaflet.LayerOptions & { opacity: number };
+  options: Leaflet.LayerOptions & { opacity: number; filter?: string };
   getPane(name?: string): HTMLElement | undefined;
   _reset(): void;
   _animateZoom(e: Leaflet.ZoomAnimEvent): void;
@@ -78,7 +83,7 @@ type RotatedImageCtor = new (
   corners: Leaflet.LatLng[],
   w: number,
   h: number,
-  options: Leaflet.LayerOptions & { opacity: number },
+  options: Leaflet.LayerOptions & { opacity: number; filter?: string },
   clip?: string,
 ) => RotatedImage & Leaflet.Layer;
 
@@ -121,6 +126,7 @@ function rotatedImage(L: L): RotatedImageCtor {
         img.style.opacity = String(this.options.opacity);
         img.style.pointerEvents = "none";
         if (this._clip) img.style.clipPath = this._clip;
+        if (this.options.filter) img.style.filter = this.options.filter;
         img.onselectstart = L.Util.falseFn;
         img.onmousemove = L.Util.falseFn;
         img.onerror = () => {
@@ -183,6 +189,7 @@ function baseStyle(p: Plot, self: boolean, c: PlanColors): Style {
 /** Adds one zone's plan image and plot polygons to `map`. The view must already be set. */
 export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone, imageUrl: string, plots: ReadonlyMap<string, Plot>, opts: PlanLayerOptions): PlanLayer {
   if (!map.getPane(PANE)) map.createPane(PANE).style.zIndex = PANE_Z;
+  if (!map.getPane(SITE_PANE)) map.createPane(SITE_PANE).style.zIndex = SITE_PANE_Z;
   const crs = map.options.crs ?? L.CRS.EPSG3857;
   const toLatLng = planProjector(zone.corners, zone.w, zone.h, { project: (ll) => crs.project(ll), unproject: (p) => crs.unproject(L.point(p.x, p.y)) });
   const corner = (x: number, y: number) => L.latLng(toLatLng(x, y));
@@ -190,11 +197,20 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
   const bounds = L.latLngBounds([...corners, corner(zone.w, zone.h)]);
 
   const Img = rotatedImage(L);
-  // Only the drawn site shows: margins, title and neighbouring drawings would cover the other zones of the district.
+  // Two copies of the plan: the whole drawing (roads, context, margins) underneath, and its site cut out on top,
+  // so neighbouring plans only ever cover each other's margins, never a site.
   const hull = planClip(zone);
   const clip = hull ? `polygon(${hull.map(([x, y]) => `${x}px ${y}px`).join(", ")})` : undefined;
-  const image = new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: PANE }, clip);
-  if (imagesOn) image.addTo(map);
+  const image = new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: PANE });
+  const site = clip ? new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: SITE_PANE }, clip) : null;
+  const showImages = (on: boolean) => {
+    for (const layer of [image, site]) {
+      if (!layer) continue;
+      if (on && !layer._failed) layer.addTo(map);
+      else map.removeLayer(layer);
+    }
+  };
+  if (imagesOn) showImages(true);
 
   // One SVG renderer per zone: hover/highlight restyle single paths without redrawing the canvas the dots use.
   const renderer = L.svg({ pane: "overlayPane" });
@@ -278,8 +294,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       }
     },
     setImageVisible(on) {
-      if (on && !image._failed) image.addTo(map);
-      else map.removeLayer(image);
+      showImages(on);
     },
     setBookedVisible(on) {
       if (on === bookedOn) return;
@@ -295,7 +310,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       layer.onChange?.();
     },
     remove() {
-      map.removeLayer(image);
+      showImages(false);
       for (const { poly } of polys.values()) map.removeLayer(poly);
       map.removeLayer(renderer);
       polys.clear();
@@ -305,8 +320,61 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
   return layer;
 }
 
+const PAST_PANE = "nucaPlanPast";
+/** Under the current stage's plans. */
+const PAST_PANE_Z = "380";
+
+export interface PastPlans {
+  setImageVisible(on: boolean): void;
+  remove(): void;
+}
+
+/**
+ * Draws the plans of earlier offerings, greyed and faded so that only the current stage stands out. Images only (no
+ * shapes, nothing to hover). A city can have well over a hundred of them: only those touching the view are on the map.
+ */
+export function addPastPlans(L: L, map: Leaflet.Map, zones: readonly [string, PastPlanZone][]): PastPlans {
+  if (!map.getPane(PAST_PANE)) map.createPane(PAST_PANE).style.zIndex = PAST_PANE_Z;
+  const Img = rotatedImage(L);
+  const made = new Map<string, RotatedImage & Leaflet.Layer>();
+  let on = imagesOn;
+  const sync = () => {
+    const b = map.getBounds();
+    const view: [[number, number], [number, number]] = [
+      [b.getSouth(), b.getWest()],
+      [b.getNorth(), b.getEast()],
+    ];
+    for (const [zid, z] of zones) {
+      const want = on && pastZoneInView(z, view);
+      let image = made.get(zid);
+      if (want && !image) {
+        const clip = z.clip?.length ? `polygon(${z.clip.map(([x, y]) => `${x}px ${y}px`).join(", ")})` : undefined;
+        const corners = [z.corners.tl, z.corners.tr, z.corners.bl].map(([lat, lng]) => L.latLng(lat, lng));
+        image = new Img(pastImageUrl(zid), corners, z.w, z.h, { opacity: 0.55, pane: PAST_PANE, filter: "grayscale(1)" }, clip);
+        made.set(zid, image);
+      }
+      if (!image) continue;
+      if (want && !image._failed) image.addTo(map);
+      else map.removeLayer(image);
+    }
+  };
+  map.on("moveend", sync);
+  sync();
+  return {
+    setImageVisible(visible) {
+      on = visible;
+      sync();
+    },
+    remove() {
+      map.off("moveend", sync);
+      for (const image of made.values()) map.removeLayer(image);
+      made.clear();
+    },
+  };
+}
+
 /** Top-right «المخطط» button that shows/hides the plan images of every layer in `layers` (polygons stay). */
-export function addPlanToggle(L: L, map: Leaflet.Map, layers: readonly PlanLayer[]): Leaflet.Control {
+export function addPlanToggle(L: L, map: Leaflet.Map, layers: readonly { setImageVisible(on: boolean): void }[]): Leaflet.Control {
   const control = new L.Control({ position: "topright" });
   control.onAdd = () => {
     const div = L.DomUtil.create("div", "leaflet-bar");
