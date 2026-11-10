@@ -5,17 +5,18 @@ usage:
       The plan (left) and the satellite with the outline (right), each 640 px with a labelled grid every 40 px.
       Read landmark pairs off it as [plan x, plan y, sat x, sat y] in those displayed pixels.
   python3 control.py <fetch dir> <public/compounds> add <id> '<json list of [px, py, sx, sy]>' | hide | unbuilt
-      Records the pairs (as image pixels and lat/lng) in scripts/compounds/control_points.json; "hide" marks an image
+      Records the pairs (as image pixels and lat/lng) in <fetch dir>/control_points.json; "hide" marks an image
       that is no plan of the site; "unbuilt" notes nothing is built yet to match (the placement stays as it is).
   python3 control.py <fetch dir> <public/compounds> apply
-      Turns every recorded set of pairs into a placement in scripts/compounds/reviewed.json (then run the build).
+      Turns every recorded set of pairs into a placement in scripts/compounds/reviewed.json (then run the build;
+      mark it {..., "check": "eye"} once it is seen to fit, or it stays unpublished).
 """
 import sys, os, json, math, time
 from urllib.request import Request, urlopen
 import numpy as np, cv2
 SRC, PUB, MODE = sys.argv[1:4]
 HERE = os.path.dirname(os.path.abspath(__file__))
-POINTS, REVIEWED = f"{HERE}/control_points.json", f"{HERE}/reviewed.json"
+POINTS, REVIEWED = f"{SRC}/control_points.json", f"{HERE}/reviewed.json"
 R = 6378137.0; HALF = math.pi * R; TILES = f"{SRC}/tiles"; PX = 640; G = 40
 def merc(lat, lng): return (math.radians(lng) * R, math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * R)
 def unmerc(x, y): return [round(math.degrees(2 * math.atan(math.exp(y / R)) - math.pi / 2), 7), round(math.degrees(x / R), 7)]

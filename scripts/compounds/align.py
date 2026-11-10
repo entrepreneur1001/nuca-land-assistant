@@ -5,7 +5,8 @@ is kept as it is ("not built").
 usage: python3 align.py <fetch dir> <public/compounds> <out dir> [--ids a,b] [--jobs 6] [--cands review candidates.json]
 Starts from the current placement and, with --cands, from review.py's alternatives too (trimmed, turned, aligned).
 Writes <out>/aligned.json {id: {score0, score, built, corners, clip, changed}} and <out>/sheet_NN.jpg (plan, satellite,
-before, after, per compound). Apply the reviewed result with align.py's companion: adopt_align.py.
+before, after, per compound). A result judged right by eye is applied by copying its corners and clip into
+scripts/compounds/reviewed.json (with check "ground"). Superseded by place_compound.py / loop.py (Google road map).
 """
 import sys, os, json, math, time
 from urllib.request import Request, urlopen
