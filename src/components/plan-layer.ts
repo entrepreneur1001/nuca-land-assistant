@@ -8,6 +8,7 @@ import type * as Leaflet from "leaflet";
 import type { Plot } from "@/data/snapshot";
 import { num, t, usd } from "@/i18n/ar";
 import { planClip, planProjector, type PlanZone } from "@/lib/plans";
+import { polygonArea, polygonCentroid, type PlanLabel, type PlanLabelSource } from "./plan-labels";
 
 type L = typeof Leaflet;
 
@@ -25,7 +26,7 @@ export interface PlanLayerOptions {
   onClick?: (plotId: string) => void;
 }
 
-export interface PlanLayer {
+export interface PlanLayer extends PlanLabelSource {
   zid: string;
   /** Plot ids that got a polygon (so the maps don't also draw a dot for them). */
   ids: ReadonlySet<string>;
@@ -165,12 +166,18 @@ function rotatedImage(L: L): RotatedImageCtor {
 
 // ---- plot polygons ----
 
+/**
+ * Solid: the plot's colour is then exactly the legend's, whatever lies underneath. Any transparency let the plan's
+ * yellow plots, or a neighbouring plan's white margin where two plans overlap, tint the same status differently.
+ * The numbers the fill hides are redrawn on top by plan-labels.ts.
+ */
+const FILL_OPACITY = 1;
+
 type Style = Pick<Leaflet.PathOptions, "color" | "weight" | "fillColor" | "fillOpacity">;
 
 function baseStyle(p: Plot, self: boolean, c: PlanColors): Style {
-  if (self) return { color: "#fff", weight: 3, fillColor: c.accent, fillOpacity: 0.6 };
-  if (p.status === "booked") return { color: "#fff", weight: 1, fillColor: c.bad, fillOpacity: 0.8 };
-  return { color: "#fff", weight: 1, fillColor: p.held ? c.warn : c.good, fillOpacity: 0.5 };
+  if (self) return { color: "#fff", weight: 3, fillColor: c.accent, fillOpacity: FILL_OPACITY };
+  return { color: "#fff", weight: 1, fillColor: p.status === "booked" ? c.bad : p.held ? c.warn : c.good, fillOpacity: FILL_OPACITY };
 }
 
 /** Adds one zone's plan image and plot polygons to `map`. The view must already be set. */
@@ -191,7 +198,9 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
 
   // One SVG renderer per zone: hover/highlight restyle single paths without redrawing the canvas the dots use.
   const renderer = L.svg({ pane: "overlayPane" });
-  const polys = new Map<string, { poly: Leaflet.Polygon; base: Style; hover: boolean; lit: boolean; booked: boolean }>();
+  const polys = new Map<string, { poly: Leaflet.Polygon; base: Style; hover: boolean; lit: boolean; booked: boolean; label: PlanLabel }>();
+  // Ground metres per image pixel, for the room each plot gives its number.
+  const mPerPx = map.distance(corners[0], corners[1]) / zone.w;
   const apply = (id: string) => {
     const e = polys.get(id);
     if (!e) return;
@@ -225,7 +234,9 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
         .on("click", () => opts.onClick?.(id));
     }
     poly.addTo(map);
-    polys.set(id, { poly, base, hover: false, lit: false, booked: !self && p.status === "booked" });
+    const [cx, cy] = polygonCentroid(pixels);
+    const label: PlanLabel = { text: String(p.plotNumber), ...toLatLng(cx, cy), sizeM: Math.sqrt(polygonArea(pixels)) * mPerPx };
+    polys.set(id, { poly, base, hover: false, lit: false, booked: !self && p.status === "booked", label });
   }
   // Plots the plan shows but whose number could not be read: neutral outlines, so the block still looks complete.
   for (const pixels of zone.unassigned ?? []) {
@@ -241,10 +252,16 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
 
   let lit: string | null = null;
   let bookedOn = true;
-  return {
+  const layer: PlanLayer = {
     zid,
     ids: new Set(polys.keys()),
     bounds,
+    onChange: null,
+    labels() {
+      const out: PlanLabel[] = [];
+      for (const e of polys.values()) if (bookedOn || !e.booked) out.push(e.label);
+      return out;
+    },
     setHighlight(plotId) {
       if (lit === plotId) return;
       const prev = lit;
@@ -275,14 +292,17 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       // Re-added shapes land on top: put the emphasised ones back above them.
       if (on && opts.self) polys.get(opts.self)?.poly.bringToFront();
       if (on && lit) apply(lit);
+      layer.onChange?.();
     },
     remove() {
       map.removeLayer(image);
       for (const { poly } of polys.values()) map.removeLayer(poly);
       map.removeLayer(renderer);
       polys.clear();
+      layer.onChange?.();
     },
   };
+  return layer;
 }
 
 /** Top-right «المخطط» button that shows/hides the plan images of every layer in `layers` (polygons stay). */

@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { loadPlans } from "@/lib/plans";
+import { addPlanLabels } from "./plan-labels";
 import { addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -84,6 +85,7 @@ export function PlotMap({
       );
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
       if (layers.length) addPlanToggle(L, map, layers);
+      if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) l.setBookedVisible(!hideBooked.current);
       plans.current = layers;
       host.current = map;

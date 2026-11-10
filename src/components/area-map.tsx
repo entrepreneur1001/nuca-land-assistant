@@ -7,6 +7,7 @@ import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import type { AreaDistrict } from "@/lib/area-stats";
 import { loadPlans } from "@/lib/plans";
+import { addPlanLabels } from "./plan-labels";
 import { addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -100,6 +101,7 @@ export function AreaMap({
       for (const z of zones) layers.push(addPlanLayer(L, map, z.zid, z.zone, z.image, byPlot, { colors: { good, warn, bad, accent }, onClick: open }));
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
       if (layers.length) addPlanToggle(L, map, layers);
+      if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) {
         l.setHighlight(lit.current);
         l.setBookedVisible(!hideBooked.current);
