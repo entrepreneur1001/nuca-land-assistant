@@ -53,6 +53,12 @@ os.makedirs(out, exist_ok=True)
 index_path = f"{out}/index.json"
 index = json.load(open(index_path)) if os.path.exists(index_path) else {"zones": {}}
 rows = {r[0]: r for r in (l.rstrip("\n").split("\t") for l in open(tsv, encoding="utf-8") if l.strip())}
+# The map matches earlier-stage zones to a city by name, as spelled in the current plans' index (the app's data);
+# the official site's city list spells some names differently (اكتوبر / أكتوبر).
+def norm(n): return n.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ى", "ي").replace("ة", "ه").replace(" ", "")
+_cur = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "public", "plans", "index.json")
+CITY = {norm(z["city"]): z["city"] for z in json.load(open(_cur))["zones"].values()} if os.path.exists(_cur) else {}
+def city_name(n): return CITY.get(norm(n), n)
 done = 0
 for zid, row in rows.items():
     rf, src = f"{reg}/{zid}.json", f"{work}/plans/zone_{zid}.jpg"
@@ -75,7 +81,7 @@ for zid, row in rows.items():
         x, y = M @ np.array([x0 + px * w / w2, y0 + py * h / h2, 1.0]); return unmerc(x, y)
     tl, tr, bl, br = at(0, 0), at(w2, 0), at(0, h2), at(w2, h2)
     lats, lngs = [p[0] for p in (tl, tr, bl, br)], [p[1] for p in (tl, tr, bl, br)]
-    entry = {"city": row[3], "name": row[4], "stage": row[7], "pid": int(row[1]), "w": w2, "h": h2, "corners": {"tl": tl, "tr": tr, "bl": bl},
+    entry = {"city": city_name(row[3]), "name": row[4], "stage": row[7], "pid": int(row[1]), "w": w2, "h": h2, "corners": {"tl": tl, "tr": tr, "bl": bl},
              "bounds": [[min(lats), min(lngs)], [max(lats), max(lngs)]]}
     index["zones"][zid] = entry; done += 1
 json.dump(index, open(index_path, "w"), ensure_ascii=False, separators=(",", ":"))
