@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { FACTOR, ago, km, num, pct, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
+import { onRoad } from "@/engine/surroundings";
 import { alameinBlock, unitsRule } from "@/engine/units";
 import { track } from "@/lib/firebase";
 import { useAvailableOnly } from "@/lib/map-prefs";
@@ -68,7 +69,8 @@ export function LandDetail() {
           <FeatureBadges
             garden={plot.gardenPct > 0}
             corner={plot.cornerPct > 0}
-            street={isOnMainRoad(plot.mainRoadM)}
+            street={onRoad(plot.faces, plot.mainRoadM)}
+            faces={plot.faces}
             sea={plot.seaPct > 0}
             nearBuilt={s?.isNearBuilt}
             units={units}
@@ -107,7 +109,14 @@ export function LandDetail() {
             </>
           ) : null}
           {/* Only when confirmed: "far" may just be a road missing from the map. */}
-          {isOnMainRoad(plot.mainRoadM) ? (
+          {plot.faces ? (
+            <>
+              <dt className="text-muted">{t.detail.facing}</dt>
+              <dd>
+                {t.detail.facingText(plot.faces)} <span className="text-xs text-muted">{t.detail.roadNote}</span>
+              </dd>
+            </>
+          ) : isOnMainRoad(plot.mainRoadM) ? (
             <>
               <dt className="text-muted">{t.detail.roadDist}</dt>
               <dd>

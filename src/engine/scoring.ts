@@ -3,6 +3,7 @@ import { sectorKey } from "./demand";
 import { featureKey, type Survival } from "./depletion";
 import { NEAR_BUILT, nearBuiltFactor } from "./nearbuilt";
 import { isOnMainRoad } from "./roads";
+import { MAJOR_SERVICES, facesSomething, hasMajorService, onRoad, surroundingsFactor, type Faces } from "./surroundings";
 import { isMultiUnit, unitsRule, type UnitsPerFloor } from "./units";
 import { km as fmtKm, t } from "@/i18n/ar";
 
@@ -26,6 +27,8 @@ export interface Profile {
     nearBuilt?: FeatureMode;
     /** 3+ apartments per floor (عدد الشقق في الدور), from the plot's area. */
     units?: FeatureMode;
+    /** Faces a main road, a compound or existing buildings (الواجهة). */
+    facing?: FeatureMode;
     onlyPreferredCities?: boolean;
     premiumValues?: Partial<PremiumValues>;
   } | null;
@@ -49,6 +52,8 @@ export interface ScorableLand {
   builtKm?: number | null;
   /** Metres to the nearest main road; null/undefined = unknown. */
   mainRoadM?: number | null;
+  /** What the plot faces; null/undefined = not measured. */
+  faces?: Faces | null;
 }
 
 export type Recommendation = "STRONG_BUY" | "GOOD" | "WATCH" | "SKIP";
@@ -62,6 +67,7 @@ export interface Factors {
   value: number;
   area: number;
   demand: number;
+  surroundings: number;
 }
 
 export interface ScoredLand {
@@ -75,6 +81,8 @@ export interface ScoredLand {
   hasCorner: boolean;
   /** Faces a main road (OpenStreetMap). */
   hasStreet: boolean;
+  /** What the plot faces (null = not measured). */
+  faces: Faces | null;
   /** Within NEAR_BUILT.badgeKm of existing buildings. */
   isNearBuilt: boolean;
   /** Apartments per floor allowed for the plot's area; null where the city sets units per plot (New Alamein). */
@@ -130,6 +138,7 @@ export function exclusionReason(l: ScorableLand, p: Profile): keyof ExclusionSta
   if (p.preferences?.corner === "require" && !(l.cornerPct > 0)) return "featureRequired";
   if (p.preferences?.nearBuilt === "require" && !isNearBuilt(l.builtKm)) return "featureRequired";
   if (p.preferences?.units === "require" && !isMultiUnit(l.area, l.cityName)) return "featureRequired";
+  if (p.preferences?.facing === "require" && !facesSomething(l.faces) && !isOnMainRoad(l.mainRoadM)) return "featureRequired";
   if (p.preferences?.onlyPreferredCities && p.preferredCities.length && !p.preferredCities.includes(l.cityName))
     return "city";
   return null;
@@ -193,12 +202,15 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
   const cornerMode = profile.preferences?.corner ?? "prefer";
   const nearMode = profile.preferences?.nearBuilt ?? "prefer";
   const unitsMode = profile.preferences?.units ?? "prefer";
+  const facingMode = profile.preferences?.facing ?? "prefer";
 
   const scored: ScoredLand[] = eligible.map((l) => {
     const s = ctx.survival.get(l.id) ?? { low: 0, mid: 0, high: 0 };
     const hasGarden = l.gardenPct > 0;
     const hasCorner = l.cornerPct > 0;
-    const hasStreet = isOnMainRoad(l.mainRoadM);
+    const faces = l.faces ?? null;
+    // The measured frontage wins; plots without an outline fall back to the older road distance.
+    const hasStreet = onRoad(faces, l.mainRoadM);
     const units = unitsRule(l.area, l.cityName);
 
     const med = medians.get(gk(l)) ?? l.pricePerMeter;
@@ -243,6 +255,8 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       value,
       area: areaF,
       demand: ctx.demand?.get(sectorKey(l)) ?? 0,
+      surroundings:
+        facingMode === "ignore" ? 0.5 : surroundingsFactor(faces ?? (hasStreet ? { road: l.mainRoadM ?? 0, compound: null, built: null, services: [] } : null)),
     };
     const score =
       (100 *
@@ -254,7 +268,13 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     if (hasGarden && hasCorner) reasons.push(R.gardenCorner);
     else if (hasGarden) reasons.push(R.garden);
     else if (hasCorner) reasons.push(R.corner);
+    if (faces?.compound) reasons.push(faces.compound.premium ? R.premiumCompound(faces.compound.name) : R.compound(faces.compound.name));
     if (hasStreet) reasons.push(R.street);
+    if (faces?.built != null) reasons.push(R.facingBuilt);
+    if (hasMajorService(faces)) {
+      const sv = faces!.services.find((x) => MAJOR_SERVICES.has(x.sub))!;
+      reasons.push(R.service(sv.name, sv.m));
+    }
     if (units != null && units >= 3) reasons.push(R.units(units));
     if (isNearBuilt(l.builtKm)) reasons.push(R.nearBuilt(fmtKm(l.builtKm)));
     if (neighbourShare != null && neighbourShare >= 0.4) reasons.push(R.neighbours);
@@ -274,6 +294,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       hasGarden,
       hasCorner,
       hasStreet,
+      faces,
       isNearBuilt: isNearBuilt(l.builtKm),
       unitsPerFloor: units,
       neighbourShare,

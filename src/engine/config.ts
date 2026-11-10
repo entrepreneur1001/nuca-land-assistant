@@ -10,6 +10,8 @@ export const DEFAULT_WEIGHTS = {
   location: 10,
   value: 10,
   area: 5,
+  /** What the plot faces: a premium compound, a compound, a main road, existing buildings (engine/surroundings.ts). */
+  surroundings: 20,
   /** How fast the plot's district is selling now; only counts when the user's turn is near (see engine/demand.ts). */
   demand: 15,
 } as const;

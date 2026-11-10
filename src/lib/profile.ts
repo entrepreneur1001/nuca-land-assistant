@@ -14,7 +14,7 @@ export const DEFAULT_PROFILE: Profile = {
   maxPrice: null,
   preferredPricePerMeter: null,
   weights: { ...DEFAULT_WEIGHTS },
-  preferences: { garden: "prefer", corner: "prefer", nearBuilt: "prefer", units: "prefer", onlyPreferredCities: false },
+  preferences: { garden: "prefer", corner: "prefer", nearBuilt: "prefer", units: "prefer", facing: "prefer", onlyPreferredCities: false },
 };
 
 const modes = new Set<FeatureMode>(["prefer", "require", "ignore"]);
@@ -50,6 +50,7 @@ export function sanitize(p: Partial<Profile> | null | undefined): Profile {
       corner: asMode(prefs.corner, "prefer"),
       nearBuilt: asMode(prefs.nearBuilt, "prefer"),
       units: asMode(prefs.units, "prefer"),
+      facing: asMode(prefs.facing, "prefer"),
       onlyPreferredCities: !!prefs.onlyPreferredCities,
     },
   };
@@ -89,7 +90,7 @@ export function saveProfile(p: Profile) {
   }
 }
 
-const QUERY_KEYS = ["r", "p", "g", "c", "n", "un", "cities", "only"];
+const QUERY_KEYS = ["r", "p", "g", "c", "n", "un", "f", "cities", "only"];
 
 export function toQuery(p: Profile): string {
   const q = new URLSearchParams({
@@ -97,6 +98,7 @@ export function toQuery(p: Profile): string {
     c: p.preferences?.corner ?? "prefer",
     n: p.preferences?.nearBuilt ?? "prefer",
     un: p.preferences?.units ?? "prefer",
+    f: p.preferences?.facing ?? "prefer",
   });
   if (p.bookingRank != null) q.set("r", String(p.bookingRank));
   if (p.moneyPaid != null) q.set("p", String(p.moneyPaid));
@@ -115,6 +117,7 @@ export function fromQuery(q: URLSearchParams): Profile {
       corner: q.get("c") as FeatureMode,
       nearBuilt: q.get("n") as FeatureMode,
       units: q.get("un") as FeatureMode,
+      facing: q.get("f") as FeatureMode,
       onlyPreferredCities: q.get("only") === "1",
     },
   });

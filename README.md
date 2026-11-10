@@ -137,10 +137,12 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
   - Distance score: full credit at ≤ 0.5 km, zero at ≥ 5 km.
   - Booked-neighbour score: share of plots within 400 m (or the same zone) already booked; 50%+ = full.
   - The 🏘️ badge shows at ≤ 1.5 km. "Unknown" → 0.3.
-- **On a main road (على شارع رئيسي):** NUCA doesn't publish this, so it is derived from OpenStreetMap.
-  - Distance from the plot's outline to the nearest motorway/trunk/primary/secondary/tertiary road (`src/engine/roads.ts`).
-  - ≤ 30 m from the road's centreline counts as facing it (🛣️ badge, preference, filter). It adds +0.2 to the garden/corner factor, and «لازم» makes it a hard filter.
-  - Plots without coordinates, or in cities with no mapped main roads, are "unknown" (never treated as on a road).
+- **Frontage (الواجهة):** what the plot faces. NUCA doesn't publish it; `scripts/surroundings/build.mts` measures it offline from each plot's outline on the official zone plan and writes `public/surroundings.json`, which the browser merges into the plots (`src/lib/surroundings.ts`).
+  - Faces = within reach of the plot's edge with no other plan plot in between (border gaps < 2.5 m don't count), so the second row behind a road-front plot is not "on the road": main road (OSM motorway…tertiary) ≤ 100 m from its centreline; compound (`public/compounds`) ≤ 120 m from its outline; existing buildings (OSM) ≤ 80 m. Across a main road still counts (the front row on a highway faces what is on the other side).
+  - Premium compound = in the pricier third of compounds within 10 km (Nawy's lowest listed price).
+  - Factor (`src/engine/surroundings.ts`): premium compound 1, compound 0.9, main road 0.8, buildings 0.75; +0.1 when two apply; +0.05 for a university/college/hospital/mall/club/station ≤ 1.5 km (`public/places`, where present). An inner plot, or one not measured, is neutral at 0.5, so the factor lifts good frontage without lowering other plots' bands.
+  - Badges 🛣️ / 🏰 / 🏠, a profile preference («لازم» = faces at least one), a search filter and sort. Plots without an outline fall back to the older OSM road distance (≤ 30 m).
+  - Re-run the script after new plans, compounds or places land: `npx tsx scripts/surroundings/build.mts` (OSM answers cached in `data/surroundings/osm`; `--refresh` to ask again, `--zone` for some zones, `--debug` for per-zone dumps).
 - **Apartments per floor (عدد الشقق في الدور):** set by the plot's area under the Ministry of Housing notice for the 11th offering (`src/engine/units.ts`).
   - ≤ 550 m² → 2; 551–750 m² → 3; 751–950 m² → 4; ≥ 951 m² → 5. Conditions: unit ≥ 100 m² incl. services/balconies, parking, utilities capacity.
   - 3, 4 or 5 units shows the 🏢 badge and adds +0.1 / +0.2 / +0.3 to the garden/corner factor. It has a profile preference and a search filter; «لازم» excludes 2-unit plots.
@@ -151,6 +153,7 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 |---|---|
 | reachability (فرصة إنك تلحقها) | 20 |
 | near built (قربها من العمار) | 20 |
+| frontage (الواجهة: طريق / كمبوند / مباني) | 20 |
 | garden/corner (حديقة/ناصية) | 20 |
 | preferred location | 10 |
 | price/m² vs similar | 10 |

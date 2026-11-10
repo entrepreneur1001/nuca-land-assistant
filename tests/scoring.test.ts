@@ -140,12 +140,13 @@ describe("reachable plots first", () => {
 });
 
 describe("main road", () => {
-  it("is shown as a flag only: it doesn't change the score or filter anything; unknown is not on a road", () => {
+  it("without a measured frontage, the older road distance still counts; unknown is not on a road", () => {
     const lands = [land("inner", { mainRoadM: 120 }), land("road", { mainRoadM: 12 }), land("unknown", { mainRoadM: null })];
     const r = scoreLands(lands, profile, ctx(lands.map((l) => l.id)));
     const road = r.scored.find((x) => x.id === "road")!;
     expect(road.hasStreet).toBe(true);
-    expect(road.score).toBe(r.scored.find((x) => x.id === "inner")!.score);
+    expect(road.score).toBeGreaterThan(r.scored.find((x) => x.id === "inner")!.score);
+    expect(r.scored.find((x) => x.id === "inner")!.score).toBe(r.scored.find((x) => x.id === "unknown")!.score);
     expect(r.scored.find((x) => x.id === "unknown")!.hasStreet).toBe(false);
     expect(r.scored).toHaveLength(3);
   });

@@ -6,7 +6,7 @@ import type { Profile } from "@/engine/scoring";
 export const AI_CANDIDATES = 20;
 export const AI_PER_SECTOR = 4;
 /** Bump when the prompt or payload shape changes, so cached answers built on the old one are dropped. */
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 export const AI_SYSTEM = `إنت محلل بيساعد مشتري في طرح "بيت الوطن" بتاع هيئة المجتمعات العمرانية في مصر (الأسعار بالدولار).
 القواعد:
@@ -15,8 +15,9 @@ export const AI_SYSTEM = `إنت محلل بيساعد مشتري في طرح "�
 - أي land_id تكتبه لازم يكون منسوخ بالظبط من قايمة lands.
 - لو معلومة مش موجودة قول إنها مش معروفة.
 - الأرقام والاحتمالات محسوبة عندنا، اعتبرها هي الصح. شغلتك تقارن الاختيارات المتشابهة، توضح المميزات والعيوب، وتدي خطة واضحة.
-- المشتري بيفضل الأراضي اللي على حديقة واللي ناصية واللي قريبة من مباني قائمة (العمار).
-- on_main_road معلومة إضافية بس (مش تفضيل للمشتري)، محسوبة من الخرايط ومش تميّز رسمي من الهيئة، وبتتبعت بس للأراضي اللي متأكدين إنها على شارع رئيسي. لو مش موجودة متقولش إن الأرض مش على شارع.
+- المشتري بيفضل الأراضي اللي على حديقة واللي ناصية واللي قريبة من مباني قائمة (العمار)، والأراضي اللي واجهتها على شارع رئيسي أو قدام كمبوند (خصوصاً كمبوند مميز) أو قدام مباني قائمة.
+- on_main_road و faces_compound ("premium" = كمبوند مميز) و faces_existing_buildings محسوبة من الخرايط ومش تميّز رسمي من الهيئة، وبتتبعت بس للأراضي اللي متأكدين منها. لو مش موجودة متقولش إن الأرض مش قدامها حاجة.
+- services_within_1_5km أنواع خدمات قريبة (university جامعة، hospital مستشفى، mall مول، club/sports_centre نادي، station محطة).
 - corner (ناصية) معناها إن الأرض على شارعين، ودي من بيانات الهيئة.
 - building_rules فيها الاشتراطات البنائية المعروفة بس. لو مش موجودة لأرض أو ناقص منها حاجة، متتكلمش عن ده خالص ومتقولش إنها مش معروفة.
 - الاحتمالات تقديرية، وضّح ده لما يكون مهم.
@@ -39,6 +40,7 @@ export function buildPayload(d: Dashboard, ranked: RankedLand[], profile: Profil
         corner: profile.preferences?.corner ?? "prefer",
         near_built: profile.preferences?.nearBuilt ?? "prefer",
         multi_unit: profile.preferences?.units ?? "prefer",
+        facing_road_or_compound: profile.preferences?.facing ?? "prefer",
       },
       market: {
         total_plots: d.market.total,
@@ -65,6 +67,9 @@ export function buildPayload(d: Dashboard, ranked: RankedLand[], profile: Profil
         garden: r.hasGarden,
         corner: r.hasCorner,
         ...(r.hasStreet ? { on_main_road: true } : {}),
+        ...(r.faces?.compound ? { faces_compound: r.faces.compound.premium ? "premium" : "yes" } : {}),
+        ...(r.faces?.built != null ? { faces_existing_buildings: true } : {}),
+        ...(r.faces?.services.length ? { services_within_1_5km: r.faces.services.map((s) => s.sub) } : {}),
         apartments_per_floor: r.unitsPerFloor,
         ...knownRules(r.rules),
         km_to_existing_buildings: r.builtKm == null ? "unknown" : Number(r.builtKm.toFixed(2)),

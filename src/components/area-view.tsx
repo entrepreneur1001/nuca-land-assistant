@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { Plot } from "@/data/snapshot";
 import type { RankedLand } from "@/engine/compute";
 import { isOnMainRoad } from "@/engine/roads";
+import { onRoad } from "@/engine/surroundings";
 import { unitsRule } from "@/engine/units";
 import { num, t, usd } from "@/i18n/ar";
 import { areaPlots } from "@/lib/area-stats";
@@ -192,7 +193,8 @@ function Row({ plot: p, r, showDistrict, onHover }: { plot: Plot; r?: RankedLand
         <FeatureBadges
           garden={p.gardenPct > 0}
           corner={p.cornerPct > 0}
-          street={isOnMainRoad(p.mainRoadM)}
+          street={onRoad(p.faces, p.mainRoadM)}
+          faces={p.faces}
           sea={p.seaPct > 0}
           nearBuilt={r?.isNearBuilt}
           units={unitsRule(p.area, p.cityName)}

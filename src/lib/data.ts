@@ -3,6 +3,7 @@
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple, type Snapshot } from "@/data/snapshot";
 import { firestore } from "./firebase";
+import { loadSurroundings } from "./surroundings";
 
 const LOCAL = process.env.NEXT_PUBLIC_DATA === "local";
 
@@ -45,6 +46,7 @@ async function loadChunkFirestore(id: string, version: string) {
 const tupleCache = new Map<string, { version: string; tuples: PlotTuple[] }>();
 
 export async function buildSnapshot(meta: MetaDoc): Promise<Snapshot> {
+  const facesP = loadSurroundings();
   const parts = await Promise.all(
     meta.chunks.map(async (c) => {
       const hit = tupleCache.get(c.id);
@@ -56,7 +58,15 @@ export async function buildSnapshot(meta: MetaDoc): Promise<Snapshot> {
       return tuples;
     }),
   );
-  return { meta, plots: parts.flat().map((t) => tupleToPlot(t, meta)) };
+  const faces = await facesP;
+  return {
+    meta,
+    plots: parts.flat().map((t) => {
+      const p = tupleToPlot(t, meta);
+      p.faces = faces.get(p.id) ?? null;
+      return p;
+    }),
+  };
 }
 
 /** Subscribe to the live meta doc; calls back with a fresh snapshot whenever data changes. */

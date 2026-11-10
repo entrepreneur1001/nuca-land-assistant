@@ -148,7 +148,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <RecBadge rec={topChoice.recommendation} />
-                  <FeatureBadges garden={topChoice.hasGarden} corner={topChoice.hasCorner} street={topChoice.hasStreet} nearBuilt={topChoice.isNearBuilt} units={topChoice.unitsPerFloor} held={topChoice.held} />
+                  <FeatureBadges garden={topChoice.hasGarden} corner={topChoice.hasCorner} street={topChoice.hasStreet} faces={topChoice.faces} nearBuilt={topChoice.isNearBuilt} units={topChoice.unitsPerFloor} held={topChoice.held} />
                   <span className="text-xs">
                     {t.card.score} {num(topChoice.score)}/١٠٠
                   </span>
@@ -187,7 +187,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
                 <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
               </div>
               <div className="mt-2">
-                <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} sea={l.seaPct > 0} held={l.held} />
+                <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} faces={l.faces} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} sea={l.seaPct > 0} held={l.held} />
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs">
                 <dt className="text-muted">{t.card.area}</dt>
@@ -322,7 +322,7 @@ function AiPanel() {
                         · <AreaLink city={l.cityName} district={l.projectId}>{l.projectName}</AreaLink> · <AreaLink city={l.cityName}>{l.cityName}</AreaLink>
                       </span>
                       <RecBadge rec={r.recommendation} />
-                      <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} held={l.held} />
+                      <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} faces={l.faces} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} held={l.held} />
                       <span className="text-xs text-muted">
                         {t.ai.confidence} {pct(r.confidence)}
                       </span>

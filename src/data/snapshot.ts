@@ -1,4 +1,5 @@
 import { arDigits } from "@/lib/digits";
+import type { Faces } from "@/engine/surroundings";
 /**
  * Compact snapshot format shared by the ingest job (Node) and the browser.
  * Firestore holds `meta/current` plus a handful of `plots/{chunkId}` docs, each a
@@ -168,6 +169,8 @@ export interface Plot {
   mainRoadM: number | null;
   /** Building regulations of the plot's district; null when the source doesn't publish them. */
   rules: BuildingRules | null;
+  /** What the plot faces (road, compound, buildings, services), from public/surroundings.json; null/absent = not measured. */
+  faces?: Faces | null;
 }
 
 export interface Snapshot {

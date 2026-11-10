@@ -1,6 +1,7 @@
 /** All user-facing text, in Egyptian Arabic. */
 
 import { ALAMEIN_BLOCKS, UNITS, type AlameinBlock } from "@/engine/units";
+import type { Faces } from "@/engine/surroundings";
 
 const nf = (digits = 0) => new Intl.NumberFormat("ar-EG", { maximumFractionDigits: digits });
 export const num = (n: number | null | undefined, digits = 0) =>
@@ -54,6 +55,7 @@ export const FACTOR: Record<string, string> = {
   value: "سعر المتر مقارنة باللي زيها",
   area: "المساحة",
   demand: "بتتحجز بسرعة دلوقتي",
+  surroundings: "الواجهة: طريق / كمبوند / مباني",
 };
 
 const availText = (n: number) => (n ? num(n) + " أرض متاحة" : "كل الأراضي اتحجزت");
@@ -296,6 +298,7 @@ export const t = {
     units: "🏢 ٣ شقق أو أكتر في الدور",
     modes: { prefer: "أفضّلها", require: "لازم", ignore: "مش فارقة" },
     cities: "المدن اللي بتفضلها (دوس بالترتيب)",
+    facing: "🛣️ على طريق أو قدام كمبوند / مباني",
     allCities: (n: number) => `كل المدن (${num(n)})`,
     fewerCities: "أقل",
     onlyCities: "اعرض المدن دي بس",
@@ -371,6 +374,9 @@ export const t = {
     street: "🛣️ شارع رئيسي",
     units: (n: number) => `🏢 ${num(n)} شقق/دور`,
     sea: "🌊 فيو",
+    compound: "🏰 قدام كمبوند",
+    premiumCompound: "🏰 قدام كمبوند مميز",
+    facingBuilt: "🏠 قدام مباني",
     nearBuilt: "🏘️ قريبة من العمار",
     held: "⏳ عليها طلب حجز مبدئي",
     heldHint: "حد قدّم طلب حجز مبدئي على الأرض دي على موقع الهيئة. لسه تقدر تحجزها: أول تحويل بنكي يوصل هو اللي بيكسب.",
@@ -403,7 +409,8 @@ export const t = {
     nearBuilt: "قريبة من العمار",
     units: "٣ شقق أو أكتر في الدور",
     sort: "رتّب حسب",
-    sorts: { score: "التقييم", reach: "فرصة الوصول", nearBuilt: "القرب من العمار", premium: "الأعلى تميزًا", price: "الأرخص", ppm: "الأرخص سعر متر", area: "الأكبر" },
+    sorts: { score: "التقييم", reach: "فرصة الوصول", nearBuilt: "القرب من العمار", facing: "الواجهة", premium: "الأعلى تميزًا", price: "الأرخص", ppm: "الأرخص سعر متر", area: "الأكبر" },
+    facing: "على طريق أو قدام كمبوند / مباني",
     results: (n: number) => `${num(n)} أرض`,
     prev: "اللي قبله",
     next: "اللي بعده",
@@ -430,7 +437,7 @@ export const t = {
     nearBuilt:
       "«قربها من العمار» = المسافة لأقرب مباني قائمة على خرايط «أوبن ستريت ماب» (لو الأرض مالهاش إحداثيات بناخد نص منطقتها)، مع نسبة الأراضي اللي حواليها اتحجزت (٤٠٠ متر).",
     street:
-      "«على شارع رئيسي» = حدود الأرض على بُعد ٣٠ متر أو أقل من محور شارع رئيسي متسجّل على «أوبن ستريت ماب». ده مش من بيانات الهيئة ومالوش تميّز في السعر، والخرايط في المدن الجديدة ممكن تكون ناقصة.",
+      "«الواجهة» = إيه اللي قدام الأرض على خريطة الهيئة: شارع رئيسي (لحد ١٠٠ متر من محوره)، كمبوند (لحد ١٢٠ متر من سوره، والمميز = من أغلى تلت كمبوندات حواليه)، أو مباني قائمة (لحد ٨٠ متر). بنحسبها بس لو مفيش أرض تانية من الخريطة في النص، فالصف التاني ورا الأرض اللي على الشارع مابيتحسبش. الأرض اللي قدام كمبوند مميز بتاخد أعلى تقييم، وبعدها الكمبوند، الشارع الرئيسي، المباني، ولو اتنين مع بعض بتاخد زيادة، وقربها من جامعة أو مستشفى أو مول أو نادي (لحد ١٫٥ كم) بيزوّد شوية. الطرق والمباني من «أوبن ستريت ماب» والكمبوندات من مواقع العقارات، ومش من بيانات الهيئة، والخرايط في المدن الجديدة ممكن تكون ناقصة.",
     units: `«عدد الشقق في الدور» محسوب من مساحة الأرض حسب تنويه الوزارة للطرح الحادي عشر: حتى ${num(UNITS.twoUpToM2)} م² شقتين، من ${num(UNITS.twoUpToM2 + 1)} لـ ${num(UNITS.threeUpToM2)} م² ٣ شقق، من ${num(UNITS.threeUpToM2 + 1)} لـ ${num(UNITS.fourUpToM2)} م² ٤ شقق، و${num(UNITS.fourUpToM2 + 1)} م² فأكتر ٥ شقق (بشرط إن الشقة ماتقلش عن ١٠٠ م² وتوفير أماكن ركن). الأرض اللي فيها ٣ شقق أو أكتر بتاخد تقييم أعلى. في العلمين الجديدة جهاز المدينة بيحدد عدد الوحدات لكل قطعة حسب البلوك، فمفيش رقم في الدور ولا زيادة في التقييم.`,
     assumptions: [
       "افتراض: أكواد الحجز بتتبعت بالترتيب.",
@@ -447,6 +454,10 @@ export const t = {
     street: "على شارع رئيسي",
     units: (n: number) => `ينفع ${num(n)} شقق في الدور`,
     high: (p: number) => `فرصة كبيرة (${num(p)}٪) تكون لسه فاضية في دورك`,
+    compound: (name: string) => `قدام كمبوند ${name}`,
+    premiumCompound: (name: string) => `قدام كمبوند مميز (${name})`,
+    facingBuilt: "قدام مباني قائمة",
+    service: (name: string, m: number) => `قريبة من ${name} (${m >= 1000 ? num(m / 1000, 1) + " كم" : num(m) + " متر"})`,
     mid: (p: number) => `فرصة متوسطة (${num(p)}٪) تفضل لحد دورك`,
     low: (p: number) => `فرصة ضعيفة (${num(p)}٪) تفضل لحد دورك`,
     nearBuilt: (d: string) => `قريبة من مباني قائمة (${d})`,
@@ -488,6 +499,18 @@ export const t = {
     roadNote: "(من الخرايط، مش تميّز من الهيئة)",
     neighbours: "الأراضي اللي حواليها اتحجزت",
     breakdown: "تفاصيل التقييم",
+    facing: "الواجهة",
+    facingText: (f: Faces) => {
+      const m = (x: number) => (x >= 1000 ? `${num(x / 1000, 1)} كم` : `${num(x)} متر`);
+      const parts: string[] = [];
+      if (f.compound) parts.push(`${f.compound.premium ? "كمبوند مميز" : "كمبوند"} (${f.compound.name}) على ${m(f.compound.m)}`);
+      if (f.road != null) parts.push(`شارع رئيسي على ${m(f.road)}`);
+      if (f.built != null) parts.push(`مباني قائمة على ${m(f.built)}`);
+      const head = parts.length ? `قدامها ${parts.join("، ")}` : "مش قدام شارع رئيسي ولا كمبوند ولا مباني";
+      const near = f.services.map((s) => s.name + " (" + m(s.m) + ")").join("، ");
+      const svc = near ? ". قريب منها: " + near : "";
+      return head + svc;
+    },
     chanceTitle: "فرصة إنها تفضل فاضية لحد دورك",
     chanceText: (mid: string, lo: string, hi: string) => `المتوقع ${mid}. في الأسوأ ${lo}، وفي الأحسن ${hi}.`,
     sector: (avail: number, recent: number, exp: number, left: number) =>

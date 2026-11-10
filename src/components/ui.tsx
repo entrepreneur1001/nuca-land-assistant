@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { REC, num, t } from "@/i18n/ar";
+import type { Faces } from "@/engine/surroundings";
 import { areaHref } from "@/lib/phases";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -58,7 +59,10 @@ export function FeatureBadges({
   street,
   units,
   held,
+  faces,
 }: {
+  /** What the plot faces: badges a compound (premium or not) and existing buildings. */
+  faces?: Faces | null;
   garden: boolean;
   corner: boolean;
   sea?: boolean;
@@ -73,7 +77,13 @@ export function FeatureBadges({
     <span className="inline-flex flex-wrap gap-1">
       {garden ? <Badge tone="good">{t.badge.garden}</Badge> : null}
       {corner ? <Badge tone="accent">{t.badge.corner}</Badge> : null}
+      {faces?.compound ? (
+        <span title={faces.compound.name}>
+          <Badge tone={faces.compound.premium ? "good" : "accent"}>{faces.compound.premium ? t.badge.premiumCompound : t.badge.compound}</Badge>
+        </span>
+      ) : null}
       {street ? <Badge tone="accent">{t.badge.street}</Badge> : null}
+      {faces?.built != null ? <Badge tone="warn">{t.badge.facingBuilt}</Badge> : null}
       {units && units >= 3 ? <Badge tone="good">{t.badge.units(units)}</Badge> : null}
       {nearBuilt ? <Badge tone="warn">{t.badge.nearBuilt}</Badge> : null}
       {sea ? <Badge tone="accent">{t.badge.sea}</Badge> : null}
