@@ -2,17 +2,9 @@
 
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
+import { firebaseConfig } from "./firebase-config";
 
-// Firebase web config is public by design (security comes from Firestore rules / App Check).
-const config = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyCA5rnGkRwRz_N6myVnTlIW-733NL0K5vk",
-  authDomain: "nuca-lands-assistant.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "nuca-lands-assistant",
-  storageBucket: "nuca-lands-assistant.firebasestorage.app",
-  messagingSenderId: "447017281313",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? "1:447017281313:web:669dd454da8b30d30ac060",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID ?? "G-GBV8B6PJ55",
-};
+const config = firebaseConfig;
 
 let app: FirebaseApp | null = null;
 let appCheckReady: Promise<void> = Promise.resolve();

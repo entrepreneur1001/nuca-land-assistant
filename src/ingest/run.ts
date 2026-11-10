@@ -11,6 +11,7 @@ import { createClient, crawlZones, discoverZones, type FetchHtml, type ZoneCrawl
 import { OFFICIAL_SITE, officialUrl } from "./official";
 import { buildOfficialIndex, type OfficialZoneEntry } from "./official-map";
 import { buildIndex, fetchBuiltPoints as defaultFetchBuilt, loadBuiltCache } from "./osm";
+import type { PlotLabel } from "./notify";
 import { loadPlanFiles, planCentroids } from "./plan-places";
 
 /** A plan-placed plot whose plan moved it by more than this gets its distances measured again. */
@@ -90,6 +91,8 @@ export interface RunResult {
   officialNew: OfficialNewsItem[];
   /** Plots that became booked this run (≤ 200). */
   newlyBookedPlots: { id: string; city: string; sector: string | null; zone: string | null; plotNo: string; total: number }[];
+  /** Every plot that became booked this run, labelled for the «مفضلتك» push alerts (not capped). */
+  newlyBookedLabels: PlotLabel[];
   error?: string;
 }
 
@@ -185,6 +188,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     durationMs: 0,
     officialNew: [],
     newlyBookedPlots: [],
+    newlyBookedLabels: [],
   };
   const news = await syncNews(prev, fetchHtml, now, log);
   Object.assign(meta, news.patch);
@@ -278,6 +282,10 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     const max = OFFICIAL_SITE.maxNewlyBookedPerRun;
     if (result.newlyBooked > max && !opts.acceptLarge) throw new Error(`suspicious: ${result.newlyBooked} plots newly booked in one run (> ${max}); re-run with --accept-large if the site really says so`);
     const byId = new Map(derived.records.map((r) => [r.id, r]));
+    result.newlyBookedLabels = derived.newlyBooked.map((id) => {
+      const r = byId.get(id)!;
+      return { id, plotNo: r.plotNo, sector: r.sectorName, city: r.cityName };
+    });
     result.newlyBookedPlots = derived.newlyBooked.slice(0, 200).map((id) => {
       const r = byId.get(id)!;
       return { id, city: r.cityName, sector: r.sectorName, zone: r.zoneName, plotNo: r.plotNo, total: r.total };

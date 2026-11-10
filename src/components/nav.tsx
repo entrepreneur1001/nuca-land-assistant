@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { t } from "@/i18n/ar";
 import { CURRENT_PHASE, phasePath } from "@/lib/phases";
+import { FavoritesLink } from "./favorite-button";
 import { FeedbackButton } from "./feedback";
 
 export function Nav() {
@@ -15,6 +16,7 @@ export function Nav() {
           <Link href="/" className="hidden hover:text-text sm:inline">{t.nav.home}</Link>
           <Link href="/market" className="hover:text-text">{t.nav.market}</Link>
           <Link href={phasePath.available(CURRENT_PHASE)} className="hover:text-text">{t.nav.available}</Link>
+          <FavoritesLink />
           <Link href={phasePath.guide(CURRENT_PHASE)} className="hidden hover:text-text sm:inline">{t.nav.guide}</Link>
           <FeedbackButton variant="link" />
         </div>

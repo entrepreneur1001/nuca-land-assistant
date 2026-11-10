@@ -158,6 +158,8 @@ describe("sync runner (official site)", () => {
     expect(r.newlyBooked).toBe(2);
     expect(r.newlyAvailable).toBe(1); // plot 3 was booked in the snapshot but is offered again
     expect(r.newlyBookedPlots.map((p) => p.plotNo).sort()).toEqual(["20", "7"]);
+    expect(r.newlyBookedLabels.map((p) => p.id).sort()).toEqual(r.newlyBookedPlots.map((p) => p.id).sort());
+    expect(r.newlyBookedLabels.every((p) => p.city && p.plotNo)).toBe(true);
     const tuples = await loadTuples(m.store, m.meta!);
     expect(tuples).toHaveLength(45);
     const byNo = new Map(tuples.map((t) => [t[2], t]));

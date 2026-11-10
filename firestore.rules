@@ -35,6 +35,18 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // «نبهني لما تتحجز»: a browser's push token + the plots it saved, one doc per anonymous visitor (src/lib/push.ts).
+    // Only the owner writes it; nobody reads it from the client. The sync job (Admin SDK) reads it and sends the pushes.
+    match /watchers/{uid} {
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['token', 'plots', 'updatedAt'])
+        && request.resource.data.token is string && request.resource.data.token.size() > 0 && request.resource.data.token.size() < 4096
+        && request.resource.data.plots is list && request.resource.data.plots.size() <= 50
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow read: if false;
+    }
+
     // Sync job's source credentials (Admin SDK only).
     match /private/{doc} { allow read, write: if false; }
 

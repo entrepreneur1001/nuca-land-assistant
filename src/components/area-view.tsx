@@ -14,6 +14,7 @@ import { useAvailableOnly } from "@/lib/map-prefs";
 import { areaHref } from "@/lib/phases";
 import { useApp } from "./app-state";
 import { AreaMap } from "./area-map";
+import { FavoriteButton } from "./favorite-button";
 import { Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
 
 type Sort = keyof typeof t.area.sorts;
@@ -181,8 +182,8 @@ export function AreaView() {
 
 function Row({ plot: p, r, showDistrict, onHover }: { plot: Plot; r?: RankedLand; showDistrict: boolean; onHover: (id: string | null) => void }) {
   return (
-    <li onMouseEnter={() => onHover(p.id)} onMouseLeave={() => onHover(null)}>
-      <Link href={`/land?id=${p.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
+    <li onMouseEnter={() => onHover(p.id)} onMouseLeave={() => onHover(null)} className="flex items-center gap-2 hover:bg-surface-2">
+      <Link href={`/land?id=${p.id}`} className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="font-semibold">
             {t.card.plot} {p.plotNumber}
@@ -205,6 +206,7 @@ function Row({ plot: p, r, showDistrict, onHover }: { plot: Plot; r?: RankedLand
         {r ? <SurvivalBar {...r.survival} /> : null}
         {r ? <RecBadge rec={r.recommendation} /> : null}
       </Link>
+      {p.status === "available" ? <FavoriteButton id={p.id} /> : null}
     </li>
   );
 }

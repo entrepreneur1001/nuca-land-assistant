@@ -9,9 +9,12 @@ import { isOnMainRoad } from "@/engine/roads";
 import { onRoad } from "@/engine/surroundings";
 import { alameinBlock, unitsRule } from "@/engine/units";
 import { track } from "@/lib/firebase";
+import { useFavorites } from "@/lib/favorites";
 import { useAvailableOnly } from "@/lib/map-prefs";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
+import { FavoriteButton } from "./favorite-button";
+import { PushPrompt } from "./favorites";
 import { NearbyPlaces } from "./nearby-places";
 import { PlotMap } from "./plot-map";
 import { AreaLink, Badge, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
@@ -25,6 +28,7 @@ export function LandDetail() {
   const [hasCompounds, setHasCompounds] = useState(false);
   const [hasPlaces, setHasPlaces] = useState(false);
   const [availableOnly, setAvailableOnly] = useAvailableOnly();
+  const saved = !!useFavorites()[id];
   useEffect(() => {
     if (id) void track("land_view", { id });
   }, [id]);
@@ -55,9 +59,12 @@ export function LandDetail() {
     <div className="space-y-4">
       <Link href="/" className="text-sm text-muted hover:text-text">{t.detail.back}</Link>
       <Card>
-        <h1 className="text-xl font-bold">
-          {t.card.plot} {plot.plotNumber}
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-xl font-bold">
+            {t.card.plot} {plot.plotNumber}
+          </h1>
+          <FavoriteButton id={plot.id} label />
+        </div>
         <div>
           <AreaLink city={plot.cityName} district={plot.projectId}>{plot.projectName}</AreaLink>
         </div>
@@ -80,6 +87,11 @@ export function LandDetail() {
           />
           {s && personal ? <span className="text-xs text-muted">{t.detail.rankOf(pos + 1)}</span> : null}
         </div>
+        {saved && !booked ? (
+          <div className="mt-3">
+            <PushPrompt compact />
+          </div>
+        ) : null}
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
           <dt className="text-muted">{t.card.area}</dt>
           <dd>{num(plot.area, 1)} {t.card.m2}</dd>

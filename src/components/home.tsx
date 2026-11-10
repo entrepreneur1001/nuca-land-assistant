@@ -11,6 +11,7 @@ import { analyze, cooldownLeft } from "@/lib/ai";
 
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
+import { FavoriteButton } from "./favorite-button";
 import { ProfileCard } from "./profile-card";
 import { AdvancedSearch } from "./search";
 import { AreaLink, Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
@@ -174,7 +175,10 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
             <div key={l.id} className="relative rounded-2xl border border-border bg-surface p-3 hover:border-accent">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">#{num(i + 1)}</span>
-                <RecBadge rec={l.recommendation} />
+                <span className="flex items-center gap-1">
+                  <RecBadge rec={l.recommendation} />
+                  <FavoriteButton id={l.id} />
+                </span>
               </div>
               {/* Stretched over the whole card; the area names sit above it. */}
               <Link href={`/land?id=${l.id}`} className="mt-1 block font-bold after:absolute after:inset-0 after:rounded-2xl">

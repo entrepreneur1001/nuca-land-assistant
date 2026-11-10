@@ -10,8 +10,11 @@
  */
 import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getMessaging } from "firebase-admin/messaging";
 import type { MetaDoc } from "@/data/snapshot";
+import { QUERY_CHUNK, buildPushes, chunks, isDeadToken, type PlotLabel, type Watcher } from "@/ingest/notify";
 import { runSync, type ChunkDoc, type Store } from "@/ingest/run";
+import { SITE_URL } from "@/lib/site";
 
 const projectId = process.env.FIREBASE_PROJECT_ID ?? "nuca-lands-assistant";
 const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -46,5 +49,54 @@ const r = await runSync(store, {
   acceptLarge: args.has("--accept-large"),
   dryRun: args.has("--dry-run"),
 });
-console.log(JSON.stringify({ ...r, changedChunks: r.changedChunks.length, officialNew: r.officialNew.map((i) => i.nid), newlyBookedPlots: r.newlyBookedPlots.length }));
+/**
+ * «اتحجزت أرض من مفضلتك»: one push per browser that saved a plot booked this run (watchers written by src/lib/push.ts).
+ * Reads only the matching watcher docs. Never fails the sync: errors are logged and the count is returned.
+ */
+async function notifyWatchers(booked: PlotLabel[]): Promise<number> {
+  const seen = new Map<string, Watcher>();
+  for (const ids of chunks(booked.map((b) => b.id), QUERY_CHUNK)) {
+    const snap = await db.collection("watchers").where("plots", "array-contains-any", ids).get();
+    for (const d of snap.docs) seen.set(d.id, { id: d.id, ...(d.data() as Omit<Watcher, "id">) });
+  }
+  const pushes = buildPushes([...seen.values()], booked);
+  let sent = 0;
+  for (const batch of chunks(pushes, 500)) {
+    const res = await getMessaging().sendEach(
+      batch.map((p) => ({
+        token: p.token,
+        webpush: {
+          notification: { title: p.title, body: p.body, icon: "/icon-192.png", lang: "ar", dir: "rtl" as const, tag: p.link },
+          fcmOptions: { link: SITE_URL + p.link },
+        },
+      })),
+    );
+    const dead: string[] = [];
+    res.responses.forEach((x, i) => {
+      if (x.success) sent++;
+      else if (isDeadToken(x.error?.code)) dead.push(...batch[i].watcherIds);
+      else console.warn(`push failed: ${x.error?.code} ${x.error?.message}`);
+    });
+    for (const ids of chunks(dead, 400)) {
+      const wb = db.batch();
+      for (const id of ids) wb.delete(db.collection("watchers").doc(id));
+      await wb.commit();
+    }
+    if (dead.length) console.log(`push: removed ${dead.length} watcher(s) with dead tokens`);
+  }
+  return sent;
+}
+
+let pushes = 0;
+if (!r.error && !r.dryRun && r.newlyBookedLabels.length && !process.env.NO_PUSH) {
+  try {
+    pushes = await notifyWatchers(r.newlyBookedLabels);
+  } catch (e) {
+    console.warn(`push: skipped (${e instanceof Error ? e.message : e})`);
+  }
+}
+
+console.log(
+  JSON.stringify({ ...r, changedChunks: r.changedChunks.length, officialNew: r.officialNew.map((i) => i.nid), newlyBookedPlots: r.newlyBookedPlots.length, newlyBookedLabels: r.newlyBookedLabels.length, pushes }),
+);
 process.exit(r.error ? 1 : 0);

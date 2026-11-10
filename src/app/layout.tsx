@@ -23,6 +23,8 @@ export const metadata: Metadata = {
   description,
   applicationName: t.appName,
   formatDetection: { telephone: false },
+  icons: { apple: "/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: t.appShort, statusBarStyle: "default" },
   openGraph: { ...OG_BASE, title: siteTitle, description, url: "/" },
   twitter: { card: "summary_large_image", title: siteTitle, description, images: [OG_IMAGE.url] },
 };
