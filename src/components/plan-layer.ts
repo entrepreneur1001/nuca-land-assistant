@@ -49,10 +49,15 @@ const statusWord = (p: Plot) => (p.status === "booked" ? t.detail.booked : p.hel
 let imagesOn = true;
 
 const PANE = "nucaPlan";
-/** Below the overlay pane (400) so the polygons and dots always sit on the image. */
-const PANE_Z = "390";
-/** The drawn site of each plan, cut out and stacked above every whole plan image: where plans overlap, a zone's
- *  site is never hidden under a neighbour's margins or title banner, while roads and context still show. */
+/**
+ * The whole plan sheet (roads, context, white margins, title banner) lies lowest of our layers: under the private
+ * compounds (370, compound-layer.ts) and the earlier stages (380), so a sheet's margins never hide a neighbouring
+ * compound or an earlier-stage plan. Only the satellite tiles (200) are below it.
+ */
+const PANE_Z = "360";
+/** The drawn site of each plan, cut out and stacked above every whole plan sheet, the compounds and the earlier
+ *  stages: a zone's site is never hidden under a neighbour's margins or anything else, while roads and context still
+ *  show wherever nothing else is drawn. Below the overlay pane (400) so the polygons and dots always sit on it. */
 const SITE_PANE = "nucaPlanSite";
 const SITE_PANE_Z = "391";
 
@@ -196,8 +201,8 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
   const bounds = L.latLngBounds([...corners, corner(zone.w, zone.h)]);
 
   const Img = rotatedImage(L);
-  // Two copies of the plan: the whole drawing (roads, context, margins) underneath, and its site cut out on top,
-  // so neighbouring plans only ever cover each other's margins, never a site.
+  // Two copies of the plan: the whole drawing (roads, context, margins) at the very bottom, and its site cut out on
+  // top, so a sheet's margins never cover a site, a compound or an earlier-stage plan.
   const hull = planClip(zone);
   const clip = hull ? `polygon(${hull.map(([x, y]) => `${x}px ${y}px`).join(", ")})` : undefined;
   const image = new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: PANE });
@@ -320,7 +325,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
 }
 
 const PAST_PANE = "nucaPlanPast";
-/** Under the current stage's plans. */
+/** Under the current stage's sites, over their whole sheets (so a sheet's margin never hides an earlier stage). */
 const PAST_PANE_Z = "380";
 
 export interface PastPlans {
