@@ -4,11 +4,11 @@ A public, Arabic (Egyptian), phone-friendly site that answers:
 
 > **With my rank and the money I paid, which NUCA plots can I realistically book, ideally on a garden, a corner (ناصية), and near already-built areas?**
 
-Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the sync, triggered by **cron-job.org** every 15 minutes during Cairo working hours.
+Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the sync, triggered by **cron-job.org** every 5 minutes during Cairo working hours.
 
 ```
 lands.nuca.gov.eg (official: zone tables + news) ─┐
-OpenStreetMap (only for plots new to the snapshot) ┤→ cron-job.org → GitHub Actions (every 15 min Sun–Thu 10–22 Cairo; hourly otherwise) → Firestore (meta + 8 gzipped plot chunks, AI cache)
+OpenStreetMap (only for plots new to the snapshot) ┤→ cron-job.org → GitHub Actions (every 5 min Sun–Thu 10–22 Cairo; hourly otherwise) → Firestore (meta + 8 gzipped plot chunks, AI cache)
                                                           ↓ public read
           Firebase Hosting (static Next.js export) → the visitor's browser computes the ranking (Web Worker)
                                                    ↳ Gemini via Firebase AI Logic (App Check / Fraud Defense)
@@ -54,7 +54,9 @@ Deploy: `npm run deploy` (tests, static build, then `firebase deploy` of hosting
 
 ## Data sync (cron-job.org → GitHub Actions)
 
-`.github/workflows/sync.yml` runs `scripts/ingest.mts` (public repo, so Actions minutes are free). The cadence is **every 15 minutes Sunday–Thursday 10:00–22:00 Africa/Cairo, and hourly the rest of the time**.
+`.github/workflows/sync.yml` runs `scripts/ingest.mts` (public repo, so Actions minutes are free). The cadence is **every 5 minutes Sunday–Thursday 10:00–22:00 Africa/Cairo, and hourly the rest of the time**.
+
+The 5-minute runs are *quick* runs (`quick` input): they crawl the stalest zones for 3 minutes (zones not reached go first next run, so every zone is re-read about every 10 minutes) and skip the OpenStreetMap distance work, which waits for the hourly run. A full crawl of all zones takes ~7 minutes at the site's safe pace (2 workers, 750 ms), so it cannot fit a 5-minute slot.
 
 GitHub's own `schedule:` cron is **not** the trigger: GitHub runs scheduled workflows best-effort and, with `*/15`, this repo observed gaps of 2–6 hours. The workflow keeps an hourly `schedule:` only as a backup. The real trigger is [cron-job.org](https://cron-job.org) (free, timezone-aware), which calls GitHub's `workflow_dispatch` API.
 
@@ -67,15 +69,15 @@ The official site needs no credentials. (Until Nov 2026 the data came from a thi
 
 ### One-time trigger setup
 
-1. **GitHub token.** GitHub → Settings → Developer settings → Fine-grained personal access tokens → *Generate new token*. Repository access: only `entrepreneur1001/nuca-land-assistant`. Permissions: **Actions → Read and write** (nothing else). Pick the longest expiry and put the renewal date in your calendar; when it expires, the 15-minute cadence silently falls back to the hourly GitHub cron.
+1. **GitHub token.** GitHub → Settings → Developer settings → Fine-grained personal access tokens → *Generate new token*. Repository access: only `entrepreneur1001/nuca-land-assistant`. Permissions: **Actions → Read and write** (nothing else). Pick the longest expiry and put the renewal date in your calendar; when it expires, the 5-minute cadence silently falls back to the hourly GitHub cron.
 2. **cron-job.org jobs.** Create two jobs with the same request and only the schedule different:
    - URL: `https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches`
-   - Method: `POST`. Body: `{"ref":"main"}`
+   - Method: `POST`. Body: `{"ref":"main"}` (Job A: `{"ref":"main","inputs":{"quick":"true"}}`)
    - Headers: `Authorization: Bearer <the token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`, `User-Agent: nuca-sync-trigger`
    - Timezone: `Africa/Cairo`. Treat HTTP `204` as success. Turn on failure notifications (email).
-   - **Job A, peak:** minutes `0,15,30,45`, hours `10–21`, days `Sun–Thu`.
-   - **Job B, off-hours:** minute `5`, every hour, every day. (Inside the window it overlaps Job A; harmless: the run queues behind the workflow's concurrency group and does a cheap stats poll.)
-3. **Check.** Press *Run now* on Job A, then `gh run list --workflow=sync.yml --limit 5 --json event,createdAt,conclusion` should show a `workflow_dispatch` run within about a minute. After an hour inside the window, runs land every 15 minutes.
+   - **Job A, peak (quick):** minutes `0,10,15,…,55` (every 5 except `5`), hours `10–21`, days `Sun–Thu`.
+   - **Job B, off-hours:** minute `5`, every hour, every day. (Inside the window it takes Job A's minute-5 slot and runs a normal pass, which catches up on OpenStreetMap.)
+3. **Check.** Press *Run now* on Job A, then `gh run list --workflow=sync.yml --limit 5 --json event,createdAt,conclusion` should show a `workflow_dispatch` run within about a minute. After an hour inside the window, runs land every 5 minutes.
 
 The token lives only in cron-job.org. Nothing secret is stored in this repo.
 
@@ -180,8 +182,8 @@ All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 
 ## Caveats
 
-- The data is read from the public pages of the official NUCA site every 15 minutes; a plot can still be taken between two runs. Verify a plot on the NUCA site before booking.
+- The data is read from the public pages of the official NUCA site every 5–10 minutes; a plot can still be taken between two runs. Verify a plot on the NUCA site before booking.
 - "Booked" means the plot is not offered right now; NUCA cancels preliminary bookings whose transfer never arrives, so a plot can come back. «حجز مبدئى» (⏳) means someone has a pending request on it; you can still book it, the first transfer wins.
-- Booking times before Nov 2026 come from the earlier snapshot; later ones are the sync run that first saw the plot booked (15-minute resolution).
+- Booking times before Nov 2026 come from the earlier snapshot; later ones are the sync run that first saw the plot booked (5–10-minute resolution).
 - "Codes are issued in rank order" and the conversion rates are inferred, not published by NUCA.
 - OpenStreetMap coverage in new cities is incomplete. The distance shown is to the nearest *mapped* building.

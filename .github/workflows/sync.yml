@@ -1,8 +1,9 @@
 # Data sync from the official NUCA site (lands.nuca.gov.eg). The real trigger is cron-job.org (see README "Data sync"):
 # it POSTs to https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches
-# every 15 min Sunday–Thursday 10:00–22:00 Africa/Cairo, and hourly otherwise.
+# every 5 min Sunday–Thursday 10:00–22:00 Africa/Cairo as a quick run, and hourly (minute 5) as a normal run.
 # GitHub's own `schedule` is best-effort (observed gaps of 2–6 h with "*/15"), so it is only a backup.
-# A run crawls ~110 zone tables and takes 4–8 minutes; a dispatch that lands during a run queues behind it.
+# A normal run crawls all ~110 zone tables (~7 min) plus OpenStreetMap work; a quick run crawls the stalest zones for
+# 3 min and skips OpenStreetMap, so it fits the 5-minute slot. A dispatch that lands during a run queues behind it.
 name: Sync NUCA data
 
 on:
@@ -17,6 +18,10 @@ on:
         default: false
       zones:
         description: "Re-discover the zone list"
+        type: boolean
+        default: false
+      quick:
+        description: "Quick run: crawl the stalest zones for 3 min, skip OpenStreetMap (the 5-minute peak cadence)"
         type: boolean
         default: false
       accept_large:
@@ -47,7 +52,9 @@ jobs:
       - name: Sync into Firestore
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          QUICK: ${{ inputs.quick && 'yes' || '' }}
         run: >
+          if [ -n "$QUICK" ]; then export OFFICIAL_BUDGET_MS=180000 OSM_BUDGET_MS=0; fi;
           npx tsx scripts/ingest.mts
           ${{ (inputs.full || github.event.schedule == '17 1 * * *') && '--full' || '' }}
           ${{ inputs.zones && '--zones' || '' }}

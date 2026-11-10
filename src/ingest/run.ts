@@ -339,7 +339,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       for (const sid of order) {
         const c = centreOf(sid);
         if (!c) continue;
-        if (Date.now() - t0 > budgetMs) {
+        if (Date.now() - t0 >= budgetMs) {
           left.push(sid);
           continue;
         }
