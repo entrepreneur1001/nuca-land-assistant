@@ -339,12 +339,14 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       for (const sid of order) {
         const c = centreOf(sid);
         if (!c) continue;
-        if (Date.now() - t0 >= budgetMs) {
+        // The budget only limits Overpass: a district with committed built points costs no network, so it is
+        // measured even in the quick runs (budget 0).
+        const cached = builtCache(sid);
+        if (!cached && Date.now() - t0 >= budgetMs) {
           left.push(sid);
           continue;
         }
         try {
-          const cached = builtCache(sid);
           const points = cached ?? (await fetchBuilt([c]));
           if (cached) fromCache++;
           const recs = newBySector.get(sid)!;

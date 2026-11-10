@@ -443,4 +443,27 @@ describe("sync runner (official site)", () => {
     byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
     expect(byNo.get("2")![18]).toBe(0); // measured from the plot on the retry
   });
+  it("measures a district with committed built points even when the OpenStreetMap budget is zero", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 5 }, (_, i) => rec(String(i + 1), 0, i + 1 === 2 ? { lat: null, lng: null, builtKm: null, builtSrc: 2 } : {})));
+    const { opts } = harness(siteData(genPlots(5, { square: SQ })));
+    const planPlaces = new Map<string, [number, number]>([["guid-2", [30.015, 31.025]]]);
+    const asked: unknown[] = [];
+    const run = await runSync(m.store, {
+      ...opts,
+      planPlaces,
+      now: T0,
+      osmBudgetMs: 0,
+      builtCache: (sid) => (sid === "sec-a" ? [[30.0151, 31.0251]] : null),
+      fetchBuiltPoints: async (c) => {
+        asked.push(c);
+        return [];
+      },
+    });
+    expect(run.error).toBeUndefined();
+    expect(asked).toEqual([]); // no network
+    expect(m.meta!.distancePending).toEqual([]);
+    const byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
+    expect(byNo.get("2")![18]).toBe(0);
+  });
 });
