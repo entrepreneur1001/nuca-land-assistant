@@ -243,13 +243,14 @@ describe("sync runner (official site)", () => {
     const m = memStore();
     await seedStore(m, [rec("1")]);
     const { opts } = harness(siteData(genPlots(1, { square: SQ, status: () => "free" })));
-    // a 1 ms budget lets only the first zone start
-    const r = await runSync(m.store, { ...opts, budgetMs: 1, concurrency: 1, now: T0 });
+    // a 1 ms budget on a clock that ticks 0.6 ms per reading lets exactly the first zone start
+    const ticking = () => { let n = 0; return () => n++ * 0.6; };
+    const r = await runSync(m.store, { ...opts, budgetMs: 1, concurrency: 1, now: T0, clock: ticking() });
     expect(r.zonesOk).toBe(1);
     expect(r.zonesSkipped).toBe(1);
     expect(m.meta!.statsAt).toBe(T0.toISOString());
     expect(m.meta!.fullSyncAt).toBe("2026-11-09T06:00:00Z");
-    const r2 = await runSync(m.store, { ...opts, budgetMs: 1, concurrency: 1, now: later(15) });
+    const r2 = await runSync(m.store, { ...opts, budgetMs: 1, concurrency: 1, now: later(15), clock: ticking() });
     expect(r2.zonesOk).toBe(1);
     expect(m.meta!.fullSyncAt).toBe(T0.toISOString()); // the zone done 15 min ago is now the oldest
   });

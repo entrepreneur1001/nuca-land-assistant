@@ -47,6 +47,8 @@ export interface RunOptions {
   /** Accept a run that marks more plots booked than OFFICIAL_SITE.maxNewlyBookedPerRun. */
   acceptLarge?: boolean;
   budgetMs?: number;
+  /** Milliseconds clock the crawl's time budget is measured on (Date.now); tests pass a deterministic one. */
+  clock?: () => number;
   /** Time allowed for the per-district OpenStreetMap queries of step 4. */
   osmBudgetMs?: number;
   concurrency?: number;
@@ -227,7 +229,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
       client,
       order.map((z) => z.zid),
       full ? ["available", "booked"] : ["available"],
-      { concurrency: opts.concurrency ?? OFFICIAL_SITE.concurrency, budgetMs: opts.budgetMs ?? (full ? OFFICIAL_SITE.fullBudgetMs : OFFICIAL_SITE.budgetMs), log },
+      { concurrency: opts.concurrency ?? OFFICIAL_SITE.concurrency, budgetMs: opts.budgetMs ?? (full ? OFFICIAL_SITE.fullBudgetMs : OFFICIAL_SITE.budgetMs), now: opts.clock, log },
     );
     for (const z of zoneStates) {
       const cs = crawls.get(z.zid);

@@ -1,5 +1,6 @@
 "use client";
 
+import { includesDigits } from "@/lib/digits";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_WEIGHTS } from "@/engine/config";
@@ -34,7 +35,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
     const out = ranked.filter(
       (r) =>
         (!f.city || r.cityName === f.city) &&
-        (!f.project || `${r.projectName ?? ""} ${r.zoneName ?? ""}`.includes(f.project.trim())) &&
+        (!f.project || includesDigits(`${r.projectName ?? ""} ${r.zoneName ?? ""}`, f.project.trim())) &&
         (minArea == null || r.area >= minArea) &&
         (maxArea == null || r.area <= maxArea) &&
         (maxDp == null || r.downPayment <= maxDp) &&

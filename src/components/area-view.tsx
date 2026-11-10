@@ -16,7 +16,7 @@ import { AreaMap } from "./area-map";
 import { Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
 
 type Sort = keyof typeof t.area.sorts;
-const PAGE = 50;
+const PAGE = 20;
 
 /** /area?city=…[&d=<district id>]: every available plot in a city or district, plus a map of all its plots. */
 export function AreaView() {

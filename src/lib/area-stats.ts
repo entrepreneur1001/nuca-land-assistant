@@ -1,4 +1,5 @@
-import type { BuildingRules, MetaDoc, Plot, Snapshot } from "@/data/snapshot";
+import { arDigits } from "@/lib/digits";
+import { displayRules, type BuildingRules, type MetaDoc, type Plot, type Snapshot } from "@/data/snapshot";
 import { citySlug } from "./slugs";
 
 /** Area statistics shared by the build-time SEO pages (lib/build-data.ts) and their live browser refresh. */
@@ -91,11 +92,11 @@ export function citiesOf({ meta, plots }: Snapshot): CityInfo[] {
         .filter((s) => meta.cities[s.city] === name && bySector.has(s.id))
         .map((s) => ({
           id: s.id,
-          name: s.name,
+          name: arDigits(s.name),
           city: name,
           citySlug: slug,
           hot: s.hot,
-          rules: s.rules ?? null,
+          rules: displayRules(s.rules ?? null),
           stats: statsOf(bySector.get(s.id)!),
           center: center(bySector.get(s.id)!) ?? (s.c ? { lat: s.c[0], lng: s.c[1] } : null),
         }))
@@ -152,7 +153,7 @@ export function areaPlots({ meta, plots }: Snapshot, city: string, districtId?: 
       const unlocated = ps.filter((p) => p.latitude == null || p.longitude == null);
       return {
         id,
-        name: s?.name || ps[0].projectName || city,
+        name: arDigits(s?.name || ps[0].projectName || city),
         hot: !!s?.hot,
         total: ps.length,
         available: ps.filter((p) => p.status === "available").length,

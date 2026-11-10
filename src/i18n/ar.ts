@@ -492,6 +492,13 @@ export const t = {
     source: (when: string) => `آخر تحديث للأرض من موقع الهيئة الرسمي ${when}`,
     notFound: "الأرض دي مش موجودة.",
   },
+  /** The 404 page. */
+  notFound: {
+    title: "الصفحة دي مش موجودة",
+    text: "يمكن الرابط اتغير أو فيه غلطة في الكتابة. تقدر ترجع للرئيسية أو تشوف الأراضي المتاحة.",
+    home: "ارجع للرئيسية",
+    available: "الأراضي المتاحة",
+  },
   /** Private compounds outlined on the maps (public/compounds, from Nawy's listings). */
   compound: {
     /** Map button that shows/hides the compounds. */

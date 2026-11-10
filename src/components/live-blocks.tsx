@@ -81,8 +81,30 @@ export function LiveAvailableTable({ phase, initial }: { phase: Phase; initial: 
   const a = s.available;
   const th = "px-3 py-2 text-start font-medium";
   const td = "px-3 py-2";
+  const ppm = (c: CityInfo) =>
+    c.stats.ppmMax != null && c.stats.ppmMax !== c.stats.ppmMin ? s.stat.range(usd(c.stats.ppmMin), usd(c.stats.ppmMax)) : usd(c.stats.ppmMin);
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+    <>
+    {/* Phones: one card per city instead of a seven-column table. */}
+    <ul className="space-y-2 sm:hidden">
+      {cities.map((c) => (
+        <li key={c.slug} className="rounded-2xl border border-border bg-surface p-3 text-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <Link href={phasePath.city(phase, c.slug)} className="font-semibold text-accent hover:underline">{c.name}</Link>
+            <span className={`font-semibold ${c.stats.available ? "text-good" : "text-bad"}`}>
+              {c.stats.available ? `${num(c.stats.available)} ${s.stat.available}` : a.soldOut}
+            </span>
+          </div>
+          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+            <div><dt className="text-xs text-muted">{s.stat.total}</dt><dd>{num(c.stats.total)}</dd></div>
+            <div><dt className="text-xs text-muted">{s.stat.booked}</dt><dd>{num(c.stats.booked)} · {pct(c.stats.total ? c.stats.booked / c.stats.total : null)}</dd></div>
+            <div><dt className="text-xs text-muted">{s.stat.ppm}</dt><dd>{ppm(c)}</dd></div>
+            <div><dt className="text-xs text-muted">{s.stat.minDp}</dt><dd>{c.stats.available ? usd(c.stats.dpMin) : "—"}</dd></div>
+          </dl>
+        </li>
+      ))}
+    </ul>
+    <div className="hidden overflow-x-auto rounded-2xl border border-border bg-surface sm:block">
       <table className="w-full min-w-[36rem] text-sm">
         <thead className="bg-surface-2 text-xs text-muted">
           <tr>
@@ -116,6 +138,7 @@ export function LiveAvailableTable({ phase, initial }: { phase: Phase; initial: 
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 
@@ -187,7 +210,29 @@ export function LiveRulesByCity({ phase, initial }: { phase: Phase; initial: Cit
           {s.rulesPage.cityPage}
         </Link>
       </h3>
-      <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+      {/* Phones: one card per district, every value readable without scrolling sideways. */}
+      <ul className="space-y-2 sm:hidden">
+        {c.districts.map((d) => {
+          const src = ruleSource(d.rules);
+          return (
+            <li key={d.id} className="rounded-2xl border border-border bg-surface p-3 text-sm">
+              <div className="font-semibold">
+                <AreaLink city={c.name} district={d.id}>{d.name}</AreaLink>
+              </div>
+              {src ? <div className="text-xs text-muted">{src}</div> : null}
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                <dt className="text-muted">{t.rules.ratio}</dt>
+                <dd>{d.rules?.ratio ?? "—"}</dd>
+                <dt className="text-muted">{t.rules.floors}</dt>
+                <dd>{d.rules?.floors ?? "—"}</dd>
+                <dt className="text-muted">{t.rules.setbacks}</dt>
+                <dd>{d.rules?.setbacks ?? "—"}</dd>
+              </dl>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="hidden overflow-x-auto rounded-2xl border border-border bg-surface sm:block">
         <table className="w-full min-w-[34rem] text-sm">
           <thead className="bg-surface-2 text-xs text-muted">
             <tr>

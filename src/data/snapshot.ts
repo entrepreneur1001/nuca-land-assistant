@@ -1,3 +1,4 @@
+import { arDigits } from "@/lib/digits";
 /**
  * Compact snapshot format shared by the ingest job (Node) and the browser.
  * Firestore holds `meta/current` plus a handful of `plots/{chunkId}` docs, each a
@@ -174,16 +175,20 @@ export interface Snapshot {
   plots: Plot[];
 }
 
+/** Building rules in the site's digit style (they are only ever displayed). */
+export const displayRules = (r: BuildingRules | null): BuildingRules | null =>
+  r && { ...r, ratio: arDigits(r.ratio), floors: arDigits(r.floors), setbacks: arDigits(r.setbacks) };
+
 export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sectors" | "zones">): Plot {
   const sector = t[4] >= 0 ? meta.sectors[t[4]] : undefined;
   return {
     id: t[0],
     externalPlotId: t[1],
-    plotNumber: t[2],
+    plotNumber: arDigits(t[2]),
     cityName: meta.cities[t[3]] ?? "",
     projectId: sector?.id ?? null,
-    projectName: sector?.name ?? null,
-    zoneName: t[5] >= 0 ? (meta.zones[t[5]] ?? null) : null,
+    projectName: arDigits(sector?.name ?? null),
+    zoneName: arDigits(t[5] >= 0 ? (meta.zones[t[5]] ?? null) : null),
     area: t[6],
     pricePerMeter: t[7],
     totalPrice: t[8],
@@ -200,7 +205,7 @@ export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sector
     builtKm: t[17],
     builtSrc: t[18],
     mainRoadM: t[19] ?? null,
-    rules: sector?.rules ?? null,
+    rules: displayRules(sector?.rules ?? null),
   };
 }
 
