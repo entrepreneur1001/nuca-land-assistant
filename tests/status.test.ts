@@ -49,6 +49,7 @@ const rec = (plotNo: string, state: 0 | 1 | 2 = 0, extra: Partial<PlotRecord> = 
   builtKm: 1.2,
   builtSrc: 0,
   roadM: 40,
+  sq: null,
   ...extra,
 });
 const row = (plotNo: string, status: ZoneRow["status"], extra: Partial<ZoneRow> = {}): ZoneRow => ({
@@ -132,6 +133,25 @@ describe("deriveStatuses", () => {
     expect(by.get("g-35b")!.state).toBe(0);
     expect(by.get("g-35a")!.state).toBe(1);
     expect(r.inserted).toEqual([]);
+  });
+
+  it("binds twin plot numbers from two squares of one zone to fixed records, so neither is wrongly booked", () => {
+    // Squares A and B of one official zone both map to ZONE and both list plot 42 with the same area and price.
+    const two = buildOfficialIndex([{ ...table[0], squares: { "منطقه a": { sector: "sec-a", zone: ZONE }, "منطقه b": { sector: "sec-a", zone: ZONE } } }], { 1: CITY });
+    const prev = [rec("42", 0, { id: "g-42x" }), rec("42", 0, { id: "g-42y" })];
+    const rows = [row("42", "free", { square: "منطقة A" }), row("42", "free", { square: "منطقة B" })];
+    const r = deriveStatuses({ prev, crawls: new Map([[4797, [crawl("available", rows)]]]), index: two, zones, now: NOW });
+    const by = new Map(r.records.map((x) => [x.id, x]));
+    expect(by.get("g-42x")!.state).toBe(0);
+    expect(by.get("g-42y")!.state).toBe(0);
+    expect(r.newlyBooked).toEqual([]);
+    // lowest id ↔ first square; the binding persists and survives reversed record order and a flipped row order
+    expect(by.get("g-42x")!.sq).toBe("منطقه a");
+    expect(by.get("g-42y")!.sq).toBe("منطقه b");
+    const again = deriveStatuses({ prev: [...r.records].reverse(), crawls: new Map([[4797, [crawl("available", [...rows].reverse().map((x, i) => ({ ...x, status: i === 0 ? "held" : "free" })))]]]), index: two, zones, now: NOW });
+    const by2 = new Map(again.records.map((x) => [x.id, x]));
+    expect(by2.get("g-42y")!.state).toBe(2); // B-42 held → the record bound to B
+    expect(by2.get("g-42x")!.state).toBe(0);
   });
 
   it("official prices overwrite the stored ones", () => {

@@ -87,6 +87,7 @@ const rec = (plotNo: string, state: 0 | 1 | 2 = 0, extra: Partial<PlotRecord> = 
   builtKm: 0.8,
   builtSrc: 0,
   roadM: 25,
+  sq: null,
   ...extra,
 });
 

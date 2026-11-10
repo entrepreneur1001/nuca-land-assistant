@@ -6,7 +6,7 @@
 import type { MetaDoc, OfficialNewsItem, PlotTuple } from "@/data/snapshot";
 import { round } from "@/data/snapshot";
 import { OFFICIAL_SITE } from "./official";
-import { officialPlotId, type OfficialIndex } from "./official-map";
+import { normalizeName, officialPlotId, type OfficialIndex } from "./official-map";
 import type { ZoneCrawl, ZoneRow } from "./nuca-plots";
 
 /** 0 free, 1 booked, 2 available with a preliminary booking request on it. */
@@ -36,6 +36,8 @@ export interface PlotRecord {
   builtSrc: 0 | 1 | 2;
   /** undefined = never computed (older chunks). */
   roadM: number | null | undefined;
+  /** Official square (normalised) this record is bound to; null until a tie between squares had to be broken. */
+  sq: string | null;
 }
 
 export function tupleToRecord(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sectors" | "zones">): PlotRecord {
@@ -62,6 +64,7 @@ export function tupleToRecord(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sect
     builtKm: t[17],
     builtSrc: t[18],
     roadM: t[19],
+    sq: t[20] ?? null,
   };
 }
 
@@ -87,6 +90,7 @@ export function recordToTuple(r: PlotRecord, city: number, sector: number, zone:
     round(r.builtKm, 3),
     r.builtSrc,
     r.roadM ?? null,
+    r.sq ?? null,
   ];
 }
 
@@ -151,14 +155,36 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
   const result: DeriveResult = { records: [], inserted: [], newlyBooked: [], newlyAvailable: [], unmapped, newSquares: [], perZone: new Map() };
   const newSquares = new Map<string, { zid: number; square: string; n: number }>();
 
-  /** The existing record for an official row, by (city, mapped zone, plot number); ties broken by area/price. */
+  /**
+   * The existing record for an official row, by (city, mapped zone, plot number). When several squares of one
+   * zone repeat a number, a record already bound to the row's square wins; otherwise the tie is broken by
+   * area/price and, among exact twins, by binding each row to the lowest-id record not yet used in this pass
+   * (rows arrive square by square), and the binding is kept in `sq` so it never flips between runs.
+   */
+  const usedInPass = new Set<string>();
   const resolve = (zid: number, row: ZoneRow): { rec: PlotRecord | null; city: string; zone: string; sector: string | null; mapped: boolean } => {
     const z = zoneInfo.get(zid);
     const sq = input.index.squareOf(zid, row.square);
     const city = z?.city ?? input.index.cityOf(z?.cityId ?? -1) ?? "";
     const zone = sq?.zone ?? row.square;
+    const square = normalizeName(row.square);
     const cands = byKey.get(key(city, zone, row.plotNo)) ?? [];
-    const rec = cands.length === 1 ? cands[0] : (cands.find((c) => close(c.area, row.area) && close(c.total, row.total)) ?? null);
+    let rec: PlotRecord | null = null;
+    if (cands.length === 1) rec = cands[0];
+    else if (cands.length > 1) {
+      const bound = cands.filter((c) => c.sq === square);
+      if (bound.length === 1) rec = bound[0];
+      else {
+        const tied = cands
+          .filter((c) => (c.sq == null || c.sq === square) && !usedInPass.has(c.id) && close(c.area, row.area) && close(c.total, row.total))
+          .sort((a, b) => a.id.localeCompare(b.id));
+        rec = tied[0] ?? null;
+      }
+    }
+    if (rec) {
+      usedInPass.add(rec.id);
+      if (rec.sq == null) rec.sq = square;
+    }
     return { rec, city, zone, sector: sq?.sector ?? null, mapped: !!sq };
   };
 
@@ -213,6 +239,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
       builtKm: null,
       builtSrc: 2,
       roadM: null,
+      sq: normalizeName(row.square),
     };
     records.set(id, fresh);
     byKey.set(key(city, zone, row.plotNo), [...(byKey.get(key(city, zone, row.plotNo)) ?? []), fresh]);

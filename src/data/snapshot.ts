@@ -131,6 +131,9 @@ export type PlotTuple = [
   builtSrc: 0 | 1 | 2,
   /** Metres to the nearest main road (OpenStreetMap); missing in older chunks. */
   roadM?: number | null,
+  /** Official square («المربع», normalised) the plot is bound to, for zones whose squares share one app zone and
+   *  repeat plot numbers; missing in older chunks. */
+  sq?: string | null,
 ];
 
 export interface Plot {
