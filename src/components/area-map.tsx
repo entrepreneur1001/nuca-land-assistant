@@ -30,6 +30,7 @@ export function AreaMap({
   onDistrict,
   onPlan,
   onPast,
+  onCompounds,
   onApprox,
 }: {
   plots: Plot[];
@@ -44,6 +45,8 @@ export function AreaMap({
   onPlan?: (hasPlan: boolean) => void;
   /** Whether the city has plans of earlier stages, drawn muted (for the legend). */
   onPast?: (hasPast: boolean) => void;
+  /** Whether private compounds are within the map's reach (for the legend). */
+  onCompounds?: (has: boolean) => void;
   /** Whether any approximate district circle is on the map (for the legend). */
   onApprox?: (hasCircle: boolean) => void;
 }) {
@@ -112,7 +115,7 @@ export function AreaMap({
       onPast?.(!!past);
       limitToCity(map);
       // Private compounds lie lowest of all: what is being built around the plots.
-      if (compounds.length) addCompounds(L, map, compounds);
+      onCompounds?.(compounds.length ? addCompounds(L, map, compounds).any : false);
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) {

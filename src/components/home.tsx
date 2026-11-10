@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CURRENT_PHASE, OFFICIAL, phasePath } from "@/lib/phases";
 import { useState } from "react";
 import type { AiResponse } from "@/ai/schema";
+import type { Snapshot } from "@/data/snapshot";
 import { MODEL } from "@/engine/config";
 import { ago, date, num, pct, t, usd } from "@/i18n/ar";
 import { analyze, cooldownLeft } from "@/lib/ai";
@@ -13,6 +14,14 @@ import { useApp } from "./app-state";
 import { ProfileCard } from "./profile-card";
 import { AdvancedSearch } from "./search";
 import { AreaLink, Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
+
+/** The snapshot's cities, most available plots first (the form shows the first few as chips). */
+function citiesByAvailable(snapshot: Snapshot | null | undefined): string[] {
+  if (!snapshot) return [];
+  const avail = new Map<string, number>();
+  for (const p of snapshot.plots) if (p.status === "available") avail.set(p.cityName, (avail.get(p.cityName) ?? 0) + 1);
+  return [...snapshot.meta.cities].sort((a, b) => (avail.get(b) ?? 0) - (avail.get(a) ?? 0));
+}
 
 export function Home() {
   const app = useApp();
@@ -37,7 +46,7 @@ export function Home() {
           {t.plansNotice.link}
         </Link>
       </p>
-      <ProfileCard profile={profile} setProfile={setProfile} cities={snapshot?.meta.cities ?? []} />
+      <ProfileCard profile={profile} setProfile={setProfile} cities={citiesByAvailable(snapshot)} />
       {profile.bookingRank == null || profile.moneyPaid == null ? (
         <Card className="text-center text-muted">{t.profile.missing}</Card>
       ) : !result ? (

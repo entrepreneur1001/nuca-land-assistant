@@ -44,6 +44,8 @@ export function limitToCity(map: Leaflet.Map): void {
 }
 
 export interface CompoundLayer {
+  /** Whether any compound lies within the area the map can be dragged over (for the legend). */
+  any: boolean;
   remove(): void;
 }
 
@@ -176,7 +178,14 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
   };
   control.addTo(map);
 
+  const max = map.options.maxBounds;
+  const reach = max ? (max instanceof L.LatLngBounds ? max : L.latLngBounds(max)) : map.getBounds();
+  const reachBox: [[number, number], [number, number]] = [
+    [reach.getSouth(), reach.getWest()],
+    [reach.getNorth(), reach.getEast()],
+  ];
   return {
+    any: compounds.some((c) => compoundInView(c, reachBox)),
     remove() {
       map.off("moveend zoomend", sync);
       map.off("click", tap);

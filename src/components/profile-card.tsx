@@ -60,8 +60,14 @@ function NumberField({
   );
 }
 
+/** City chips shown before «كل المدن». */
+const CITY_CHIPS = 8;
+
 export function ProfileCard({ profile, setProfile, cities }: { profile: Profile; setProfile: (p: Profile) => void; cities: string[] }) {
   const [copied, setCopied] = useState(false);
+  const [allCities, setAllCities] = useState(false);
+  // The cities come most-available first (home.tsx); the rest wait behind a button so the form stays short. Picked cities always show.
+  const shownCities = allCities ? cities : cities.filter((c, i) => i < CITY_CHIPS || profile.preferredCities.includes(c));
   const prefs = profile.preferences ?? {};
   const setPref = (k: "garden" | "corner" | "nearBuilt" | "units", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
   const share = async () => {
@@ -113,7 +119,7 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
       <div className="mt-4">
         <div className="text-xs text-muted">{t.profile.cities}</div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {cities.map((c) => {
+          {shownCities.map((c) => {
             const i = profile.preferredCities.indexOf(c);
             return (
               <button
@@ -132,6 +138,11 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
               </button>
             );
           })}
+          {cities.length > shownCities.length || allCities ? (
+            <button type="button" onClick={() => setAllCities(!allCities)} className="rounded-full px-3 py-1 text-sm font-medium text-accent hover:underline">
+              {allCities ? t.profile.fewerCities : t.profile.allCities(cities.length)}
+            </button>
+          ) : null}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2">

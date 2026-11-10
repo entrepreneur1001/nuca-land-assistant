@@ -20,6 +20,7 @@ export function LandDetail() {
   const now = useNow();
   const [hasPlan, setHasPlan] = useState(false);
   const [hasPast, setHasPast] = useState(false);
+  const [hasCompounds, setHasCompounds] = useState(false);
   const [availableOnly, setAvailableOnly] = useAvailableOnly();
   useEffect(() => {
     if (id) void track("land_view", { id });
@@ -88,7 +89,14 @@ export function LandDetail() {
           <dd>{t.detail.premiums(plot.cornerPct, plot.gardenPct, plot.seaPct)}</dd>
           <dt className="text-muted">{t.detail.budget}</dt>
           <dd>
-            {usd(dashboard.budgetLimit)} {plot.downPayment > dashboard.budgetLimit ? <span className="text-bad">{t.detail.over}</span> : null}
+            {Number.isFinite(dashboard.budgetLimit) ? (
+              <>
+                {usd(dashboard.budgetLimit)} {plot.downPayment > dashboard.budgetLimit ? <span className="text-bad">{t.detail.over}</span> : null}
+              </>
+            ) : (
+              // No payment entered yet: say so instead of an empty figure, and point to where it is entered.
+              <Link href="/" className="text-muted hover:text-accent hover:underline">{t.detail.budgetUnset}</Link>
+            )}
           </dd>
           {plot.builtKm != null ? (
             <>
@@ -136,7 +144,7 @@ export function LandDetail() {
         <Card>
           <h2 className="font-bold">📍 {t.detail.mapTitle}</h2>
           <div className="mt-2">
-            <PlotMap plot={plot} plots={app.snapshot.plots} availableOnly={availableOnly} onPlan={setHasPlan} onPast={setHasPast} />
+            <PlotMap plot={plot} plots={app.snapshot.plots} availableOnly={availableOnly} onPlan={setHasPlan} onPast={setHasPast} onCompounds={setHasCompounds} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
             <Legend className="bg-accent" label={t.detail.legendThis} />
@@ -144,6 +152,7 @@ export function LandDetail() {
             {hasPlan ? <Legend className="bg-warn" label={t.plan.legendHeld} /> : null}
             {availableOnly ? null : <Legend className="bg-bad" label={t.detail.legendBooked} />}
             {hasPast ? <Legend className="bg-muted/50" label={t.plan.legendPast} /> : null}
+            {hasCompounds ? <Legend className="border-2 border-[#a855f7] bg-[#a855f7]/20" label={t.compound.legend} /> : null}
             <label className="flex items-center gap-1.5 text-sm text-text">
               <input type="checkbox" checked={availableOnly} onChange={(e) => setAvailableOnly(e.target.checked)} /> {t.detail.onlyAvailable}
             </label>

@@ -28,6 +28,7 @@ export function PlotMap({
   availableOnly,
   onPlan,
   onPast,
+  onCompounds,
 }: {
   plot: Plot;
   plots: Plot[];
@@ -37,6 +38,8 @@ export function PlotMap({
   onPlan?: (hasPlan: boolean) => void;
   /** Whether the city has plans of earlier stages, drawn muted (for the legend). */
   onPast?: (hasPast: boolean) => void;
+  /** Whether private compounds are within the map's reach (for the legend). */
+  onCompounds?: (has: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -95,7 +98,7 @@ export function PlotMap({
       onPast?.(!!past);
       limitToCity(map);
       // Private compounds lie lowest of all: what is being built around the plots.
-      if (compounds.length) addCompounds(L, map, compounds);
+      onCompounds?.(compounds.length ? addCompounds(L, map, compounds).any : false);
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) l.setBookedVisible(!hideBooked.current);

@@ -296,6 +296,8 @@ export const t = {
     units: "🏢 ٣ شقق أو أكتر في الدور",
     modes: { prefer: "أفضّلها", require: "لازم", ignore: "مش فارقة" },
     cities: "المدن اللي بتفضلها (دوس بالترتيب)",
+    allCities: (n: number) => `كل المدن (${num(n)})`,
+    fewerCities: "أقل",
     onlyCities: "اعرض المدن دي بس",
     share: "انسخ لينك بإعداداتك",
     copied: "اتنسخ ✓",
@@ -463,6 +465,8 @@ export const t = {
     premiums: (c: number, g: number, s: number) => `ناصية ${num(c)}٪ · حديقة ${num(g)}٪ · فيو ${num(s)}٪`,
     premiumsLabel: "الزيادات",
     budget: "ميزانيتك",
+    /** Shown for the budget when no payment has been entered; links to the home page form. */
+    budgetUnset: "مش محددة — اكتب اللي دفعته في الرئيسية",
     over: "(أكتر من ميزانيتك)",
     nucaId: "رقم القطعة في الهيئة",
     map: "افتح الخريطة ↗",

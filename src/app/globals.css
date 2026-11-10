@@ -115,3 +115,23 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .feedback-sheet[open] { animation: none; }
 }
+
+/* Map buttons (المخطط, كمبوندات): one row in the top corner instead of a column running down a small map. */
+.leaflet-top.leaflet-right {
+  display: flex;
+  gap: 6px;
+  margin: 10px 10px 0 0;
+}
+.leaflet-top.leaflet-right > .leaflet-control {
+  float: none;
+  clear: none;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .leaflet-top.leaflet-right > .leaflet-bar a {
+    font-size: 12px !important;
+    padding: 0 8px !important;
+    line-height: 28px !important;
+    height: 28px;
+  }
+}
