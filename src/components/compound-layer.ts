@@ -1,12 +1,14 @@
 /**
- * Private compounds on the Leaflet maps: a tinted outline with the compound's name, under everything of ours, so a
- * buyer sees what is being built next to a plot. Tapping one opens its name, developer, master plan and, near our land, its approximate starting price.
+ * Private compounds on the Leaflet maps: an outline with the compound's name, filled with its master plan where one
+ * could be fitted and tinted otherwise, under everything of ours, so a
+ * buyer sees what is being built next to a plot. Tapping one opens its name, developer and, near our land, its approximate starting price.
  * Plain TypeScript: the maps import Leaflet dynamically, so the module is passed in rather than imported.
  */
 import type * as Leaflet from "leaflet";
 import { t } from "@/i18n/ar";
-import { compoundContains, compoundImageUrl, compoundInView, compoundSourceUrl, type Compound } from "@/lib/compounds";
+import { compoundContains, compoundImageUrl, compoundInView, type Compound } from "@/lib/compounds";
 import { compoundsShown, setCompoundsShown } from "@/lib/map-prefs";
+import { rotatedImage } from "./plan-layer";
 
 type L = typeof Leaflet;
 
@@ -18,6 +20,26 @@ const COLOR = "#a855f7";
 const LABEL_ZOOM = 14;
 /** How far from the land the map opened on a compound still counts as its neighbour. */
 const NEAR_M = 3000;
+
+/** Zoom at which a typical phone screen shows about one city across. */
+const CITY_ZOOM = 11;
+/** How far past the opening view the map may be dragged. */
+const ROAM_M = 30000;
+
+/**
+ * Keeps a map to its city: no zooming out to the whole country, no dragging far away. Call once the opening view is
+ * set. A view that already opens wider than a city (many scattered districts) stays reachable.
+ */
+export function limitToCity(map: Leaflet.Map): void {
+  map.setMinZoom(Math.min(CITY_ZOOM, map.getZoom()));
+  const b = map.getBounds();
+  const dLat = ROAM_M / 110540;
+  const dLng = ROAM_M / (111320 * Math.cos((b.getCenter().lat * Math.PI) / 180));
+  map.setMaxBounds([
+    [b.getSouth() - dLat, b.getWest() - dLng],
+    [b.getNorth() + dLat, b.getEast() + dLng],
+  ]);
+}
 
 export interface CompoundLayer {
   remove(): void;
@@ -48,33 +70,9 @@ function popupContent(c: Compound, price: boolean): HTMLElement {
   if (price && c.price != null) {
     const line = document.createElement("div");
     line.textContent = t.compound.from(c.price);
-    line.title = t.compound.fromNote;
     Object.assign(line.style, { fontSize: "13px", fontWeight: "600", margin: "0 0 6px" });
     el.append(line);
   }
-  if (c.img) {
-    const a = document.createElement("a");
-    a.href = compoundImageUrl(c.id);
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.title = t.compound.openPlan;
-    const img = document.createElement("img");
-    img.src = compoundImageUrl(c.id);
-    img.alt = t.compound.plan;
-    // A fixed box: the popup is placed before the image arrives, so its height must not depend on it.
-    Object.assign(img.style, { display: "block", width: "240px", maxWidth: "100%", height: "150px", objectFit: "contain", borderRadius: "6px", background: "#f3f3f3" });
-    // A plan that fails to load just leaves the text.
-    img.onerror = () => a.remove();
-    a.append(img);
-    el.append(a);
-  }
-  const src = document.createElement("a");
-  src.href = compoundSourceUrl(c);
-  src.target = "_blank";
-  src.rel = "noopener";
-  src.textContent = t.compound.source;
-  Object.assign(src.style, { display: "inline-block", marginTop: "6px", fontSize: "12px" });
-  el.append(src);
   return el;
 }
 
@@ -88,6 +86,9 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
   // Its own SVG renderer: a canvas per pane would swallow the taps meant for the layers below it.
   const renderer = L.svg({ pane: PANE });
   const made = new Map<number, Leaflet.Polygon>();
+  // Master plans that could be fitted to their outline are drawn inside it, like the official plans.
+  const Img = rotatedImage(L);
+  const images = new Map<number, InstanceType<typeof Img>>();
   let on = compoundsShown();
   // Prices are shown for the compounds around our land only: those within NEAR_M of what the map opened on.
   const home = map.getBounds();
@@ -110,9 +111,20 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
       const want = on && compoundInView(c, view);
       let shape = made.get(c.id);
       if (want && !shape) {
-        shape = L.polygon(c.ring, { pane: PANE, renderer, interactive: false, color: COLOR, weight: 2, opacity: 0.95, fillColor: COLOR, fillOpacity: 0.22 });
+        shape = L.polygon(c.ring, { pane: PANE, renderer, interactive: false, color: COLOR, weight: 2, opacity: 0.95, fillColor: COLOR, fillOpacity: c.plan ? 0 : 0.22 });
         shape.bindTooltip(c.nameAr ?? c.name, { permanent: true, direction: "center", interactive: false, opacity: 0.9, className: "nuca-compound-label" });
         made.set(c.id, shape);
+      }
+      if (c.plan) {
+        let image = images.get(c.id);
+        if (want && !image) {
+          const clip = `polygon(${c.plan.clip.map(([x, y]) => `${x}px ${y}px`).join(", ")})`;
+          const corners = [c.plan.corners.tl, c.plan.corners.tr, c.plan.corners.bl].map(([lat, lng]) => L.latLng(lat, lng));
+          image = new Img(compoundImageUrl(c.id), corners, c.plan.w, c.plan.h, { opacity: 0.92, pane: PANE }, clip);
+          images.set(c.id, image);
+        }
+        if (image && want && !image._failed) image.addTo(map);
+        else if (image) map.removeLayer(image);
       }
       if (!shape) continue;
       if (want) {
@@ -168,6 +180,8 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
       map.off("click", tap);
       control.remove();
       for (const shape of made.values()) map.removeLayer(shape);
+      for (const image of images.values()) map.removeLayer(image);
+      images.clear();
       made.clear();
     },
   };

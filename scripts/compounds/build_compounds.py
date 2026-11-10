@@ -1,5 +1,8 @@
 """Turn the downloaded Nawy compounds (fetch_nawy.py) into what the maps read.
-usage: python3 build_compounds.py <fetch dir> <public/compounds> [--no-images]
+usage: python3 build_compounds.py <fetch dir> <public/compounds> [--no-images] [--all-images]
+Run once, then fit_master.py (it reads the images written here with --all-images), then again without it: only
+the master plans that were fitted onto the map (<fetch dir>/fits.json, clear fits only) are published, as `plan`:
+{w, h, corners: {tl, tr, bl}, clip} like the official plans (src/lib/plans.ts), clip being the outline in pixels.
 Writes <out>/index.json: {compounds: [{id, name, nameAr, dev, devAr, area, areaAr, slug, bounds, ring, img, price}]} with
 ring as [lat, lng] points (outline simplified to ~5 m) and bounds as [[south, west], [north, east]]; and
 <out>/img/<id>.webp, the master plan at most 1400 px on its long side, for compounds that have one (img: true).
@@ -9,6 +12,14 @@ A phase of a compound that has its own outline is left out: the parent already c
 import sys, os, json, math, glob
 SRC, OUT = sys.argv[1:3]
 IMAGES = "--no-images" not in sys.argv
+ALL = "--all-images" in sys.argv
+MIN_IOU, MIN_LEAD = 0.8, 0.06  # the outline must cover the drawn site, and clearly better than turned any other way
+FITS = json.load(open(f"{SRC}/fits.json")) if os.path.exists(f"{SRC}/fits.json") else {}
+# Fits that pass the numbers but are wrong to the eye: 1291's page shows three elevation sheets, not the site.
+REJECT = {1291}
+def fitted(cid):
+    f = None if cid in REJECT else FITS.get(str(cid))
+    return f if f and f["iou"] >= MIN_IOU and f["iou"] - f["alt"] >= MIN_LEAD else None
 TOL_M, MAX_PX, MIN_PX, QUALITY = 5.0, 1400, 500, 72
 def load(lang):
     out, p = [], 1
@@ -54,7 +65,7 @@ for c in sorted(en, key=lambda c: c["id"]):
     if not ring: no_geom += 1; continue
     a = ar.get(c["id"], {})
     img = False
-    if c["id"] in masters:
+    if c["id"] in masters and (ALL or fitted(c["id"])):
         dst = f"{OUT}/img/{c['id']}.webp"
         if IMAGES and not (os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(masters[c["id"]])):
             try:
@@ -74,10 +85,11 @@ for c in sorted(en, key=lambda c: c["id"]):
                  "dev": (c.get("developerName") or "").strip() or None, "devAr": (a.get("developerName") or "").strip() or None,
                  "area": c.get("areaName"), "areaAr": a.get("areaName"), "slug": c["slug"],
                  "bounds": [[min(lats), min(lngs)], [max(lats), max(lngs)]], "ring": ring, "img": img,
+                 "plan": ({k: fitted(c["id"])[k] for k in ("w", "h", "corners", "clip")} if img and fitted(c["id"]) else None),
                  "price": round(plan["minPrice"]) if plan else None})
 for f in os.listdir(f"{OUT}/img"):
     if f not in wanted: os.remove(f"{OUT}/img/{f}")
 json.dump({"compounds": rows}, open(f"{OUT}/index.json", "w"), ensure_ascii=False, separators=(",", ":"))
-print(f"{len(en)} listed; {len(rows)} written ({sum(r['img'] for r in rows)} with a master plan, {sum(r['price'] is not None for r in rows)} with a price, {bytes_img / 1e6:.1f} MB of images); "
+print(f"{len(en)} listed; {len(rows)} written ({sum(r['img'] for r in rows)} master plans, {sum(r['plan'] is not None for r in rows)} placed on the map, {sum(r['price'] is not None for r in rows)} with a price, {bytes_img / 1e6:.1f} MB of images); "
       f"{no_geom} without an outline, {phases} phases under their parent, {bad_img} unreadable images; "
       f"index.json {os.path.getsize(OUT + '/index.json') / 1024:.0f} KB, {sum(len(r['ring']) for r in rows)} points")

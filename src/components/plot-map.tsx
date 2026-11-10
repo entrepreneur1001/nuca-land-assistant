@@ -7,7 +7,7 @@ import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
 import { loadCompounds } from "@/lib/compounds";
-import { addCompounds } from "./compound-layer";
+import { addCompounds, limitToCity } from "./compound-layer";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
 import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
@@ -93,6 +93,7 @@ export function PlotMap({
       const pastZones = pastZonesOfCity(pastIndex, plot.cityName);
       const past = pastZones.length ? addPastPlans(L, map, pastZones) : null;
       onPast?.(!!past);
+      limitToCity(map);
       // Private compounds lie lowest of all: what is being built around the plots.
       if (compounds.length) addCompounds(L, map, compounds);
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);

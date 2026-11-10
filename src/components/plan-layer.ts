@@ -103,7 +103,7 @@ let rotatedImageClass: RotatedImageCtor | null = null;
  * An <img> in its own pane whose CSS matrix maps image pixels onto the three projected corners, refreshed on
  * every zoom/move (same idea as the leaflet-imageoverlay-rotated plugin). Never interactive.
  */
-function rotatedImage(L: L): RotatedImageCtor {
+export function rotatedImage(L: L): RotatedImageCtor {
   rotatedImageClass ??= L.Layer.extend({
     options: { opacity: 0.9, interactive: false, pane: PANE },
     initialize(this: RotatedImage, url: string, corners: Leaflet.LatLng[], w: number, h: number, options?: Leaflet.LayerOptions, clip?: string) {

@@ -497,12 +497,8 @@ export const t = {
     /** Map button that shows/hides the compounds. */
     toggle: "كمبوندات",
     toggleTitle: "إظهار أو إخفاء الكمبوندات اللي حوالين الأراضي",
-    plan: "المخطط العام للكمبوند",
-    openPlan: "افتح المخطط العام بالحجم الكامل",
     /** Lowest listed unit price in the compound, in EGP: rounded, since it is only as fresh as the last fetch. */
     from: (egp: number) => `الأسعار تبدأ من حوالي ${millions(egp)} جنيه`,
-    fromNote: "سعر تقريبي لأقل وحدة معروضة على ناوي",
-    source: "المصدر: ناوي",
     legend: "كمبوندات خاصة (دوس عليها للتفاصيل)",
   },
   /** Official zone plans drawn over the satellite maps (public/plans). */

@@ -3,6 +3,8 @@
  * outline and name, so a plot's map shows what is being built next to it. Context only, like the earlier-stage
  * plans: optional, and a missing index simply means none.
  */
+import type { PlanCorners } from "@/lib/plans";
+
 export interface Compound {
   id: number;
   name: string;
@@ -18,15 +20,14 @@ export interface Compound {
   bounds: [[number, number], [number, number]];
   /** Outline as [lat, lng] points, not closed. */
   ring: [number, number][];
-  /** Whether a master-plan image exists (compoundImageUrl). */
-  img: boolean;
+  /** The master plan fitted onto the map by its silhouette (compoundImageUrl): approximate, a marketing drawing. */
+  plan: { w: number; h: number; corners: PlanCorners; clip: [number, number][] } | null;
   /** Lowest unit price Nawy lists, in EGP; null when it lists none. A moving figure: approximate as of the last fetch. */
   price: number | null;
 }
 
 const BASE = "/compounds";
 export const compoundImageUrl = (id: number) => `${BASE}/img/${id}.webp`;
-export const compoundSourceUrl = (c: Pick<Compound, "id" | "slug">) => `https://www.nawy.com/compound/${c.id}-${encodeURIComponent(c.slug)}`;
 
 let promise: Promise<Compound[]> | null = null;
 
