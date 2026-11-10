@@ -498,6 +498,8 @@ export const t = {
     /** Status word on a plot shape: available but someone filed a preliminary booking on it. */
     held: "عليها حجز مبدئي",
     legendHeld: "متاحة وعليها حجز مبدئي",
+    /** Legend of the greyed plan images of earlier offerings under the current stage. */
+    legendPast: "مخططات مراحل سابقة (للتوضيح بس)",
     /** Tooltip on a plot shape whose number could not be read off the plan. */
     unknown: "قطعة من المخطط لم يتم التعرف على رقمها",
     note: "شكل القطع من مخطط الهيئة الرسمي: الأخضر متاح، البرتقالي عليه حجز مبدئي، والأحمر اتحجز. دوس على أي قطعة تفتحها.",

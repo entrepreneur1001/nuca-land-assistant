@@ -38,4 +38,36 @@ misplaced or mis-scaled except 3779 (plots drawn larger than listed) and 3609 (u
 - `B/` — `extract_small.py` (10 px plots), `refine_osm.py` (chamfer refinement against OSM), `getosm.py` (OSM API fallback).
 - `E/bg_match.py` (plan's own satellite background vs imagery), `G/recorner.py` (re-place without re-export), `H/diag.py`, `H/pin_reg.py`.
 
-Not placed: Sheikh Zayed A–E (3594, 3596–3599), 15 May 3581 (uncertain candidate), Badr 4803 plot numbers (plan too coarse).
+Not placed: 15 May 3581 (uncertain candidate), Badr 4803 plot numbers (plan too coarse).
+
+## Earlier stages (`past/`, `reg-past/`, `public/plans/past/`)
+
+Zones of offerings that are no longer open (a red ball on the city page) still publish their plan drawings but no plot
+list. The maps draw them greyed under the current stage (`src/lib/past-plans.ts`, `addPastPlans` in
+`src/components/plan-layer.ts`): images only, no shapes, no status. They live apart from the current plans so that the
+sync (which takes plot positions from `public/plans/*.json`) never reads them.
+
+```bash
+npx tsx scripts/tools/list-past-zones.mts --city 1 --out W/zones.tsv        # zid, pid, cityId, city, name, flag, sectors, stage, project
+python3 past/fetch_past.py W/plans W/zones.tsv                              # one zone at a time; rerun until nothing fails
+curl --data-urlencode 'data=[out:json];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|.*_link)$"](S,W,N,E););out geom;' https://overpass-api.de/api/interpreter -o W/osm/city.json
+python3 past/osm_city.py W/osm/city.json W/osm/city10 S,W,N,E 10            # coarse road raster for the search
+# per project (pid): place its overview slide, check, fine-tune, then hand the position down to its zones
+python3 past/place.py W/plans/project_<pid>_mainproject.jpg W/osm/city10 W/place/p<pid>.json --scale 1.2,5 --rot -10,10,5 --mask dark
+python3 past/overlay.py W/place/p<pid>.json W/osm/city.json check.jpg --cand i   # red street-map lines must run along the drawing's streets
+python3 past/refine_axis.py W/place/p<pid>.json W/osm/city.json W/place/p<pid>_ax.json --cand i
+python3 past/compose.py W W/zones.tsv <pid> W/place/p<pid>_ax.json reg-past       # finds each zone plan inside the slide
+python3 past/export_past.py W W/zones.tsv reg-past ../../public/plans/past
+```
+
+- `place.py` only proposes: on the first project the right position was its fifth candidate. Pick by looking at the
+  overlays; a seed (`--near lat,lng,radius`) narrows the search when the area is known.
+- `refine_axis.py` scores only the roads OpenStreetMap has, so a project whose inner streets are unmapped is still pinned
+  by its boundary roads. Run it from two starting candidates when unsure: they should end within a few metres.
+- `export_past.py` keeps only the zone's own drawing (its plots are vivid, the neighbours veiled) and makes the rest
+  transparent. `tests/plans-past-data.test.ts` checks the exported index and files.
+- The official site throttles a busy address: three copies of `fetch_plans.py` at once made every request time out.
+  `fetch_past.py` runs one zone at a time and takes roughly two minutes per zone.
+
+Placed so far: New Cairo «Cairo Walk Residence» (project 57, zones 194–198; boundary roads only, about ±10 m, the
+satellite imagery there predates the site).

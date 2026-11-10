@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
+import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
-import { addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
+import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -24,6 +25,7 @@ export function PlotMap({
   plots,
   availableOnly,
   onPlan,
+  onPast,
 }: {
   plot: Plot;
   plots: Plot[];
@@ -31,6 +33,8 @@ export function PlotMap({
   availableOnly?: boolean;
   /** Whether the plot itself is drawn from an official plan (then its place isn't approximate). */
   onPlan?: (hasPlan: boolean) => void;
+  /** Whether the city has plans of earlier stages, drawn muted (for the legend). */
+  onPast?: (hasPast: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -50,7 +54,7 @@ export function PlotMap({
     const dots = bookedDots.current;
     let map: import("leaflet").Map | null = null;
     let cancelled = false;
-    void Promise.all([import("leaflet"), loadPlans(plot.cityName, [plot.projectId], new Set([plot.id]))]).then(([L, zones]) => {
+    void Promise.all([import("leaflet"), loadPlans(plot.cityName, [plot.projectId], new Set([plot.id])), loadPastIndex()]).then(([L, zones, pastIndex]) => {
       if (cancelled) return;
       const css = getComputedStyle(document.documentElement);
       const color = (name: string) => css.getPropertyValue(name).trim();
@@ -84,7 +88,10 @@ export function PlotMap({
         }),
       );
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
-      if (layers.length) addPlanToggle(L, map, layers);
+      const pastZones = pastZonesOfCity(pastIndex, plot.cityName);
+      const past = pastZones.length ? addPastPlans(L, map, pastZones) : null;
+      onPast?.(!!past);
+      if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) l.setBookedVisible(!hideBooked.current);
       plans.current = layers;

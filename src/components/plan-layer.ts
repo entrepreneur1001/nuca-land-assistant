@@ -72,7 +72,7 @@ interface RotatedImage {
   _host?: Leaflet.Map;
   /** Set by Leaflet before getEvents() runs. */
   _zoomAnimated?: boolean;
-  options: Leaflet.LayerOptions & { opacity: number; filter?: string };
+  options: Leaflet.LayerOptions & { opacity: number };
   getPane(name?: string): HTMLElement | undefined;
   _reset(): void;
   _animateZoom(e: Leaflet.ZoomAnimEvent): void;
@@ -83,7 +83,7 @@ type RotatedImageCtor = new (
   corners: Leaflet.LatLng[],
   w: number,
   h: number,
-  options: Leaflet.LayerOptions & { opacity: number; filter?: string },
+  options: Leaflet.LayerOptions & { opacity: number },
   clip?: string,
 ) => RotatedImage & Leaflet.Layer;
 
@@ -126,7 +126,6 @@ function rotatedImage(L: L): RotatedImageCtor {
         img.style.opacity = String(this.options.opacity);
         img.style.pointerEvents = "none";
         if (this._clip) img.style.clipPath = this._clip;
-        if (this.options.filter) img.style.filter = this.options.filter;
         img.onselectstart = L.Util.falseFn;
         img.onmousemove = L.Util.falseFn;
         img.onerror = () => {
@@ -334,7 +333,13 @@ export interface PastPlans {
  * shapes, nothing to hover). A city can have well over a hundred of them: only those touching the view are on the map.
  */
 export function addPastPlans(L: L, map: Leaflet.Map, zones: readonly [string, PastPlanZone][]): PastPlans {
-  if (!map.getPane(PAST_PANE)) map.createPane(PAST_PANE).style.zIndex = PAST_PANE_Z;
+  if (!map.getPane(PAST_PANE)) {
+    const pane = map.createPane(PAST_PANE);
+    pane.style.zIndex = PAST_PANE_Z;
+    // Faded as one sheet, so zones that overlap each other don't add up to a brighter patch.
+    pane.style.opacity = "0.55";
+    pane.style.filter = "grayscale(1)";
+  }
   const Img = rotatedImage(L);
   const made = new Map<string, RotatedImage & Leaflet.Layer>();
   let on = imagesOn;
@@ -350,7 +355,7 @@ export function addPastPlans(L: L, map: Leaflet.Map, zones: readonly [string, Pa
       if (want && !image) {
         const clip = z.clip?.length ? `polygon(${z.clip.map(([x, y]) => `${x}px ${y}px`).join(", ")})` : undefined;
         const corners = [z.corners.tl, z.corners.tr, z.corners.bl].map(([lat, lng]) => L.latLng(lat, lng));
-        image = new Img(pastImageUrl(zid), corners, z.w, z.h, { opacity: 0.55, pane: PAST_PANE, filter: "grayscale(1)" }, clip);
+        image = new Img(pastImageUrl(zid), corners, z.w, z.h, { opacity: 1, pane: PAST_PANE }, clip);
         made.set(zid, image);
       }
       if (!image) continue;

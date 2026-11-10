@@ -19,6 +19,7 @@ export function LandDetail() {
   const app = useApp();
   const now = useNow();
   const [hasPlan, setHasPlan] = useState(false);
+  const [hasPast, setHasPast] = useState(false);
   const [availableOnly, setAvailableOnly] = useAvailableOnly();
   useEffect(() => {
     if (id) void track("land_view", { id });
@@ -135,13 +136,14 @@ export function LandDetail() {
         <Card>
           <h2 className="font-bold">📍 {t.detail.mapTitle}</h2>
           <div className="mt-2">
-            <PlotMap plot={plot} plots={app.snapshot.plots} availableOnly={availableOnly} onPlan={setHasPlan} />
+            <PlotMap plot={plot} plots={app.snapshot.plots} availableOnly={availableOnly} onPlan={setHasPlan} onPast={setHasPast} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
             <Legend className="bg-accent" label={t.detail.legendThis} />
             <Legend className="bg-good" label={t.detail.legendAvailable} />
             {hasPlan ? <Legend className="bg-warn" label={t.plan.legendHeld} /> : null}
             {availableOnly ? null : <Legend className="bg-bad" label={t.detail.legendBooked} />}
+            {hasPast ? <Legend className="bg-muted/50" label={t.plan.legendPast} /> : null}
             <label className="flex items-center gap-1.5 text-sm text-text">
               <input type="checkbox" checked={availableOnly} onChange={(e) => setAvailableOnly(e.target.checked)} /> {t.detail.onlyAvailable}
             </label>

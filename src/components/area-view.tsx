@@ -32,6 +32,7 @@ export function AreaView() {
   const [shown, setShown] = useState(PAGE);
   const [hover, setHover] = useState<string | null>(null);
   const [hasPlan, setHasPlan] = useState(false);
+  const [hasPast, setHasPast] = useState(false);
   const [hasApprox, setHasApprox] = useState(true);
   const [availableOnly, setAvailableOnly] = useAvailableOnly();
 
@@ -119,12 +120,13 @@ export function AreaView() {
       <Card>
         <h2 className="font-bold">📍 {t.area.mapTitle}</h2>
         <div className="mt-2">
-          <AreaMap plots={area.plots} districts={mapDistricts} highlight={hover} availableOnly={availableOnly} onDistrict={(d) => go(d)} onPlan={setHasPlan} onApprox={setHasApprox} />
+          <AreaMap plots={area.plots} districts={mapDistricts} highlight={hover} availableOnly={availableOnly} onDistrict={(d) => go(d)} onPlan={setHasPlan} onPast={setHasPast} onApprox={setHasApprox} />
         </div>
         <div className={`mt-2 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted ${mappable ? "flex" : "hidden"}`}>
           <Dot className="bg-good" label={t.detail.legendAvailable} />
           {hasPlan ? <Dot className="bg-warn" label={t.plan.legendHeld} /> : null}
           {availableOnly ? null : <Dot className="bg-bad" label={t.detail.legendBooked} />}
+          {hasPast ? <Dot className="bg-muted/50" label={t.plan.legendPast} /> : null}
           {hasApprox && mapDistricts.some((d) => d.unlocated > 0) ? <Dot className="border-2 border-dashed border-accent" label={t.area.legendApprox} /> : null}
           <span className="ms-auto text-sm text-text">
             <Check checked={availableOnly} onChange={setAvailableOnly} label={t.detail.onlyAvailable} />

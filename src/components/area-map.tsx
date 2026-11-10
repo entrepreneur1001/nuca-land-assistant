@@ -6,9 +6,10 @@ import { useEffect, useRef } from "react";
 import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import type { AreaDistrict } from "@/lib/area-stats";
+import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
-import { addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
+import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -26,6 +27,7 @@ export function AreaMap({
   availableOnly,
   onDistrict,
   onPlan,
+  onPast,
   onApprox,
 }: {
   plots: Plot[];
@@ -38,6 +40,8 @@ export function AreaMap({
   onDistrict?: (id: string | null) => void;
   /** Whether any plot ended up drawn from an official plan (for the legend). */
   onPlan?: (hasPlan: boolean) => void;
+  /** Whether the city has plans of earlier stages, drawn muted (for the legend). */
+  onPast?: (hasPast: boolean) => void;
   /** Whether any approximate district circle is on the map (for the legend). */
   onApprox?: (hasCircle: boolean) => void;
 }) {
@@ -68,7 +72,7 @@ export function AreaMap({
     const city = plots[0]?.cityName ?? "";
     const plotIds = new Set(plots.map((p) => p.id));
     // Plans load alongside Leaflet itself (small static files, cached), so the map is drawn once, with no dots to retract.
-    void Promise.all([import("leaflet"), loadPlans(city, districts.map((d) => d.id), plotIds)]).then(([L, zones]) => {
+    void Promise.all([import("leaflet"), loadPlans(city, districts.map((d) => d.id), plotIds), loadPastIndex()]).then(([L, zones, pastIndex]) => {
       if (cancelled) return;
       const css = getComputedStyle(document.documentElement);
       const color = (name: string) => css.getPropertyValue(name).trim();
@@ -100,7 +104,11 @@ export function AreaMap({
       layers.length = 0;
       for (const z of zones) layers.push(addPlanLayer(L, map, z.zid, z.zone, z.image, byPlot, { colors: { good, warn, bad, accent }, onClick: open }));
       const shaped = new Set(layers.flatMap((l) => [...l.ids]));
-      if (layers.length) addPlanToggle(L, map, layers);
+      // Earlier stages lie under everything else, greyed: context for the current plots, never a status.
+      const pastZones = pastZonesOfCity(pastIndex, city);
+      const past = pastZones.length ? addPastPlans(L, map, pastZones) : null;
+      onPast?.(!!past);
+      if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) {
         l.setHighlight(lit.current);
