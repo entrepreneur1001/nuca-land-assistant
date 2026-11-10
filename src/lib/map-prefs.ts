@@ -35,3 +35,25 @@ function subscribe(l: () => void) {
 export function useAvailableOnly(): [boolean, (on: boolean) => void] {
   return [useSyncExternalStore(subscribe, read, () => false), write];
 }
+
+/** «كمبوندات»: whether the maps draw the private compounds. One choice for every map, remembered on the device; on by default. */
+const COMPOUNDS_KEY = "nuca.map.compounds";
+let compounds: boolean | null = null;
+
+export function compoundsShown(): boolean {
+  if (compounds == null) {
+    try {
+      compounds = localStorage.getItem(COMPOUNDS_KEY) !== "0";
+    } catch {
+      compounds = true;
+    }
+  }
+  return compounds;
+}
+
+export function setCompoundsShown(on: boolean) {
+  compounds = on;
+  try {
+    localStorage.setItem(COMPOUNDS_KEY, on ? "1" : "0");
+  } catch {}
+}

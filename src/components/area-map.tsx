@@ -7,6 +7,8 @@ import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import type { AreaDistrict } from "@/lib/area-stats";
 import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
+import { loadCompounds } from "@/lib/compounds";
+import { addCompounds } from "./compound-layer";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
 import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
@@ -72,7 +74,7 @@ export function AreaMap({
     const city = plots[0]?.cityName ?? "";
     const plotIds = new Set(plots.map((p) => p.id));
     // Plans load alongside Leaflet itself (small static files, cached), so the map is drawn once, with no dots to retract.
-    void Promise.all([import("leaflet"), loadPlans(city, districts.map((d) => d.id), plotIds), loadPastIndex()]).then(([L, zones, pastIndex]) => {
+    void Promise.all([import("leaflet"), loadPlans(city, districts.map((d) => d.id), plotIds), loadPastIndex(), loadCompounds()]).then(([L, zones, pastIndex, compounds]) => {
       if (cancelled) return;
       const css = getComputedStyle(document.documentElement);
       const color = (name: string) => css.getPropertyValue(name).trim();
@@ -108,6 +110,8 @@ export function AreaMap({
       const pastZones = pastZonesOfCity(pastIndex, city);
       const past = pastZones.length ? addPastPlans(L, map, pastZones) : null;
       onPast?.(!!past);
+      // Private compounds lie lowest of all: what is being built around the plots.
+      if (compounds.length) addCompounds(L, map, compounds);
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) {

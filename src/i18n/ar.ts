@@ -8,6 +8,8 @@ export const num = (n: number | null | undefined, digits = 0) =>
 /** «بلوك ١: من ٢٩ لـ ٤٤ وحدة، …» for the New Alamein per-plot rule. */
 const alameinList = ALAMEIN_BLOCKS.map((b) => `بلوك ${num(b.block)}: من ${num(b.min)} لـ ${num(b.max)} وحدة`).join("، ");
 const alameinPlots = ALAMEIN_BLOCKS.reduce((a, b) => a + b.plots, 0);
+/** «٥٫٨ مليون», or the plain figure rounded to ten thousand below a million. */
+const millions = (n: number) => (n >= 1e6 ? `${num(n / 1e6, n >= 1e7 ? 0 : 1)} مليون` : num(Math.round(n / 1e4) * 1e4));
 export const usd = (n: number | null | undefined) => (n == null ? "—" : `${num(n)} دولار`);
 export const pct = (n: number | null | undefined) => (n == null ? "—" : `${num(Math.round(n * 100))}٪`);
 export const km = (n: number | null | undefined) =>
@@ -489,6 +491,19 @@ export const t = {
     notEligible: (booked: boolean) => (booked ? "الأرض دي اتحجزت خلاص." : "الأرض دي برا ميزانيتك أو فلاترك."),
     source: (when: string) => `آخر تحديث للأرض من موقع الهيئة الرسمي ${when}`,
     notFound: "الأرض دي مش موجودة.",
+  },
+  /** Private compounds outlined on the maps (public/compounds, from Nawy's listings). */
+  compound: {
+    /** Map button that shows/hides the compounds. */
+    toggle: "كمبوندات",
+    toggleTitle: "إظهار أو إخفاء الكمبوندات اللي حوالين الأراضي",
+    plan: "المخطط العام للكمبوند",
+    openPlan: "افتح المخطط العام بالحجم الكامل",
+    /** Lowest listed unit price in the compound, in EGP: rounded, since it is only as fresh as the last fetch. */
+    from: (egp: number) => `الأسعار تبدأ من حوالي ${millions(egp)} جنيه`,
+    fromNote: "سعر تقريبي لأقل وحدة معروضة على ناوي",
+    source: "المصدر: ناوي",
+    legend: "كمبوندات خاصة (دوس عليها للتفاصيل)",
   },
   /** Official zone plans drawn over the satellite maps (public/plans). */
   plan: {

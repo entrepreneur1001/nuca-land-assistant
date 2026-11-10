@@ -6,6 +6,8 @@ import { useEffect, useRef } from "react";
 import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
+import { loadCompounds } from "@/lib/compounds";
+import { addCompounds } from "./compound-layer";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
 import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
@@ -54,7 +56,7 @@ export function PlotMap({
     const dots = bookedDots.current;
     let map: import("leaflet").Map | null = null;
     let cancelled = false;
-    void Promise.all([import("leaflet"), loadPlans(plot.cityName, [plot.projectId], new Set([plot.id])), loadPastIndex()]).then(([L, zones, pastIndex]) => {
+    void Promise.all([import("leaflet"), loadPlans(plot.cityName, [plot.projectId], new Set([plot.id])), loadPastIndex(), loadCompounds()]).then(([L, zones, pastIndex, compounds]) => {
       if (cancelled) return;
       const css = getComputedStyle(document.documentElement);
       const color = (name: string) => css.getPropertyValue(name).trim();
@@ -91,6 +93,8 @@ export function PlotMap({
       const pastZones = pastZonesOfCity(pastIndex, plot.cityName);
       const past = pastZones.length ? addPastPlans(L, map, pastZones) : null;
       onPast?.(!!past);
+      // Private compounds lie lowest of all: what is being built around the plots.
+      if (compounds.length) addCompounds(L, map, compounds);
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) l.setBookedVisible(!hideBooked.current);
