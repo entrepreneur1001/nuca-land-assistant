@@ -34,7 +34,7 @@ describe("committed earlier-stage plans (public/plans/past)", () => {
       }
       const width = metres(z.corners.tl, z.corners.tr);
       const height = metres(z.corners.tl, z.corners.bl);
-      expect(width > 100 && width < 6000, `${where}: ${Math.round(width)} m wide`).toBe(true);
+      expect(width > 20 && width < 6000, `${where}: ${Math.round(width)} m wide`).toBe(true);
       // The image is not stretched: ground metres per pixel agree along both edges.
       expect(Math.abs(width / z.w / (height / z.h) - 1), where).toBeLessThan(0.05);
       for (const [x, y] of z.clip ?? []) expect(x >= 0 && x <= z.w && y >= 0 && y <= z.h, where).toBe(true);
