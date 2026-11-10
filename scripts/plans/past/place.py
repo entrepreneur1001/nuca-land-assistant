@@ -62,7 +62,9 @@ def search(mask, scales, rots, window):
             vf = valid.astype(np.float32)
             num = cv2.matchTemplate(sub, tz, cv2.TM_CCORR)
             s1 = cv2.matchTemplate(sub, vf, cv2.TM_CCORR); s2 = cv2.matchTemplate(sub * sub, vf, cv2.TM_CCORR)
-            den = np.sqrt(np.maximum(s2 - s1 * s1 / n, 1e-6)) * tn
+            # Floor on the city patch's contrast: an almost empty patch (desert, the raster's edge) otherwise divides a
+            # tiny numerator by a tiny denominator and wins.
+            den = np.sqrt(np.maximum(s2 - s1 * s1 / n, 0.03 * n)) * tn
             sc = num / den
             # A few separated peaks per (scale, rot) so the runner-up is a different place, not the same hill.
             for _ in range(2):
