@@ -25,8 +25,9 @@ describe("committed earlier-stage plans (public/plans/past)", () => {
       expect(z.city, where).toBeTruthy();
       expect(z.stage, where).toMatch(/^\d+c?$/);
       expect(z.pid, where).toBeGreaterThan(0);
-      expect(z.w, where).toBeGreaterThan(100);
-      expect(z.h, where).toBeGreaterThan(100);
+      // A zone can be a single highlighted plot (a few dozen pixels once cropped to its own drawing).
+      expect(z.w, where).toBeGreaterThan(40);
+      expect(z.h, where).toBeGreaterThan(40);
       for (const c of [z.corners.tl, z.corners.tr, z.corners.bl]) {
         expect(c[0] > 22 && c[0] < 32 && c[1] > 25 && c[1] < 37, where).toBe(true);
         expect(c[0] >= z.bounds[0][0] - 1e-6 && c[0] <= z.bounds[1][0] + 1e-6 && c[1] >= z.bounds[0][1] - 1e-6 && c[1] <= z.bounds[1][1] + 1e-6, where).toBe(true);

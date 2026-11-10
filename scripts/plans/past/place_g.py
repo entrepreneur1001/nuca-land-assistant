@@ -2,6 +2,9 @@
 the city's road raster from Google's road map (gmap_city.py) over scale, rotation and position.
 usage: python3 place_g.py <zone.jpg> <raster prefix> <out.json> [--scale lo,hi] [--rot a,b,step] [--near lat,lng,radius_m]
                           [--coarse 2] [--refine <placement.json> [--cand i]] [--top 5] [--preview out.jpg]
+                          [--template streets.png,zone.png --scale lo,hi]
+--template replaces the outlined-plot street template with masks made another way (street_mask.py), for drawings
+whose plots cannot be outlined or whose zone is a small pocket; --scale is then required (no plot size to go by).
 --scale is Web-Mercator metres per image pixel (default: from the plots' size on the drawing, ±45 %). --coarse shrinks the raster for a first pass.
 --refine searches finely around an existing placement (scale ±5 %, rotation ±2.5°, ±60 m).
 Writes {image, w, h, candidates: [{affine, score, scale, rot, centre}]}; affine is image px → Web-Mercator metres.
@@ -22,7 +25,10 @@ meta = json.load(open(ras + ".json")); city8 = np.load(ras + ".npy", mmap_mode="
 coarse = int(opt("--coarse", "1")) if "--refine" not in sys.argv else 1
 res = meta["res"] * coarse
 
-streets, zone, side = zone_template(img)
+if opt("--template"):
+    sf, zf = opt("--template").split(","); streets, zone, side = cv2.imread(sf, 0), cv2.imread(zf, 0), None
+    if "--refine" not in sys.argv and not opt("--scale"): sys.exit("--template needs --scale lo,hi")
+else: streets, zone, side = zone_template(img)
 if streets is None: print("no plots found in", image); json.dump({"image": image, "w": W, "h": H, "candidates": []}, open(out, "w")); sys.exit(0)
 
 _city = {}
@@ -95,7 +101,7 @@ if "--refine" in sys.argv:
     cands = search(scales, rots, window, per=1)
 else:
     # A plot is about 25 m across on the ground (29 Web-Mercator metres at this latitude): that fixes the scale to ±45 %.
-    lo, hi = map(float, opt("--scale", f"{29 / side * 0.62},{29 / side * 1.45}").split(",")); n = max(1, int(math.ceil(math.log(hi / lo) / math.log(1.045))))
+    lo, hi = map(float, (opt("--scale") or f"{29 / side * 0.62},{29 / side * 1.45}").split(",")); n = max(1, int(math.ceil(math.log(hi / lo) / math.log(1.045))))
     scales = [lo * (hi / lo) ** (i / n) for i in range(n + 1)]
     a, b, st = map(float, opt("--rot", "0,0,1").split(",")); rots = list(np.arange(a, b + 1e-9, st))
     near = opt("--near")

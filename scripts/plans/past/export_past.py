@@ -14,9 +14,10 @@ def opt(name, default=None): return sys.argv[sys.argv.index(name) + 1] if name i
 MAX = int(opt("--max", "1400")); only = set(opt("--only", "").split(",")) - {""}
 def unmerc(x, y): return [round(math.degrees(2 * math.atan(math.exp(y / R)) - math.pi / 2), 7), round(math.degrees(x / R), 7)]
 
-def vivid_zone(img):
+def vivid_zone(img, close_first=False):
     """The area of the vivid warm plot fills (the highlighted zone on a sheet that veils or greys the rest), grown
-    over the streets between them; None when no such fills stand out."""
+    over the streets between them; None when no such fills stand out. close_first joins the fills across the plot
+    borders and numbers before the speckle is removed: for coarse sheets whose plots are only a few px across."""
     H, W = img.shape[:2]; hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     warm = cv2.inRange(hsv, (10, 14, 190), (42, 255, 255)) > 0
     if warm.mean() < 0.004: return None
@@ -26,6 +27,7 @@ def vivid_zone(img):
     if len(lo) and len(hi) and hi.mean() - lo.mean() < 15: thr = 0
     m = (warm & (hsv[..., 1] > thr)).astype(np.uint8) * 255
     k = max(3, int(min(H, W) / 250)) | 1
+    if close_first: m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((k, k), np.uint8))
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((k, k), np.uint8))
     n, lab, st, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
     keep = [i for i in range(1, n) if st[i, 4] > (H * W) * 0.0002]
@@ -42,6 +44,7 @@ def own_mask(img):
     the highlighted fills decide. None when neither is found (the zone is then not exported)."""
     _, zone, side = zone_template(img)
     vivid = vivid_zone(img)
+    if zone is None and vivid is None: vivid = vivid_zone(img, close_first=True)
     if zone is None and vivid is None: return None
     if zone is None or (vivid is not None and (vivid > 0).sum() < 0.35 * (zone > 0).sum()): zone = vivid
     return cv2.GaussianBlur(zone, (0, 0), max(2.0, max(img.shape[:2]) / 400))

@@ -14,16 +14,18 @@ BASE = "https://lands.nuca.gov.eg/ar/"
 OUT, TSV = sys.argv[1:3]
 MIN_PX = int(sys.argv[sys.argv.index("--min-px") + 1]) if "--min-px" in sys.argv else 1600
 UA = {"User-Agent": "Mozilla/5.0"}
-def get(url, tries=4):
+def get(url, tries=7):
     err = None
     for i in range(tries):
         try:
             time.sleep(0.15)
-            with urlopen(Request(url, headers=UA), timeout=25) as r:
+            # The site's firewall leaves some requests hanging; a fresh attempt usually answers at once, so give up
+            # on a slow one early instead of waiting it out.
+            with urlopen(Request(url, headers=UA), timeout=8) as r:
                 if r.geturl().endswith("Error.aspx"): raise RuntimeError("redirect to Error.aspx")
                 return r.read()
         except Exception as e:
-            err = e; time.sleep(4 * (i + 1))
+            err = e; time.sleep(1.0 + i)
     raise err
 def say(*a): print(*a, flush=True)
 def stitch(xml_url, path):

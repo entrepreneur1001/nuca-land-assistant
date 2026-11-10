@@ -75,7 +75,12 @@ python3 past/export_past.py W W/zones.tsv reg-past ../../public/plans/past
 - The official site throttles a busy address: three copies of `fetch_plans.py` at once made every request time out.
   `fetch_past.py` runs one zone at a time and takes roughly two minutes per zone.
 
-Placed so far (2026-11-10): New Cairo, 111 of 170 earlier zones. Not placed: Beit El Watan 3rd district (14 zones; the
-sheets are too coarse for the plot outlines), most of the 4th district's older sheets, the 8th-stage Narges extension,
-Amal triangle and north Rehab remainder, and the small 8th/9th-stage pockets (1–3 plots inside a neighbourhood drawing):
-their searches gave no unique place. Zones 20, 23 and 28 have a position but no detectable outline, so no image.
+Placed so far (2026-11-10): New Cairo, 146 of 170 earlier zones (plus Cairo Walk's 5 from the OpenStreetMap route).
+Second-round tools for what the matcher missed: `street_mask.py` (street masks from a sheet's grey road fill, for
+district sheets whose plots are too fine to outline; used for the Beit El Watan 3rd and 4th district sheets),
+`via_sheet.py` (a detail drawing registered by image features on an already placed sheet or neighbour: north Rehab's
+13 drawings are crops of one master drawing; zone 82 via zone 83), and placement through the project overview slide
+for the Narges extension (165, 166, 172, 175). North Rehab is the least certain: Google's newer streets there differ
+from the old drawing in places.
+Not placed: 8th-stage Narges extension (250–256), Amal triangle (288–292), and the small 8th/9th/10th-stage pockets
+(315, 316, 350–353, 429–433, 1509): no unique match, and Google has few streets at several of them.
