@@ -12,7 +12,7 @@ export const OSM_RADIUS_M = 5000;
 /** POST an Overpass query (with retries across endpoints) and return the response body. */
 async function overpass(query: string, fetchImpl: typeof fetch): Promise<string> {
   let lastErr: unknown;
-  // Two tries, two minutes each: a hung Overpass must not eat the run's budget (the ids are retried next run).
+  // Two tries, one minute each (one district per query): a hung Overpass must not eat the run's budget.
   for (let attempt = 0; attempt < 2; attempt++) {
     const url = ENDPOINTS[attempt % ENDPOINTS.length];
     try {
@@ -20,7 +20,7 @@ async function overpass(query: string, fetchImpl: typeof fetch): Promise<string>
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "nuca-land-assistant/1.0 (personal, read-only)" },
         body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(60_000),
       });
       if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
       return await res.text();

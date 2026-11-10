@@ -432,7 +432,7 @@ describe("sync runner (official site)", () => {
     const planPlaces = new Map<string, [number, number]>([["guid-2", [30.015, 31.025]]]);
     const down = await runSync(m.store, { ...opts, planPlaces, now: T0, fetchBuiltPoints: async () => { throw new Error("fetch failed"); } });
     expect(down.error).toBeUndefined();
-    expect(m.meta!.distancePending).toEqual(["guid-2"]);
+    expect(m.meta!.distancePending).toEqual(["s:sec-a"]);
     let byNo = new Map((await loadTuples(m.store, m.meta!)).map((t) => [t[2], t]));
     expect(byNo.get("2")![18]).toBe(2); // still unknown
     const up = await runSync(m.store, { ...opts, planPlaces, now: later(15) });

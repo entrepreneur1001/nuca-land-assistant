@@ -15,6 +15,8 @@ import { loadPlanFiles, planCentroids } from "./plan-places";
 
 /** A plan-placed plot whose plan moved it by more than this gets its distances measured again. */
 const PLAN_MOVE_KM = 0.02;
+/** meta.distancePending entry for a whole district (sector id) whose distances are still to be measured. */
+const PENDING_SECTOR = "s:";
 import { bumpBookingsByDay, deriveStatuses, hotSectors, recordToTuple, seedBookingsByDay, synthesizeAllocations, tupleToRecord, type PlotRecord } from "./status";
 
 export interface ChunkDoc {
@@ -45,6 +47,8 @@ export interface RunOptions {
   /** Accept a run that marks more plots booked than OFFICIAL_SITE.maxNewlyBookedPerRun. */
   acceptLarge?: boolean;
   budgetMs?: number;
+  /** Time allowed for the per-district OpenStreetMap queries of step 4. */
+  osmBudgetMs?: number;
   concurrency?: number;
   delayMs?: number;
   zonesMaxAgeMs?: number;
@@ -300,49 +304,69 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     if (newlyLocated.length) log(`plans: ${newlyLocated.length} plot(s) placed from the official zone plans (${moved} moved from an earlier position)`);
 
     // 4. distances to existing buildings for new and newly placed plots (from the plot, else its district centre).
-    // Ids whose measurement failed in an earlier run (OpenStreetMap down) are carried in meta.distancePending and
-    // retried here, so a failure never leaves a plot with an unknown or stale distance for good.
+    // One Overpass query per district, within a time budget: a single all-districts query never finishes, and a
+    // hung endpoint must not eat the run. Districts not reached stay in meta.distancePending ("s:<sector id>",
+    // older entries may be plot ids or "*" = every plan-placed plot) and are tried first next run.
     const known = new Set(records.map((r) => r.id));
-    // `["*"]` = every plan-placed plot (a failed run with too many ids to list); undefined = first run with this
-    // code, which also re-measures every plan-placed plot once (earlier runs could not retry after a failure).
-    const pendingAll = prev.distancePending === undefined || prev.distancePending.includes("*");
-    const pending = pendingAll ? [...places.keys()] : prev.distancePending!;
+    const prevPending = prev.distancePending;
+    const pendingAll = prevPending === undefined || prevPending.includes("*");
+    const pendingSectors = new Set((prevPending ?? []).filter((x) => x.startsWith(PENDING_SECTOR)).map((x) => x.slice(PENDING_SECTOR.length)));
+    const pendingIds = new Set([
+      ...(pendingAll ? places.keys() : prevPending!.filter((x) => !x.startsWith(PENDING_SECTOR))),
+      ...records.filter((r) => r.sectorId && pendingSectors.has(r.sectorId)).map((r) => r.id),
+    ]);
     const unmeasured = records.filter((r) => r.lat != null && r.lng != null && r.builtSrc !== 0).map((r) => r.id);
-    const insertedIds = new Set([...derived.inserted, ...newlyLocated, ...unmeasured, ...pending.filter((id) => known.has(id))]);
+    const insertedIds = new Set([...derived.inserted, ...newlyLocated, ...unmeasured, ...[...pendingIds].filter((id) => known.has(id))]);
     const osmCities: Record<string, string> = { ...(prev.osmCities ?? {}) };
     const newBySector = new Map<string, PlotRecord[]>();
     for (const r of records) if (insertedIds.has(r.id) && r.sectorId) newBySector.set(r.sectorId, [...(newBySector.get(r.sectorId) ?? []), r]);
     meta.distancePending = [];
     if (newBySector.size) {
-      const centres = new Map<string, LatLng>();
       const plotCentres = sectorCentroids(records.map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })));
-      for (const id of newBySector.keys()) {
-        const c = plotCentres.get(id) ?? views.get(id) ?? prev.sectors.find((s) => s.id === id)?.c ?? approx.get(id);
-        if (c) centres.set(id, c);
-      }
-      if (centres.size) {
+      const centreOf = (id: string) => plotCentres.get(id) ?? views.get(id) ?? prev.sectors.find((s) => s.id === id)?.c ?? approx.get(id);
+      // Districts left over from earlier runs go first; the rest in order of how many plots wait.
+      const order = [...newBySector.keys()].sort((a, b) => Number(pendingSectors.has(b)) - Number(pendingSectors.has(a)) || newBySector.get(b)!.length - newBySector.get(a)!.length);
+      const budgetMs = opts.osmBudgetMs ?? OFFICIAL_SITE.osmBudgetMs;
+      const t0 = Date.now();
+      const left: string[] = [];
+      let measured = 0;
+      let fetched = 0;
+      let lastError: string | null = null;
+      for (const sid of order) {
+        const c = centreOf(sid);
+        if (!c) continue;
+        if (Date.now() - t0 > budgetMs) {
+          left.push(sid);
+          continue;
+        }
         try {
-          const points = await fetchBuilt([...centres.values()]);
+          const points = await fetchBuilt([c]);
+          const recs = newBySector.get(sid)!;
           const dist = computeBuiltDistances(
-            [...newBySector.values()].flat().map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })),
+            recs.map((r) => ({ id: r.id, projectId: r.sectorId, cityName: r.cityName, latitude: r.lat, longitude: r.lng })),
             buildIndex(points),
-            centres,
+            new Map([[sid, c]]),
           );
-          for (const r of records) {
+          for (const r of recs) {
             const d = dist.get(r.id);
             if (d) {
               r.builtKm = d.km;
               r.builtSrc = d.src;
+              measured++;
             }
           }
-          result.osmRefreshed = dist.size > 0;
-          if (result.osmRefreshed) meta.osmAt = now.toISOString();
-          log(`OSM: ${points.length} built points for ${centres.size} district(s) of new plots`);
+          fetched++;
         } catch (e) {
-          meta.distancePending = insertedIds.size > 3000 ? ["*"] : [...insertedIds];
-          log(`OSM failed (${meta.distancePending.length} plot(s) keep their distances until the next run):`, e instanceof Error ? e.message : e);
+          lastError = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+          left.push(sid);
         }
       }
+      if (measured) {
+        result.osmRefreshed = true;
+        meta.osmAt = now.toISOString();
+      }
+      meta.distancePending = left.map((sid) => PENDING_SECTOR + sid);
+      log(`OSM: ${measured} plot(s) in ${fetched} district(s) measured in ${Math.round((Date.now() - t0) / 1000)} s; ${left.length} district(s) left for the next run${lastError ? ` (last error: ${lastError})` : ""}`);
     }
     meta.osmCities = osmCities;
 

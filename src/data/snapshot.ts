@@ -62,7 +62,7 @@ export interface MetaDoc {
   osmAt: string | null;
   /** Last successful OpenStreetMap refresh per city (city name → ISO time). */
   osmCities?: Record<string, string>;
-  /** Plots whose building distance could not be measured last run (OpenStreetMap down); retried next run. */
+  /** Districts ("s:<sector id>") or plots whose building distance is still to be measured; "*" = every plan-placed plot. */
   distancePending?: string[];
   lastError: string | null;
   lastErrorAt: string | null;

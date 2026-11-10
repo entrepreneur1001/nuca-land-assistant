@@ -16,6 +16,8 @@ export const OFFICIAL_SITE = {
   budgetMs: Number(process.env.OFFICIAL_BUDGET_MS ?? 13 * 60_000),
   /** Budget for a `--full` run (available + booked views). */
   fullBudgetMs: Number(process.env.OFFICIAL_FULL_BUDGET_MS ?? 20 * 60_000),
+  /** Per-district OpenStreetMap queries stop after this; the rest wait for the next run. */
+  osmBudgetMs: Number(process.env.OSM_BUDGET_MS ?? 5 * 60_000),
   /** Per-request timeout; the site occasionally hangs a connection and a zone is better retried next run. */
   requestTimeoutMs: Number(process.env.OFFICIAL_TIMEOUT_MS ?? 15_000),
   /** Rows per page of the zone table. */
