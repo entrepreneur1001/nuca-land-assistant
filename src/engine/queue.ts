@@ -102,7 +102,7 @@ export interface OfficialQueue {
   /** Highest serial known to have been issued, and the Cairo day (UTC noon) it was reached. */
   issuedThrough: number;
   issuedDay: number;
-  /** How current this is: the later of the latest item's day and `issuedDay`. */
+  /** How current the news is: the later of the latest item's day and the last day it accounts for (projections excluded). */
   asOfDay: number;
   /** Size of the last batch whose range is known. */
   batchSize: number | null;
@@ -110,6 +110,10 @@ export interface OfficialQueue {
   next: { from: number; to: number | null; day: number; hour: number | null } | null;
   /** `batchSize` when a batch was completed today (its holders are still booking), else null. */
   todayBatch: number | null;
+  /** `issuedThrough` before the projection: what the news itself says. */
+  newsThrough: number;
+  /** Batch weekdays after the latest news item counted as issued (one `batchSize` each) because NUCA hasn't posted yet. */
+  projectedBatches: number;
 }
 
 /**
@@ -141,8 +145,6 @@ export function officialQueue(items: OfficialNewsItem[], now: Date): OfficialQue
       }
     }
   }
-  const { value: issuedThrough, day: issuedDay, completed } = best as Candidate;
-
   let batchSize: number | null = null;
   queue.forEach((it, i) => {
     if (!it.next) return;
@@ -154,20 +156,46 @@ export function officialQueue(items: OfficialNewsItem[], now: Date): OfficialQue
     }
   });
 
+  // The latest item may announce a batch without its end («بدء من مسلسل 10701 حتى مسلسل» with no number): it is
+  // taken to be the size of the last known batch, and counts from its announced hour like any other.
   const latest = queue.at(-1)!;
   const n = latest.next;
+  const nTo = n ? (n.to ?? (batchSize != null ? n.from + batchSize - 1 : null)) : null;
+  if (n && n.to == null && nTo != null && n.day) {
+    const batchDay = isoDay(n.day);
+    if (batchDay < today || (batchDay === today && hour >= (n.hour ?? MODEL.defaultBatchHour))) consider(nTo, batchDay, true);
+  }
+
+  // Until NUCA posts again, every later batch weekday adds one batch of the same size at MODEL.defaultBatchHour.
+  // Any newer news item replaces this projection, since it is only ever walked from the latest item.
+  const { value: newsThrough, day: knownDay } = best as Candidate;
+  let projectedBatches = 0;
+  if (batchSize != null) {
+    const covered = Math.max(isoDay(latest.day), n?.day ? isoDay(n.day) : 0, (best as Candidate).day);
+    for (let day = covered + DAY; day <= today; day += DAY) {
+      if (!isBatchDay(day) || (day === today && hour < MODEL.defaultBatchHour)) continue;
+      const b = best as Candidate;
+      best = { value: b.value + batchSize, day, completed: true };
+      projectedBatches++;
+    }
+  }
+  const { value: issuedThrough, day: issuedDay, completed } = best as Candidate;
+
   const next =
-    n && n.day && isoDay(n.day) >= today && (n.to == null || n.to > issuedThrough) ? { from: n.from, to: n.to, day: isoDay(n.day), hour: n.hour } : null;
+    n && n.day && isoDay(n.day) >= today && (nTo == null || nTo > issuedThrough) ? { from: n.from, to: n.to, day: isoDay(n.day), hour: n.hour } : null;
 
   return {
     nid: latest.nid,
     day: latest.day,
     issuedThrough,
+    newsThrough,
     issuedDay,
-    asOfDay: Math.max(isoDay(latest.day), issuedDay),
+    // How current the news itself is: a projected batch adds no information, so it doesn't count here.
+    asOfDay: Math.max(isoDay(latest.day), knownDay),
     batchSize,
     next,
     todayBatch: issuedDay === today && completed ? batchSize : null,
+    projectedBatches,
   };
 }
 
@@ -236,7 +264,9 @@ export function estimateQueue(input: {
     lastBatchDay = off.issuedDay;
     firstBatchDay = off.next ? off.next.day : undefined;
     const next = off.next ? `next batch ${off.next.from}–${off.next.to ?? "…"} on ${dayIso(off.next.day)}` : "no next batch announced yet";
-    assumptions.push(`A5: official NUCA news (NID ${off.nid}, ${off.day}): codes issued through ${off.issuedThrough}; ${next}.`);
+    assumptions.push(`A5: official NUCA news (NID ${off.nid}, ${off.day}): codes issued through ${off.newsThrough}; ${next}.`);
+    if (off.projectedBatches)
+      assumptions.push(`A6: ${off.projectedBatches} batch(es) of ${off.batchSize} added at ${MODEL.defaultBatchHour}:00 Cairo on working days not yet covered by the news.`);
   } else {
     if (trackerIssued > 0) {
       codesIssued = trackerIssued;
@@ -314,7 +344,7 @@ export function estimateQueue(input: {
       ? {
           nid: off.nid,
           day: off.day,
-          issuedThrough: off.issuedThrough,
+          issuedThrough: off.newsThrough,
           batchSize: off.batchSize,
           next: off.next ? { from: off.next.from, to: off.next.to, day: dayIso(off.next.day) } : null,
           applied: useOfficial,

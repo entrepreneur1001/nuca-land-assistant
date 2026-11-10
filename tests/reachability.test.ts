@@ -185,6 +185,29 @@ describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
     expect(officialQueue([], new Date())).toBeNull();
   });
 
+  it("officialQueue: a batch announced without its end takes the last batch size, then +1 batch per working day at 11:00", () => {
+    // NID 9118 (Mon 9 Nov): «through 10700; resume Tue 10 Nov at 10 from 10701 to» with no end number.
+    const nid9118 = { nid: 9118, day: "2026-11-09", title: "", servedThrough: 10700, next: { from: 10701, to: null, day: "2026-11-10", hour: 10 } };
+    const items = [...all.filter((i) => [9116, 9117].includes(i.nid)), nid9118];
+    const q = (iso: string) => officialQueue(items, new Date(iso))!;
+    expect(q("2026-11-10T07:00:00Z").issuedThrough).toBe(10700); // Tue 09:00 Cairo
+    const tue = q("2026-11-10T08:00:00Z"); // Tue 10:00 Cairo, the announced hour
+    expect(tue).toMatchObject({ issuedThrough: 11400, newsThrough: 11400, batchSize: 700, todayBatch: 700, projectedBatches: 0, next: null });
+    expect(q("2026-11-11T08:30:00Z").issuedThrough).toBe(11400); // Wed 10:30: not yet
+    const wed = q("2026-11-11T09:00:00Z"); // Wed 11:00
+    expect(wed).toMatchObject({ issuedThrough: 12100, newsThrough: 11400, todayBatch: 700, projectedBatches: 1 });
+    expect(wed.asOfDay).toBe(isoDay("2026-11-10")); // a projection is not news
+    expect(q("2026-11-12T10:00:00Z").issuedThrough).toBe(12800); // Thu
+    expect(q("2026-11-14T10:00:00Z").issuedThrough).toBe(12800); // Fri and Sat off
+    expect(q("2026-11-15T09:00:00Z").issuedThrough).toBe(13500); // Sun 11:00
+    // A newer news item replaces the projection.
+    const posted = { nid: 9119, day: "2026-11-11", title: "", servedThrough: 11900, next: { from: 11901, to: 12500, day: "2026-11-12", hour: 10 } };
+    expect(officialQueue([...items, posted], new Date("2026-11-11T18:00:00Z"))!.issuedThrough).toBe(11900);
+    // The estimate follows it.
+    const est = estimateQueue({ rank: 20000, booked: 6889, available: 8658, official: items, now: new Date("2026-11-10T10:00:00Z") });
+    expect(est.codesIssued).toBe(11400);
+  });
+
   it("nthBatchDay honours an announced first day, even a Friday, then walks working days", () => {
     const fri = isoDay("2026-11-13");
     expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 1, fri)).toBe(fri);
