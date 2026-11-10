@@ -52,22 +52,30 @@ npx tsx scripts/tools/list-past-zones.mts --city 1 --out W/zones.tsv        # zi
 python3 past/fetch_past.py W/plans W/zones.tsv                              # one zone at a time; rerun until nothing fails
 curl --data-urlencode 'data=[out:json];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|.*_link)$"](S,W,N,E););out geom;' https://overpass-api.de/api/interpreter -o W/osm/city.json
 python3 past/osm_city.py W/osm/city.json W/osm/city10 S,W,N,E 10            # coarse road raster for the search
-# per project (pid): place its overview slide, check, fine-tune, then hand the position down to its zones
-python3 past/place.py W/plans/project_<pid>_mainproject.jpg W/osm/city10 W/place/p<pid>.json --scale 1.2,5 --rot -10,10,5 --mask dark
-python3 past/overlay.py W/place/p<pid>.json W/osm/city.json check.jpg --cand i   # red street-map lines must run along the drawing's streets
-python3 past/refine_axis.py W/place/p<pid>.json W/osm/city.json W/place/p<pid>_ax.json --cand i
-python3 past/compose.py W W/zones.tsv <pid> W/place/p<pid>_ax.json reg-past       # finds each zone plan inside the slide
+python3 past/gmap_city.py W/g/tiles W/g/city16 S,W,N,E 16                 # road raster from Google's road map (labels off)
+python3 past/batch_g.py W W/zones.tsv W/g/city16 --jobs 5                   # every zone: whole-city search, check, refine → W/place/zg_<zid>.json + preview
+python3 past/batch_g.py W W/zones.tsv W/g/city16 --jobs 5 --seeded          # unclear zones again, around their project's clear ones
+python3 past/adopt_g.py W W/zones.tsv W/g/city16 reg-past --accept zid,zid  # registrations for the trusted placements
 python3 past/export_past.py W W/zones.tsv reg-past ../../public/plans/past
 ```
 
-- `place.py` only proposes: on the first project the right position was its fifth candidate. Pick by looking at the
-  overlays; a seed (`--near lat,lng,radius`) narrows the search when the area is known.
-- `refine_axis.py` scores only the roads OpenStreetMap has, so a project whose inner streets are unmapped is still pinned
-  by its boundary roads. Run it from two starting candidates when unsure: they should end within a few metres.
+- `place_g.py` (run by `batch_g.py`) is the matcher: streets are the gaps between blocks of outlined plots, so the
+  drawing's colours don't matter; the plots' size on the drawing gives the scale; the street pattern is correlated with
+  Google's road raster over scale, rotation and position. Google's map has the streets of the new districts that
+  OpenStreetMap lacks. A placement is clear when its score is ≥ 0.4 and the best place scores ≥ 1.15 × the next best.
+- Always look at the previews (`W/place/zg_<zid>.jpg`: the roads in red on the plan) of zones that score well without
+  being clear, and pass the ones that fit to `adopt_g.py --accept`. Of 27 such New Cairo zones, 8 fitted.
+- Some projects publish one sheet of the whole district per zone, with only the highlight changing: `adopt_g.py` gives
+  such zones the placement of a trusted zone on the same sheet (refined on their own streets when possible).
+- The older route (`place.py`, `refine_axis.py`, `overlay.py`, `chain_slide.py`, `compose.py`: project overview slide
+  against OpenStreetMap roads, zones located inside the slide) is kept for projects whose inner streets are on no map
+  yet; only Cairo Walk was placed that way.
 - `export_past.py` keeps only the zone's own drawing (its plots are vivid, the neighbours veiled) and makes the rest
   transparent. `tests/plans-past-data.test.ts` checks the exported index and files.
 - The official site throttles a busy address: three copies of `fetch_plans.py` at once made every request time out.
   `fetch_past.py` runs one zone at a time and takes roughly two minutes per zone.
 
-Placed so far: New Cairo «Cairo Walk Residence» (project 57, zones 194–198; boundary roads only, about ±10 m, the
-satellite imagery there predates the site).
+Placed so far (2026-11-10): New Cairo, 111 of 170 earlier zones. Not placed: Beit El Watan 3rd district (14 zones; the
+sheets are too coarse for the plot outlines), most of the 4th district's older sheets, the 8th-stage Narges extension,
+Amal triangle and north Rehab remainder, and the small 8th/9th-stage pockets (1–3 plots inside a neighbourhood drawing):
+their searches gave no unique place. Zones 20, 23 and 28 have a position but no detectable outline, so no image.

@@ -6,37 +6,45 @@ Every zone with <reg-past>/<zid>.json and a downloaded plan is exported; the ind
 """
 import sys, json, math, os
 import numpy as np, cv2
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from zone_shape import zone_template
 R = 6378137.0
 work, tsv, reg, out = sys.argv[1:5]
 def opt(name, default=None): return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 MAX = int(opt("--max", "1400")); only = set(opt("--only", "").split(",")) - {""}
 def unmerc(x, y): return [round(math.degrees(2 * math.atan(math.exp(y / R)) - math.pi / 2), 7), round(math.degrees(x / R), 7)]
 
-def own_mask(img):
-    """The zone's own drawing as a soft 0–255 mask. Zone plans draw their plots in full colour and veil everything
-    else (the neighbouring zones, the margins), so the vivid warm fills mark the zone; the mask is those plots grown
-    over the streets between them. None when no such region stands out (then the whole image is the zone)."""
+def vivid_zone(img):
+    """The area of the vivid warm plot fills (the highlighted zone on a sheet that veils or greys the rest), grown
+    over the streets between them; None when no such fills stand out."""
     H, W = img.shape[:2]; hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    warm = cv2.inRange(hsv, (10, 14, 190), (42, 255, 255)) > 0  # plot fills: cream to yellow, bright
-    if warm.mean() < 0.03: return None
+    warm = cv2.inRange(hsv, (10, 14, 190), (42, 255, 255)) > 0
+    if warm.mean() < 0.004: return None
     sat = hsv[..., 1][warm]
-    # The veil halves the saturation of the neighbours' plots: split the two populations (Otsu on saturation).
     thr, _ = cv2.threshold(sat.reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     lo, hi = sat[sat <= thr], sat[sat > thr]
-    if len(lo) and len(hi) and hi.mean() - lo.mean() < 15: thr = 0  # one population: nothing is veiled
+    if len(lo) and len(hi) and hi.mean() - lo.mean() < 15: thr = 0
     m = (warm & (hsv[..., 1] > thr)).astype(np.uint8) * 255
-    k = max(3, int(min(H, W) / 200)) | 1
+    k = max(3, int(min(H, W) / 250)) | 1
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((k, k), np.uint8))
     n, lab, st, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
-    keep = [i for i in range(1, n) if st[i, 4] > (H * W) * 0.0004]
-    if sum(st[i, 4] for i in keep) > H * W * 0.02:
-        own = np.isin(lab, keep).astype(np.uint8) * 255
-        r = int(max(H, W) * 0.022) | 1; el = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r))
-        # Close over streets and gardens inside the zone, then keep a street's width around it.
-        own = cv2.morphologyEx(own, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
-        own = cv2.dilate(own, el)
-        return cv2.GaussianBlur(own, (0, 0), max(2.0, r / 6))
-    return None
+    keep = [i for i in range(1, n) if st[i, 4] > (H * W) * 0.0002]
+    if sum(st[i, 4] for i in keep) < H * W * 0.003: return None
+    own = np.isin(lab, keep).astype(np.uint8) * 255
+    r = int(max(H, W) * 0.022) | 1
+    own = cv2.morphologyEx(own, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+    return cv2.dilate(own, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r)))
+
+def own_mask(img):
+    """The zone's own drawing as a soft 0–255 mask. Usually the area its blocks of outlined plots cover
+    (zone_shape.zone_template, the shape the placement was matched on). Some projects publish one sheet of the
+    whole district per zone with only that zone highlighted: there the outlined plots cover the district, so
+    the highlighted fills decide. None when neither is found (the zone is then not exported)."""
+    _, zone, side = zone_template(img)
+    vivid = vivid_zone(img)
+    if zone is None and vivid is None: return None
+    if zone is None or (vivid is not None and (vivid > 0).sum() < 0.35 * (zone > 0).sum()): zone = vivid
+    return cv2.GaussianBlur(zone, (0, 0), max(2.0, max(img.shape[:2]) / 400))
 
 os.makedirs(out, exist_ok=True)
 index_path = f"{out}/index.json"
@@ -49,11 +57,10 @@ for zid, row in rows.items():
     if not os.path.exists(rf) or not os.path.exists(src): continue
     M = np.array(json.load(open(rf))["affine"]); img = cv2.imread(src); H, W = img.shape[:2]
     mask = own_mask(img)
-    if mask is not None:
-        ys, xs = np.where(mask > 8); x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
-    else: x0, y0, x1, y1 = 0, 0, W, H
+    if mask is None: print(zid, "no zone outline found: not exported"); continue
+    ys, xs = np.where(mask > 8); x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
     grey = cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY); h, w = grey.shape
-    alpha = mask[y0:y1, x0:x1] if mask is not None else np.full((h, w), 255, np.uint8)
+    alpha = mask[y0:y1, x0:x1]
     f = min(1.0, MAX / max(w, h))
     if f < 1:
         size = (int(round(w * f)), int(round(h * f)))
