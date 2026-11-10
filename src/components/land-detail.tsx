@@ -12,6 +12,7 @@ import { track } from "@/lib/firebase";
 import { useAvailableOnly } from "@/lib/map-prefs";
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
+import { NearbyPlaces } from "./nearby-places";
 import { PlotMap } from "./plot-map";
 import { AreaLink, Badge, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
 
@@ -22,6 +23,7 @@ export function LandDetail() {
   const [hasPlan, setHasPlan] = useState(false);
   const [hasPast, setHasPast] = useState(false);
   const [hasCompounds, setHasCompounds] = useState(false);
+  const [hasPlaces, setHasPlaces] = useState(false);
   const [availableOnly, setAvailableOnly] = useAvailableOnly();
   useEffect(() => {
     if (id) void track("land_view", { id });
@@ -153,7 +155,7 @@ export function LandDetail() {
         <Card>
           <h2 className="font-bold">📍 {t.detail.mapTitle}</h2>
           <div className="mt-2">
-            <PlotMap plot={plot} plots={app.snapshot.plots} availableOnly={availableOnly} onPlan={setHasPlan} onPast={setHasPast} onCompounds={setHasCompounds} />
+            <PlotMap plot={plot} plots={app.snapshot.plots} availableOnly={availableOnly} onPlan={setHasPlan} onPast={setHasPast} onCompounds={setHasCompounds} onPlaces={setHasPlaces} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
             <Legend className="bg-accent" label={t.detail.legendThis} />
@@ -161,7 +163,8 @@ export function LandDetail() {
             {hasPlan ? <Legend className="bg-warn" label={t.plan.legendHeld} /> : null}
             {availableOnly ? null : <Legend className="bg-bad" label={t.detail.legendBooked} />}
             {hasPast ? <Legend className="bg-muted/50" label={t.plan.legendPast} /> : null}
-            {hasCompounds ? <Legend className="border-2 border-[#a855f7] bg-[#a855f7]/20" label={t.compound.legend} /> : null}
+            {hasCompounds ? <Legend className="border-2 border-compound bg-compound/20" label={t.compound.legend} /> : null}
+            {hasPlaces ? <Legend className="border-2 border-[#2563eb] bg-white" label={t.places.legend} /> : null}
             <label className="flex items-center gap-1.5 text-sm text-text">
               <input type="checkbox" checked={availableOnly} onChange={(e) => setAvailableOnly(e.target.checked)} /> {t.detail.onlyAvailable}
             </label>
@@ -173,6 +176,7 @@ export function LandDetail() {
             {plot.latitude == null && !hasPlan ? `${t.detail.approxSector} ` : ""}
             {hasPlan ? t.plan.note : t.detail.mapNote}
           </p>
+          {plot.latitude != null && plot.longitude != null ? <NearbyPlaces lat={plot.latitude} lng={plot.longitude} /> : null}
         </Card>
       ) : null}
 

@@ -25,13 +25,25 @@ export interface Compound {
    * matched to the outline, "rough" is the best such match, "cover" is simply stretched over the outline, and
    * "reviewed" was placed by a person checking it against the satellite.
    */
-  plan: { kind: "shape" | "rough" | "cover" | "reviewed"; w: number; h: number; corners: PlanCorners; clip: [number, number][] } | null;
+  plan: {
+    kind: "shape" | "rough" | "cover" | "reviewed";
+    /** "verified": its streets matched Google's road map; "reviewed": checked by eye. Unchecked plans are not published. */
+    status?: "verified" | "reviewed";
+    w: number;
+    h: number;
+    corners: PlanCorners;
+    clip: [number, number][];
+  } | null;
+  /** Nawy's developer id and that developer's logo (file under /compounds/logo/), when there is one. */
+  devId?: number | null;
+  devLogo?: string | null;
   /** Lowest unit price Nawy lists, in EGP; null when it lists none. A moving figure: approximate as of the last fetch. */
   price: number | null;
 }
 
 const BASE = "/compounds";
 export const compoundImageUrl = (id: number) => `${BASE}/img/${id}.webp`;
+export const compoundLogoUrl = (file: string) => `${BASE}/logo/${file}`;
 
 let promise: Promise<Compound[]> | null = null;
 

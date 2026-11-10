@@ -9,6 +9,8 @@ import type { Plot } from "@/data/snapshot";
 import { num, t, usd } from "@/i18n/ar";
 import { pastImageUrl, pastZoneInView, type PastPlanZone } from "@/lib/past-plans";
 import { planClip, planProjector, type PlanZone } from "@/lib/plans";
+import { plansPref } from "@/lib/map-prefs";
+import { addToggle } from "./map-controls";
 import { polygonArea, polygonCentroid, type PlanLabel, type PlanLabelSource } from "./plan-labels";
 
 type L = typeof Leaflet;
@@ -45,8 +47,6 @@ export const plotTooltip = (p: Plot) => `${t.card.plot} ${p.plotNumber} · ${num
 
 const statusWord = (p: Plot) => (p.status === "booked" ? t.detail.booked : p.held ? `${t.detail.available} (${t.plan.held})` : t.detail.available);
 
-/** Whether plan images are shown; remembered across map rebuilds within the session. */
-let imagesOn = true;
 
 const PANE = "nucaPlan";
 /**
@@ -60,6 +60,8 @@ const PANE_Z = "360";
  *  show wherever nothing else is drawn. Below the overlay pane (400) so the polygons and dots always sit on it. */
 const SITE_PANE = "nucaPlanSite";
 const SITE_PANE_Z = "391";
+/** The whole plan sheet (margins, title, surrounding roads) shows from this zoom; below it only the site does. */
+const SHEET_ZOOM = 16;
 
 // ---- rotated image overlay ----
 
@@ -207,14 +209,24 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
   const clip = hull ? `polygon(${hull.map(([x, y]) => `${x}px ${y}px`).join(", ")})` : undefined;
   const image = new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: PANE });
   const site = clip ? new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: SITE_PANE }, clip) : null;
+  let imagesShown = false;
   const showImages = (on: boolean) => {
-    for (const layer of [image, site]) {
+    imagesShown = on;
+    // Zoomed out, the whole sheet is a white box around the site: only the site shows until the roads around it
+    // are big enough to read (a plan with no site outline keeps its sheet).
+    const sheet = on && (!site || map.getZoom() >= SHEET_ZOOM);
+    for (const [layer, want] of [
+      [image, sheet],
+      [site, on],
+    ] as const) {
       if (!layer) continue;
-      if (on && !layer._failed) layer.addTo(map);
+      if (want && !layer._failed) layer.addTo(map);
       else map.removeLayer(layer);
     }
   };
-  if (imagesOn) showImages(true);
+  const onZoom = () => showImages(imagesShown);
+  map.on("zoomend", onZoom);
+  if (plansPref.get()) showImages(true);
 
   // One SVG renderer per zone: hover/highlight restyle single paths without redrawing the canvas the dots use.
   const renderer = L.svg({ pane: "overlayPane" });
@@ -314,6 +326,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       layer.onChange?.();
     },
     remove() {
+      map.off("zoomend", onZoom);
       showImages(false);
       for (const { poly } of polys.values()) map.removeLayer(poly);
       map.removeLayer(renderer);
@@ -347,7 +360,7 @@ export function addPastPlans(L: L, map: Leaflet.Map, zones: readonly [string, Pa
   }
   const Img = rotatedImage(L);
   const made = new Map<string, RotatedImage & Leaflet.Layer>();
-  let on = imagesOn;
+  let on = plansPref.get();
   const sync = () => {
     const b = map.getBounds();
     const view: [[number, number], [number, number]] = [
@@ -383,33 +396,14 @@ export function addPastPlans(L: L, map: Leaflet.Map, zones: readonly [string, Pa
   };
 }
 
-/** Top-right «المخطط» button that shows/hides the plan images of every layer in `layers` (polygons stay). */
+/** Top-right «المخطط» button that shows/hides the plan images of every layer in `layers` (polygons stay); remembered on the device. */
 export function addPlanToggle(L: L, map: Leaflet.Map, layers: readonly { setImageVisible(on: boolean): void }[]): Leaflet.Control {
-  const control = new L.Control({ position: "topright" });
-  control.onAdd = () => {
-    const div = L.DomUtil.create("div", "leaflet-bar");
-    const a = L.DomUtil.create("a", "", div) as HTMLAnchorElement;
-    a.href = "#";
-    a.role = "button";
-    a.dir = "rtl";
-    a.title = t.plan.toggleTitle;
-    a.textContent = t.plan.toggle;
-    Object.assign(a.style, { width: "auto", padding: "0 10px", fontSize: "13px", fontWeight: "600", lineHeight: "30px", whiteSpace: "nowrap" });
-    const render = () => {
-      a.setAttribute("aria-pressed", String(imagesOn));
-      a.style.color = imagesOn ? "#111" : "#888";
-      a.style.backgroundColor = imagesOn ? "#fff" : "#eee";
-      a.style.textDecoration = imagesOn ? "none" : "line-through";
-    };
-    render();
-    L.DomEvent.disableClickPropagation(div);
-    L.DomEvent.on(a, "click", (e) => {
-      L.DomEvent.stop(e);
-      imagesOn = !imagesOn;
-      for (const l of layers) l.setImageVisible(imagesOn);
-      render();
-    });
-    return div;
-  };
-  return control.addTo(map);
+  return addToggle(L, map, {
+    label: t.plan.toggle,
+    title: t.plan.toggleTitle,
+    pref: plansPref,
+    onChange: (on) => {
+      for (const l of layers) l.setImageVisible(on);
+    },
+  });
 }

@@ -2,13 +2,16 @@
 
 import "leaflet/dist/leaflet.css";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import type { AreaDistrict } from "@/lib/area-stats";
 import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
 import { loadCompounds } from "@/lib/compounds";
 import { addCompounds, limitToCity } from "./compound-layer";
+import { IMAGERY_ATTRIBUTION } from "./map-controls";
+import { addPlaces } from "./places-layer";
+import { loadPlacesNear } from "@/lib/places";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
 import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
@@ -31,6 +34,7 @@ export function AreaMap({
   onPlan,
   onPast,
   onCompounds,
+  onPlaces,
   onApprox,
 }: {
   plots: Plot[];
@@ -47,10 +51,13 @@ export function AreaMap({
   onPast?: (hasPast: boolean) => void;
   /** Whether private compounds are within the map's reach (for the legend). */
   onCompounds?: (has: boolean) => void;
+  /** Whether nearby places (universities, clubs …) are on the map (for the legend). */
+  onPlaces?: (has: boolean) => void;
   /** Whether any approximate district circle is on the map (for the legend). */
   onApprox?: (hasCircle: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const router = useRouter();
   const markers = useRef(new Map<string, import("leaflet").CircleMarker>());
   const plans = useRef<PlanLayer[]>([]);
@@ -88,8 +95,9 @@ export function AreaMap({
 
       // Canvas keeps a few thousand dots smooth.
       map = L.map(el, { scrollWheelZoom: false, preferCanvas: true });
-      L.tileLayer(IMAGERY, { maxZoom: 19, attribution: "Tiles © Esri" }).addTo(map);
+      L.tileLayer(IMAGERY, { maxZoom: 19, attribution: IMAGERY_ATTRIBUTION }).addTo(map);
       L.tileLayer(LABELS, { maxZoom: 19 }).addTo(map);
+      setStatus("ready");
 
       // The view must be set before layers are added (Leaflet can't place them otherwise).
       // A district whose plan is on the map needs no approximate circle: the plan itself shows where its
@@ -116,6 +124,18 @@ export function AreaMap({
       limitToCity(map);
       // Private compounds lie lowest of all: what is being built around the plots.
       onCompounds?.(compounds.length ? addCompounds(L, map, compounds).any : false);
+      // Universities, clubs, hospitals, stations… around the land: loaded for the area the map can reach.
+      const max = map.options.maxBounds;
+      const reach = max ? (max instanceof L.LatLngBounds ? max : L.latLngBounds(max)) : map.getBounds();
+      const built = map;
+      void loadPlacesNear([
+        [reach.getSouth(), reach.getWest()],
+        [reach.getNorth(), reach.getEast()],
+      ]).then((places) => {
+        if (cancelled || !places.length) return;
+        addPlaces(L, built, places, undefined);
+        onPlaces?.(true);
+      });
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) {
@@ -159,6 +179,8 @@ export function AreaMap({
         byId.set(p.id, m);
       }
       host.current = map;
+    }).catch(() => {
+      if (!cancelled) setStatus("error");
     });
     return () => {
       cancelled = true;
@@ -201,5 +223,8 @@ export function AreaMap({
   }, [highlight]);
 
   if (empty) return <p className="text-sm text-muted">{t.area.noMap}</p>;
-  return <div ref={ref} dir="ltr" className="relative z-0 h-80 w-full overflow-hidden rounded-xl sm:h-[28rem]" />;
+  return <div className="relative z-0 h-80 w-full overflow-hidden rounded-xl sm:h-[28rem]">
+      <div ref={ref} dir="ltr" className="absolute inset-0" />
+      {status === "ready" ? null : <div className="nuca-map-loading">{status === "error" ? t.mapError : t.mapLoading}</div>}
+    </div>;
 }

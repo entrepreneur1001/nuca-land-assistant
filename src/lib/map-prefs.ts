@@ -36,24 +36,41 @@ export function useAvailableOnly(): [boolean, (on: boolean) => void] {
   return [useSyncExternalStore(subscribe, read, () => false), write];
 }
 
-/** «كمبوندات»: whether the maps draw the private compounds. One choice for every map, remembered on the device; on by default. */
-const COMPOUNDS_KEY = "nuca.map.compounds";
-let compounds: boolean | null = null;
-
-export function compoundsShown(): boolean {
-  if (compounds == null) {
-    try {
-      compounds = localStorage.getItem(COMPOUNDS_KEY) !== "0";
-    } catch {
-      compounds = true;
-    }
-  }
-  return compounds;
+/**
+ * A map layer switch remembered on the device (one choice for every map); `fallback` when nothing is stored or
+ * storage is blocked (then the choice lasts for the session).
+ */
+export interface MapPref {
+  get(): boolean;
+  set(on: boolean): void;
 }
 
-export function setCompoundsShown(on: boolean) {
-  compounds = on;
-  try {
-    localStorage.setItem(COMPOUNDS_KEY, on ? "1" : "0");
-  } catch {}
+function mapPref(key: string, fallback: boolean): MapPref {
+  let v: boolean | null = null;
+  return {
+    get() {
+      if (v == null) {
+        try {
+          const raw = localStorage.getItem(key);
+          v = raw == null ? fallback : raw === "1";
+        } catch {
+          v = fallback;
+        }
+      }
+      return v;
+    },
+    set(on) {
+      v = on;
+      try {
+        localStorage.setItem(key, on ? "1" : "0");
+      } catch {}
+    },
+  };
 }
+
+/** «كمبوندات»: whether the maps draw the private compounds; on by default. */
+export const compoundsPref = mapPref("nuca.map.compounds", true);
+/** «المخطط»: whether the maps show the plan images (the plot shapes stay); on by default. */
+export const plansPref = mapPref("nuca.map.plans", true);
+/** «أماكن»: whether the maps show universities, clubs, hospitals and other places nearby; on by default. */
+export const placesPref = mapPref("nuca.map.places", true);

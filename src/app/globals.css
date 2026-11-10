@@ -18,6 +18,8 @@
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --grid: #e9ebee;
+  /* Private compounds on the satellite maps: same in both themes, the map itself doesn't change. */
+  --compound: #a855f7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,6 +59,7 @@
   --color-warn-soft: var(--warn-soft);
   --color-bad: var(--bad);
   --color-bad-soft: var(--bad-soft);
+  --color-compound: var(--compound);
   --font-sans: var(--font-plex), system-ui, sans-serif;
 }
 
@@ -133,5 +136,131 @@ body {
     padding: 0 8px !important;
     line-height: 28px !important;
     height: 28px;
+  }
+}
+
+/* Map layer switches (map-controls.ts). */
+.nuca-toggle a {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  width: auto !important;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 30px;
+  white-space: nowrap;
+  color: #111;
+  background: #fff;
+}
+.nuca-toggle a[aria-pressed="false"] {
+  color: #777;
+  background: #eceef1;
+}
+.nuca-toggle a[aria-pressed="false"] .nuca-toggle-dot {
+  opacity: 0.3;
+}
+.nuca-toggle-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgb(0 0 0 / 0.25);
+  flex: none;
+}
+
+/* Names on the satellite: plain text with a dark halo instead of Leaflet's white tooltip bubble. */
+.leaflet-tooltip.nuca-map-label {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 0 3px rgb(0 0 0 / 0.95), 0 0 6px rgb(0 0 0 / 0.7);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.leaflet-tooltip.nuca-map-label::before {
+  display: none;
+}
+.leaflet-tooltip.nuca-compound-label {
+  color: #f3e8ff;
+}
+.nuca-map-label img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: contain;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.3);
+}
+.leaflet-tooltip.nuca-label-hidden,
+.nuca-label-hidden {
+  visibility: hidden;
+}
+
+/* Place and compound badges (places-layer.ts, compound-layer.ts): a round chip with a logo or a category icon. */
+.nuca-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--badge, #555);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  overflow: hidden;
+  color: var(--badge, #555);
+}
+.nuca-badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 2px;
+}
+.nuca-badge svg {
+  width: 16px;
+  height: 16px;
+}
+.nuca-badge.is-small {
+  width: 22px;
+  height: 22px;
+}
+.nuca-badge.is-small svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* While Leaflet and the map data load. */
+.nuca-map-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(110deg, var(--surface-2) 30%, var(--border) 50%, var(--surface-2) 70%);
+  background-size: 200% 100%;
+  animation: map-shimmer 1.4s linear infinite;
+  color: var(--muted);
+  font-size: 14px;
+  z-index: 500;
+}
+@keyframes map-shimmer {
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nuca-map-loading { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .leaflet-control-attribution {
+    font-size: 9px;
+    line-height: 1.3;
   }
 }

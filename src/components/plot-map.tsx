@@ -2,12 +2,15 @@
 
 import "leaflet/dist/leaflet.css";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
 import { loadCompounds } from "@/lib/compounds";
 import { addCompounds, limitToCity } from "./compound-layer";
+import { IMAGERY_ATTRIBUTION } from "./map-controls";
+import { addPlaces } from "./places-layer";
+import { loadPlacesNear } from "@/lib/places";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
 import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
@@ -29,6 +32,7 @@ export function PlotMap({
   onPlan,
   onPast,
   onCompounds,
+  onPlaces,
 }: {
   plot: Plot;
   plots: Plot[];
@@ -40,8 +44,11 @@ export function PlotMap({
   onPast?: (hasPast: boolean) => void;
   /** Whether private compounds are within the map's reach (for the legend). */
   onCompounds?: (has: boolean) => void;
+  /** Whether nearby places (universities, clubs …) are on the map (for the legend). */
+  onPlaces?: (has: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const router = useRouter();
   const plans = useRef<PlanLayer[]>([]);
   const bookedDots = useRef<import("leaflet").CircleMarker[]>([]);
@@ -69,8 +76,9 @@ export function PlotMap({
       const warn = color("--warn") || good;
 
       map = L.map(el, { scrollWheelZoom: false, attributionControl: true });
-      L.tileLayer(IMAGERY, { maxZoom: 19, attribution: "Tiles © Esri" }).addTo(map);
+      L.tileLayer(IMAGERY, { maxZoom: 19, attribution: IMAGERY_ATTRIBUTION }).addTo(map);
       L.tileLayer(LABELS, { maxZoom: 19 }).addTo(map);
+      setStatus("ready");
 
       const neighbours = plot.projectId ? plots.filter((p) => p.projectId === plot.projectId && p.id !== plot.id) : [];
       const dotted = neighbours.filter((p) => p.latitude != null && p.longitude != null);
@@ -99,6 +107,18 @@ export function PlotMap({
       limitToCity(map);
       // Private compounds lie lowest of all: what is being built around the plots.
       onCompounds?.(compounds.length ? addCompounds(L, map, compounds).any : false);
+      // Universities, clubs, hospitals, stations… around the land: loaded for the area the map can reach.
+      const max = map.options.maxBounds;
+      const reach = max ? (max instanceof L.LatLngBounds ? max : L.latLngBounds(max)) : map.getBounds();
+      const built = map;
+      void loadPlacesNear([
+        [reach.getSouth(), reach.getWest()],
+        [reach.getNorth(), reach.getEast()],
+      ]).then((places) => {
+        if (cancelled || !places.length) return;
+        addPlaces(L, built, places, exact ? L.latLng(centre.lat, centre.lng) : undefined);
+        onPlaces?.(true);
+      });
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       for (const l of layers) l.setBookedVisible(!hideBooked.current);
@@ -134,6 +154,8 @@ export function PlotMap({
           .bindTooltip(t.detail.approxArea, { permanent: true, direction: "center" })
           .addTo(map);
       }
+    }).catch(() => {
+      if (!cancelled) setStatus("error");
     });
     return () => {
       cancelled = true;
@@ -158,5 +180,8 @@ export function PlotMap({
   }, [availableOnly]);
 
   if (!centre) return null;
-  return <div ref={ref} dir="ltr" className="relative z-0 h-72 w-full overflow-hidden rounded-xl sm:h-96" />;
+  return <div className="relative z-0 h-72 w-full overflow-hidden rounded-xl sm:h-96">
+      <div ref={ref} dir="ltr" className="absolute inset-0" />
+      {status === "ready" ? null : <div className="nuca-map-loading">{status === "error" ? t.mapError : t.mapLoading}</div>}
+    </div>;
 }

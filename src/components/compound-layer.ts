@@ -6,16 +6,21 @@
  */
 import type * as Leaflet from "leaflet";
 import { t } from "@/i18n/ar";
-import { compoundContains, compoundImageUrl, compoundInView, type Compound } from "@/lib/compounds";
-import { compoundsShown, setCompoundsShown } from "@/lib/map-prefs";
+import { compoundContains, compoundImageUrl, compoundInView, compoundLogoUrl, type Compound } from "@/lib/compounds";
+import { compoundsPref } from "@/lib/map-prefs";
+import { addToggle, cullOverlaps } from "./map-controls";
 import { rotatedImage } from "./plan-layer";
+import { polygonArea, polygonCentroid } from "./plan-labels";
 
 type L = typeof Leaflet;
 
 const PANE = "nucaCompound";
 /** Under the earlier-stage plans (380) and the current ones (390): our own plots are never covered. */
 const PANE_Z = "370";
-const COLOR = "#a855f7";
+const COLOR = "#a855f7"; // = --compound in globals.css
+/** Developer logos stand in for names when zoomed out, above our plot numbers (450) but under popups. */
+const BADGE_PANE = "nucaCompoundBadge";
+const BADGE_PANE_Z = "455";
 /** Names appear from this zoom: further out a city's compounds are too small to label without a pile-up. */
 const LABEL_ZOOM = 14;
 /** How far from the land the map opened on a compound still counts as its neighbour. */
@@ -55,8 +60,15 @@ function popupContent(c: Compound, price: boolean): HTMLElement {
   // Leaflet aligns its popups left whatever the direction.
   Object.assign(el.style, { minWidth: "200px", textAlign: "right" });
   const title = document.createElement("div");
-  title.textContent = c.nameAr ?? c.name;
-  Object.assign(title.style, { fontWeight: "700", fontSize: "14px" });
+  Object.assign(title.style, { fontWeight: "700", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" });
+  if (c.devLogo) {
+    const logo = document.createElement("img");
+    logo.src = compoundLogoUrl(c.devLogo);
+    logo.alt = "";
+    Object.assign(logo.style, { width: "28px", height: "28px", objectFit: "contain", borderRadius: "6px", border: "1px solid #ddd", background: "#fff" });
+    title.append(logo);
+  }
+  title.append(document.createTextNode(c.nameAr ?? c.name));
   el.append(title);
   if (c.nameAr && c.nameAr !== c.name) {
     const latin = document.createElement("div");
@@ -87,13 +99,18 @@ function popupContent(c: Compound, price: boolean): HTMLElement {
  */
 export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compound[]): CompoundLayer {
   if (!map.getPane(PANE)) map.createPane(PANE).style.zIndex = PANE_Z;
+  if (!map.getPane(BADGE_PANE)) map.createPane(BADGE_PANE).style.zIndex = BADGE_PANE_Z;
   // Its own SVG renderer: a canvas per pane would swallow the taps meant for the layers below it.
   const renderer = L.svg({ pane: PANE });
   const made = new Map<number, Leaflet.Polygon>();
-  // Master plans that could be fitted to their outline are drawn inside it, like the official plans.
+  const badges = new Map<number, Leaflet.Marker>();
+  // Master plans that could be placed on the ground are drawn inside their outline, like the official plans.
   const Img = rotatedImage(L);
   const images = new Map<number, InstanceType<typeof Img>>();
-  let on = compoundsShown();
+  // Bigger compounds win when names or logos collide.
+  const size = new Map(compounds.map((c) => [c.id, polygonArea(c.ring)]));
+  const ordered = [...compounds].sort((a, b) => size.get(b.id)! - size.get(a.id)!);
+  let on = compoundsPref.get();
   // Prices are shown for the compounds around our land only: those within NEAR_M of what the map opened on.
   const home = map.getBounds();
   const near: [[number, number], [number, number]] = (() => {
@@ -104,6 +121,30 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
       [home.getNorth() + dLat, home.getEast() + dLng],
     ];
   })();
+  const openPopup = (c: Compound, at: Leaflet.LatLngExpression) =>
+    L.popup({ maxWidth: 280, autoPanPadding: [60, 16] }).setLatLng(at).setContent(popupContent(c, compoundInView(c, near))).openOn(map);
+  const labelHtml = (c: Compound) => {
+    const el = document.createElement("span");
+    if (c.devLogo) {
+      const img = document.createElement("img");
+      img.src = compoundLogoUrl(c.devLogo);
+      img.alt = "";
+      img.loading = "lazy";
+      el.append(img);
+    }
+    el.append(document.createTextNode(c.nameAr ?? c.name));
+    return el;
+  };
+  const badgeFor = (c: Compound) => {
+    const [lat, lng] = polygonCentroid(c.ring);
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="nuca-badge is-small" style="--badge:${COLOR}"><img src="${compoundLogoUrl(c.devLogo!)}" alt="" loading="lazy"></div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+    return L.marker([lat, lng], { icon, pane: BADGE_PANE, keyboard: false, title: c.nameAr ?? c.name }).on("click", (e) => openPopup(c, e.latlng));
+  };
   const sync = () => {
     const b = map.getBounds();
     const view: [[number, number], [number, number]] = [
@@ -111,12 +152,13 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
       [b.getNorth(), b.getEast()],
     ];
     const labels = map.getZoom() >= LABEL_ZOOM;
-    for (const c of compounds) {
+    const shown: HTMLElement[] = [];
+    for (const c of ordered) {
       const want = on && compoundInView(c, view);
       let shape = made.get(c.id);
       if (want && !shape) {
-        shape = L.polygon(c.ring, { pane: PANE, renderer, interactive: false, color: COLOR, weight: 2, opacity: 0.95, fillColor: COLOR, fillOpacity: c.plan ? 0 : 0.22 });
-        shape.bindTooltip(c.nameAr ?? c.name, { permanent: true, direction: "center", interactive: false, opacity: 0.9, className: "nuca-compound-label" });
+        shape = L.polygon(c.ring, { pane: PANE, renderer, interactive: false, color: COLOR, weight: 2, opacity: 0.95, fillColor: COLOR, fillOpacity: c.plan ? 0 : 0.18 });
+        shape.bindTooltip(labelHtml(c), { permanent: true, direction: "center", interactive: false, className: "nuca-map-label nuca-compound-label" });
         made.set(c.id, shape);
       }
       if (c.plan) {
@@ -128,55 +170,55 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
           images.set(c.id, image);
         }
         if (image && want && !image._failed) image.addTo(map);
-        else if (image) map.removeLayer(image);
+        else if (image) {
+          // Out of view: drop it altogether so a long pan across a city doesn't keep every plan decoded.
+          map.removeLayer(image);
+          images.delete(c.id);
+        }
+      }
+      // Zoomed out, a compound is its developer's logo; zoomed in, its name (with the logo).
+      if (c.devLogo) {
+        let badge = badges.get(c.id);
+        if (want && !labels) {
+          if (!badge) badges.set(c.id, (badge = badgeFor(c)));
+          badge.addTo(map);
+          const el = badge.getElement();
+          if (el) shown.push(el);
+        } else if (badge) map.removeLayer(badge);
       }
       if (!shape) continue;
       if (want) {
         shape.addTo(map);
-        if (labels) shape.openTooltip();
-        else shape.closeTooltip();
+        if (labels) {
+          shape.openTooltip();
+          const el = shape.getTooltip()?.getElement();
+          if (el) shown.push(el);
+        } else shape.closeTooltip();
       } else map.removeLayer(shape);
     }
+    cullOverlaps(shown);
   };
   const tap = (e: Leaflet.LeafletMouseEvent) => {
     // A tap on a plot, a dot or a district circle reaches the map too, with that layer as its source.
     if (!on || (e as unknown as { sourceTarget?: unknown }).sourceTarget !== map) return;
     const hit = compounds.find((c) => compoundContains(c, e.latlng.lat, e.latlng.lng));
-    if (hit) L.popup({ maxWidth: 280, autoPanPadding: [90, 16] }).setLatLng(e.latlng).setContent(popupContent(hit, compoundInView(hit, near))).openOn(map);
+    if (hit) openPopup(hit, e.latlng);
   };
   map.on("moveend zoomend", sync);
   map.on("click", tap);
   sync();
 
-  const control = new L.Control({ position: "topright" });
-  control.onAdd = () => {
-    const div = L.DomUtil.create("div", "leaflet-bar");
-    const a = L.DomUtil.create("a", "", div) as HTMLAnchorElement;
-    a.href = "#";
-    a.role = "button";
-    a.dir = "rtl";
-    a.title = t.compound.toggleTitle;
-    a.textContent = t.compound.toggle;
-    Object.assign(a.style, { width: "auto", padding: "0 10px", fontSize: "13px", fontWeight: "600", lineHeight: "30px", whiteSpace: "nowrap" });
-    const render = () => {
-      a.setAttribute("aria-pressed", String(on));
-      a.style.color = on ? "#111" : "#888";
-      a.style.backgroundColor = on ? "#fff" : "#eee";
-      a.style.textDecoration = on ? "none" : "line-through";
-    };
-    render();
-    L.DomEvent.disableClickPropagation(div);
-    L.DomEvent.on(a, "click", (e) => {
-      L.DomEvent.stop(e);
-      on = !on;
-      setCompoundsShown(on);
+  const control = addToggle(L, map, {
+    label: t.compound.toggle,
+    title: t.compound.toggleTitle,
+    pref: compoundsPref,
+    swatch: COLOR,
+    onChange: (v) => {
+      on = v;
       if (!on) map.closePopup();
       sync();
-      render();
-    });
-    return div;
-  };
-  control.addTo(map);
+    },
+  });
 
   const max = map.options.maxBounds;
   const reach = max ? (max instanceof L.LatLngBounds ? max : L.latLngBounds(max)) : map.getBounds();
@@ -192,7 +234,9 @@ export function addCompounds(L: L, map: Leaflet.Map, compounds: readonly Compoun
       control.remove();
       for (const shape of made.values()) map.removeLayer(shape);
       for (const image of images.values()) map.removeLayer(image);
+      for (const badge of badges.values()) map.removeLayer(badge);
       images.clear();
+      badges.clear();
       made.clear();
     },
   };
