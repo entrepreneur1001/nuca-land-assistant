@@ -72,12 +72,15 @@ describe.runIf(has)("public/places", () => {
     }
   });
 
-  it("points every logo at an existing webp named by the place's wikidata id", () => {
+  it("points every logo at an existing small webp, named by the wikidata id when it came from Wikidata", () => {
     for (const f of files.values())
       for (const p of f.places) {
         if (!p.logo) continue;
-        expect(p.logo).toBe(`logo/${p.wikidata}.webp`);
-        expect(existsSync(path.join(dir, p.logo)), p.logo).toBe(true);
+        expect(p.logo, p.id).toMatch(/^logo\/(Q\d+|h[0-9a-f]{10})\.webp$/);
+        if (/^logo\/Q/.test(p.logo)) expect(p.logo, p.id).toBe(`logo/${p.wikidata}.webp`);
+        const file = path.join(dir, p.logo);
+        expect(existsSync(file), p.logo).toBe(true);
+        expect(statSync(file).size, p.logo).toBeLessThan(20_000);
       }
   });
 });
