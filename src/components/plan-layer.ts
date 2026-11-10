@@ -7,7 +7,7 @@
 import type * as Leaflet from "leaflet";
 import type { Plot } from "@/data/snapshot";
 import { num, t, usd } from "@/i18n/ar";
-import { planProjector, type PlanZone } from "@/lib/plans";
+import { planClip, planProjector, type PlanZone } from "@/lib/plans";
 
 type L = typeof Leaflet;
 
@@ -58,6 +58,8 @@ interface RotatedImage {
   _corners: Leaflet.LatLng[];
   _w: number;
   _h: number;
+  /** CSS clip-path in image pixels (before the matrix), or undefined to show the whole image. */
+  _clip?: string;
   _img?: HTMLImageElement;
   _failed?: boolean;
   /** The map while added (set in onAdd, cleared in onRemove). */
@@ -76,6 +78,7 @@ type RotatedImageCtor = new (
   w: number,
   h: number,
   options: Leaflet.LayerOptions & { opacity: number },
+  clip?: string,
 ) => RotatedImage & Leaflet.Layer;
 
 /** Leaflet's private helper that gives a layer point as it will be after the running zoom animation. */
@@ -92,8 +95,9 @@ let rotatedImageClass: RotatedImageCtor | null = null;
 function rotatedImage(L: L): RotatedImageCtor {
   rotatedImageClass ??= L.Layer.extend({
     options: { opacity: 0.9, interactive: false, pane: PANE },
-    initialize(this: RotatedImage, url: string, corners: Leaflet.LatLng[], w: number, h: number, options?: Leaflet.LayerOptions) {
+    initialize(this: RotatedImage, url: string, corners: Leaflet.LatLng[], w: number, h: number, options?: Leaflet.LayerOptions, clip?: string) {
       L.Util.setOptions(this, options);
+      this._clip = clip;
       this._url = url;
       this._corners = corners;
       this._w = w;
@@ -115,6 +119,7 @@ function rotatedImage(L: L): RotatedImageCtor {
         img.style.transformOrigin = "0 0";
         img.style.opacity = String(this.options.opacity);
         img.style.pointerEvents = "none";
+        if (this._clip) img.style.clipPath = this._clip;
         img.onselectstart = L.Util.falseFn;
         img.onmousemove = L.Util.falseFn;
         img.onerror = () => {
@@ -178,7 +183,10 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
   const bounds = L.latLngBounds([...corners, corner(zone.w, zone.h)]);
 
   const Img = rotatedImage(L);
-  const image = new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: PANE });
+  // Only the drawn site shows: margins, title and neighbouring drawings would cover the other zones of the district.
+  const hull = planClip(zone);
+  const clip = hull ? `polygon(${hull.map(([x, y]) => `${x}px ${y}px`).join(", ")})` : undefined;
+  const image = new Img(imageUrl, corners, zone.w, zone.h, { opacity: 0.9, pane: PANE }, clip);
   if (imagesOn) image.addTo(map);
 
   // One SVG renderer per zone: hover/highlight restyle single paths without redrawing the canvas the dots use.

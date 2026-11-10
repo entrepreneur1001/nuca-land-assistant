@@ -11,6 +11,9 @@ import { addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 
+/** Width of the ground window a placed plot's map opens on, in metres. */
+const PLOT_VIEW_M = 450;
+
 /**
  * Satellite map of the plot among the other plots of its district. With an official zone plan (public/plans) the
  * plot is its shape on the plan, in the accent colour, and the neighbours are shapes by status; otherwise dots.
@@ -65,7 +68,10 @@ export function PlotMap({
       const pts: [number, number][] = [[centre.lat, centre.lng], ...dotted.map((p): [number, number] => [p.latitude!, p.longitude!])];
       const bounds = L.latLngBounds(pts);
       for (const z of zones) bounds.extend(z.info.bounds);
-      if (pts.length > 1 || zones.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17, animate: false });
+      // A placed plot opens on itself with the few blocks around it (a district can be kilometres wide, the plot a
+      // speck in it); a plot known only by its district's centre opens on the whole district.
+      if (exact) map.fitBounds(L.latLng(centre.lat, centre.lng).toBounds(PLOT_VIEW_M), { padding: [8, 8], maxZoom: 19, animate: false });
+      else if (pts.length > 1 || zones.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17, animate: false });
       else map.setView([centre.lat, centre.lng], 16);
 
       const byPlot = new Map([plot, ...neighbours].map((p) => [p.id, p]));

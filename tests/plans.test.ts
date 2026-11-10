@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { imagePointToLatLng, planProjector, zonesForPlots, zonesForSectors, type PlanCrs, type PlanIndex, type PlanZone } from "@/lib/plans";
+import { imagePointToLatLng, planClip, planProjector, zonesForPlots, zonesForSectors, type PlanCrs, type PlanIndex, type PlanZone } from "@/lib/plans";
 
 /** Spherical Mercator (EPSG:3857) as Leaflet projects it, minus Leaflet's affine scaling, which the maths is invariant to. */
 const R = 6378137;
@@ -72,5 +72,44 @@ describe("zone lookup", () => {
     expect(loaded.sort()).toEqual(["3", "5"]);
     expect(await zonesForPlots(index, "بدر", new Set(["p1"]), async () => null)).toEqual([]);
     expect(await zonesForPlots(index, "السادات", new Set(), load)).toEqual([]);
+  });
+});
+
+describe("planClip", () => {
+  const sq = (x: number, y: number): [number, number][] => [[x, y], [x + 10, y], [x + 10, y + 10], [x, y + 10]];
+
+  it("is the hull of every shape, pushed outwards by the padding and kept inside the image", () => {
+    const clip = planClip({ w: 200, h: 100, plots: { a: sq(50, 40), b: sq(120, 40) }, unassigned: [sq(80, 20)] }, 5)!;
+    const xs = clip.map((p) => p[0]);
+    const ys = clip.map((p) => p[1]);
+    expect(Math.min(...xs)).toBe(45);
+    expect(Math.max(...xs)).toBe(135);
+    expect(Math.min(...ys)).toBe(15);
+    expect(Math.max(...ys)).toBe(55);
+    const edge = planClip({ w: 200, h: 100, plots: { a: sq(0, 0), b: sq(190, 90) }, unassigned: [] }, 30)!;
+    for (const [x, y] of edge) expect(x >= 0 && x <= 200 && y >= 0 && y <= 100).toBe(true);
+  });
+
+  it("contains every vertex of every shape", () => {
+    const zone = { w: 400, h: 300, plots: { a: [[100, 100], [140, 90], [150, 130]] as [number, number][], b: sq(250, 200) }, unassigned: [sq(60, 220)] };
+    const clip = planClip(zone, 4)!;
+    const inside = ([x, y]: [number, number]) => {
+      let s = 0;
+      for (let i = 0; i < clip.length; i++) {
+        const [ax, ay] = clip[i];
+        const [bx, by] = clip[(i + 1) % clip.length];
+        const c = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+        if (c !== 0) {
+          if (s && Math.sign(c) !== s) return false;
+          s = Math.sign(c);
+        }
+      }
+      return true;
+    };
+    for (const poly of [...Object.values(zone.plots), ...zone.unassigned]) for (const p of poly) expect(inside(p)).toBe(true);
+  });
+
+  it("is null for a plan without shapes", () => {
+    expect(planClip({ w: 10, h: 10, plots: {}, unassigned: [] })).toBeNull();
   });
 });

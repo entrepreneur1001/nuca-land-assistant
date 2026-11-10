@@ -155,3 +155,50 @@ export function planProjector(corners: PlanCorners, w: number, h: number, crs: P
 export function imagePointToLatLng(corners: PlanCorners, w: number, h: number, x: number, y: number, crs: PlanCrs): { lat: number; lng: number } {
   return planProjector(corners, w, h, crs)(x, y);
 }
+
+/**
+ * The part of a plan image worth showing: the convex hull of every plot drawn on it, pushed outwards by `pad`
+ * pixels (clamped to the image), as [x, y] image pixels. Plans carry wide white margins, a title banner and often
+ * the neighbouring zones' drawings; where several zones of a district overlap, those would cover each other.
+ * Null when the plan has no shapes (then the whole image shows).
+ */
+export function planClip(zone: Pick<PlanZone, "w" | "h" | "plots" | "unassigned">, pad = Math.round(Math.max(zone.w, zone.h) * 0.04)): [number, number][] | null {
+  const pts: [number, number][] = [];
+  for (const poly of [...Object.values(zone.plots), ...(zone.unassigned ?? [])]) if (Array.isArray(poly)) for (const [x, y] of poly) pts.push([x, y]);
+  if (pts.length < 3) return null;
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list: [number, number][]) => {
+    const out: [number, number][] = [];
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  const hull = [...half(pts), ...half([...pts].reverse())];
+  if (hull.length < 3) return null;
+  // Push each edge outwards by `pad` and intersect neighbours: a true offset, so thin plans keep their boundary road.
+  const n = hull.length;
+  let area = 0;
+  for (let i = 0; i < n; i++) area += hull[i][0] * hull[(i + 1) % n][1] - hull[(i + 1) % n][0] * hull[i][1];
+  const sign = area >= 0 ? 1 : -1;
+  const lines = hull.map((a, i) => {
+    const b = hull[(i + 1) % n];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const nx = (sign * (b[1] - a[1])) / len;
+    const ny = (-sign * (b[0] - a[0])) / len;
+    return { px: a[0] + nx * pad, py: a[1] + ny * pad, dx: b[0] - a[0], dy: b[1] - a[1] };
+  });
+  const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
+  return lines.map((l, i) => {
+    const m = lines[(i + n - 1) % n];
+    const det = m.dx * l.dy - m.dy * l.dx;
+    // Near-parallel neighbours: the offset point of this edge's start is good enough.
+    const k = Math.abs(det) < 1e-9 ? 0 : ((l.px - m.px) * l.dy - (l.py - m.py) * l.dx) / det;
+    const x = Math.abs(det) < 1e-9 ? l.px : m.px + m.dx * k;
+    const y = Math.abs(det) < 1e-9 ? l.py : m.py + m.dy * k;
+    return [Math.round(clamp(x, zone.w)), Math.round(clamp(y, zone.h))] as [number, number];
+  });
+}
