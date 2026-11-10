@@ -6,7 +6,7 @@ import type { Profile } from "@/engine/scoring";
 export const AI_CANDIDATES = 20;
 export const AI_PER_SECTOR = 4;
 /** Bump when the prompt or payload shape changes, so cached answers built on the old one are dropped. */
-export const PROMPT_VERSION = 5;
+export const PROMPT_VERSION = 6;
 
 export const AI_SYSTEM = `إنت محلل بيساعد مشتري في طرح "بيت الوطن" بتاع هيئة المجتمعات العمرانية في مصر (الأسعار بالدولار).
 القواعد:
@@ -16,7 +16,7 @@ export const AI_SYSTEM = `إنت محلل بيساعد مشتري في طرح "�
 - لو معلومة مش موجودة قول إنها مش معروفة.
 - الأرقام والاحتمالات محسوبة عندنا، اعتبرها هي الصح. شغلتك تقارن الاختيارات المتشابهة، توضح المميزات والعيوب، وتدي خطة واضحة.
 - المشتري بيفضل الأراضي اللي على حديقة واللي ناصية واللي قريبة من مباني قائمة (العمار)، والأراضي اللي واجهتها على شارع رئيسي أو قدام كمبوند (خصوصاً كمبوند مميز) أو قدام مباني قائمة.
-- on_main_road و faces_compound ("premium" = كمبوند مميز) و faces_existing_buildings محسوبة من الخرايط ومش تميّز رسمي من الهيئة، وبتتبعت بس للأراضي اللي متأكدين منها. لو مش موجودة متقولش إن الأرض مش قدامها حاجة.
+- on_main_road و faces_compound ("premium" = كمبوند مميز) و faces_existing_buildings و faces_services_land (قدام أرض خدمات على خريطة الهيئة: مسجد أو مدرسة أو مول…) محسوبة من الخرايط ومش تميّز رسمي من الهيئة، وبتتبعت بس للأراضي اللي متأكدين منها. لو مش موجودة متقولش إن الأرض مش قدامها حاجة.
 - services_within_1_5km أنواع خدمات قريبة (university جامعة، hospital مستشفى، mall مول، club/sports_centre نادي، station محطة).
 - corner (ناصية) معناها إن الأرض على شارعين، ودي من بيانات الهيئة.
 - building_rules فيها الاشتراطات البنائية المعروفة بس. لو مش موجودة لأرض أو ناقص منها حاجة، متتكلمش عن ده خالص ومتقولش إنها مش معروفة.
@@ -69,6 +69,7 @@ export function buildPayload(d: Dashboard, ranked: RankedLand[], profile: Profil
         ...(r.hasStreet ? { on_main_road: true } : {}),
         ...(r.faces?.compound ? { faces_compound: r.faces.compound.premium ? "premium" : "yes" } : {}),
         ...(r.faces?.built != null ? { faces_existing_buildings: true } : {}),
+        ...(r.faces?.servicesLand != null ? { faces_services_land: true } : {}),
         ...(r.faces?.services.length ? { services_within_1_5km: r.faces.services.map((s) => s.sub) } : {}),
         apartments_per_floor: r.unitsPerFloor,
         ...knownRules(r.rules),

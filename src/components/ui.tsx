@@ -84,6 +84,7 @@ export function FeatureBadges({
       ) : null}
       {street ? <Badge tone="accent">{t.badge.street}</Badge> : null}
       {faces?.built != null ? <Badge tone="warn">{t.badge.facingBuilt}</Badge> : null}
+      {faces?.servicesLand != null ? <Badge tone="accent">{t.badge.servicesLand}</Badge> : null}
       {units && units >= 3 ? <Badge tone="good">{t.badge.units(units)}</Badge> : null}
       {nearBuilt ? <Badge tone="warn">{t.badge.nearBuilt}</Badge> : null}
       {sea ? <Badge tone="accent">{t.badge.sea}</Badge> : null}

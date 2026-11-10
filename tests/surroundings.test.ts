@@ -62,6 +62,8 @@ describe("surroundingsFactor", () => {
     expect(c).toBeGreaterThan(r);
     expect(r).toBeGreaterThan(b);
     expect(b).toBeGreaterThan(none);
+    expect(surroundingsFactor(f({ servicesLand: 30 }))).toBeGreaterThan(none);
+    expect(surroundingsFactor(f({ servicesLand: 30, road: 40 }))).toBeGreaterThan(r);
     expect(surroundingsFactor(null)).toBe(none);
   });
   it("adds for a road plus a compound and for a nearby university, capped at 1", () => {
@@ -81,7 +83,7 @@ describe("parseSurroundings", () => {
     const m = parseSurroundings({
       v: 2,
       compounds: { "7": ["كمبوند", 1] },
-      plots: { b: [40, 7, 25, null, [["education", "university", "جامعة", 900]]] },
+      plots: { b: [40, 7, 25, null, [["education", "university", "جامعة", 900]]], d: [null, 0, null, null, [], 35] },
       plain: "aaaaaaaaaaaacccccccccccc",
     });
     expect(m.get("unmeasured")).toBeUndefined();
@@ -90,8 +92,10 @@ describe("parseSurroundings", () => {
       road: 40,
       compound: { id: 7, name: "كمبوند", premium: true, m: 25 },
       built: null,
+      servicesLand: null,
       services: [{ cat: "education", sub: "university", name: "جامعة", m: 900 }],
     });
+    expect(m.get("d")?.servicesLand).toBe(35);
     expect(parseSurroundings(null).size).toBe(0);
     expect(parseSurroundings({ v: 1, compounds: {}, plots: {}, plain: "aaaaaaaaaaaa" }).size).toBe(0);
   });

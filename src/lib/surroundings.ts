@@ -11,6 +11,7 @@ type Row = [
   number | null,
   number | null,
   [string, string, string, number][],
+  (number | null)?,
 ];
 interface File {
   v: number;
@@ -47,7 +48,7 @@ export function parseSurroundings(
 }
 
 function decode(f: File, r: Row): Faces {
-  const [road, cid, cm, built, svc] = r;
+  const [road, cid, cm, built, svc, land] = r;
   const c = cid ? f.compounds[cid] : undefined;
   return {
     road,
@@ -56,6 +57,7 @@ function decode(f: File, r: Row): Faces {
         ? { id: cid, name: c[0], premium: c[1] === 1, m: cm }
         : null,
     built,
+    servicesLand: land ?? null,
     services: (svc ?? []).map(([cat, sub, name, m]) => ({ cat, sub, name, m })),
   };
 }

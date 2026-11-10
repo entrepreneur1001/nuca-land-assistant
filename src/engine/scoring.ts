@@ -271,6 +271,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     if (faces?.compound) reasons.push(faces.compound.premium ? R.premiumCompound(faces.compound.name) : R.compound(faces.compound.name));
     if (hasStreet) reasons.push(R.street);
     if (faces?.built != null) reasons.push(R.facingBuilt);
+    if (faces?.servicesLand != null) reasons.push(R.servicesLand);
     if (hasMajorService(faces)) {
       const sv = faces!.services.find((x) => MAJOR_SERVICES.has(x.sub))!;
       reasons.push(R.service(sv.name, sv.m));

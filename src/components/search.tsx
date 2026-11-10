@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_WEIGHTS } from "@/engine/config";
 import type { RankedLand } from "@/engine/compute";
+import { facesSomething } from "@/engine/surroundings";
 import { FACTOR, km, num, t, usd } from "@/i18n/ar";
 import { track } from "@/lib/firebase";
 import { useApp } from "./app-state";
@@ -43,7 +44,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
         (!f.garden || r.hasGarden) &&
         (!f.corner || r.hasCorner) &&
         (!f.near || r.isNearBuilt) &&
-        (!f.facing || r.hasStreet || !!r.faces?.compound || r.faces?.built != null) &&
+        (!f.facing || r.hasStreet || facesSomething(r.faces)) &&
         // null = the city sets units per plot (New Alamein): always multi-unit.
         (!f.units || r.unitsPerFloor == null || r.unitsPerFloor >= 3),
     );

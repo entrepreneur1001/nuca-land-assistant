@@ -6,7 +6,7 @@
  * Inputs: public/plans/<zid>.json (plot outlines), public/compounds/index.json, public/places/*.json, and
  * OpenStreetMap main roads + buildings around each zone (Overpass, cached in data/surroundings/osm, git-ignored;
  * --refresh asks again). Writes public/surroundings.json:
- *   { v: 2, generated, compounds: { <id>: [name, premium 0|1] }, plots: { <plotId>: [roadM, compoundId, compoundM, builtM, services] },
+ *   { v: 2, generated, compounds: { <id>: [name, premium 0|1] }, plots: { <plotId>: [roadM, compoundId, compoundM, builtM, services, servicesLandM] },
  *     plain: "<12-char id prefixes of measured plots that face nothing, concatenated>" }
  * nulls/0 for the parts that don't apply; services = [[cat, sub, name, m], …].
  * Plots missing from the file were not measured (no outline) and score neutral.
@@ -144,6 +144,10 @@ async function prefetch(zones: Map<number, PlotGeo[]>, perRequest = 10) {
   }
 }
 
+// ---------- services land on the plans (scripts/surroundings/services_land.py) ----------
+const servicesLandFile = path.join(ROOT, "scripts", "surroundings", "services-land.json");
+const servicesLand: Record<string, [number, number][][]> = existsSync(servicesLandFile) ? JSON.parse(readFileSync(servicesLandFile, "utf8")) : {};
+
 // ---------- compounds ----------
 interface Compound {
   id: number;
@@ -194,7 +198,7 @@ const places: Place[] = existsSync(placesDir)
 console.log(`${compounds.length} compounds (${[...premium.values()].filter(Boolean).length} premium), ${places.length} major places`);
 
 // ---------- measure ----------
-type Row = 0 | [number | null, number, number | null, number | null, [string, string, string, number][]];
+type Row = 0 | [number | null, number, number | null, number | null, [string, string, string, number][], number | null];
 const PREFIX = 12;
 const prev = existsSync(OUT) ? (JSON.parse(readFileSync(OUT, "utf8")) as { v: number; plots: Record<string, Row>; plain?: string }) : null;
 const rows: Record<string, Row> = {};
@@ -204,7 +208,7 @@ if (onlyZones && prev?.v === 2) {
   for (const p of plots) if (plainSet.has(p.id.slice(0, PREFIX))) rows[p.id] = 0;
 }
 const usedCompounds = new Set<number>();
-const stats = { plots: 0, road: 0, compound: 0, premium: 0, built: 0, service: 0, any: 0 };
+const stats = { plots: 0, road: 0, compound: 0, premium: 0, built: 0, servicesLand: 0, service: 0, any: 0 };
 
 const byZone = new Map<number, PlotGeo[]>();
 for (const p of plots) byZone.set(p.zid, [...(byZone.get(p.zid) ?? []), p]);
@@ -238,6 +242,11 @@ for (const [zid, zonePlots] of byZone) {
   const zoneCompounds = compounds
     .filter((c) => near({ x0: c.bounds[0][1], y0: c.bounds[0][0], x1: c.bounds[1][1], y1: c.bounds[1][0] }, 0.002))
     .map((c) => ({ c, ring: [...c.ring, c.ring[0]].map(P) }));
+  const planFile = files.find((f) => f.zid === zid)!;
+  const zoneServicesLand = (servicesLand[String(zid)] ?? []).map((poly) => {
+    const r = poly.map(([x, y]) => P(imagePointToLatLng(planFile, x, y)));
+    return [...r, r[0]];
+  });
   const zonePlaces = places.filter((pl) => near({ x0: pl.lng, y0: pl.lat, x1: pl.lng, y1: pl.lat }, 0.02)).map((pl) => ({ pl, xy: P([pl.lat, pl.lng]), ring: pl.ring?.map(P) ?? null }));
 
   for (const p of zonePlots) {
@@ -250,6 +259,7 @@ for (const [zid, zonePlots] of byZone) {
     // Buildings standing inside the plot itself are stale or misplaced data, not neighbours.
     const bld = buildings.filter((b) => !pointInPolygon(b[0], ring)).map((b) => [...b, b[0]]);
     const builtM = facingDistance(ring, bld, localOthers, FACING.builtM);
+    const landM = zoneServicesLand.length ? facingDistance(ring, zoneServicesLand, localOthers, FACING.servicesLandM) : null;
     let comp: { id: number; m: number } | null = null;
     for (const { c, ring: cr } of zoneCompounds) {
       if (pointInPolygon(cen, cr)) continue; // plot drawn inside a compound's outline: one of the two is misplaced
@@ -276,8 +286,9 @@ for (const [zid, zonePlots] of byZone) {
       usedCompounds.add(comp.id);
     }
     if (services.length) stats.service++;
-    if (roadM != null || builtM != null || comp) stats.any++;
-    rows[p.id] = roadM == null && builtM == null && !comp && !services.length ? 0 : [roadM, comp?.id ?? 0, comp?.m ?? null, builtM, services];
+    if (landM != null) stats.servicesLand++;
+    if (roadM != null || builtM != null || comp || landM != null) stats.any++;
+    rows[p.id] = roadM == null && builtM == null && !comp && !services.length && landM == null ? 0 : [roadM, comp?.id ?? 0, comp?.m ?? null, builtM, services, landM];
   }
   if (flag("--debug")) {
     const dir = path.join(ROOT, "data", "surroundings", "debug");

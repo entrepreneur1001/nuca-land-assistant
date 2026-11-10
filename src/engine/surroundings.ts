@@ -16,6 +16,8 @@ export const FACING = {
   compoundM: 120,
   /** Plot edge to an existing building's outline: across one street. */
   builtM: 80,
+  /** Plot edge to services land («اراضي خدمات», pink on the official plan): across one street. */
+  servicesLandM: 60,
   /** Services this close to the plot's centre count as "near". */
   serviceM: 1500,
   /** Spacing of the sample points along the plot's edge. */
@@ -48,6 +50,8 @@ export interface Faces {
   compound: FacingCompound | null;
   /** Metres to the existing buildings it faces; null = faces none. */
   built: number | null;
+  /** Metres to the services land («اراضي خدمات»: a future mosque, school, mall…) it faces on the plan; null = none. */
+  servicesLand?: number | null;
   /** Nearest major services within FACING.serviceM, nearest first. */
   services: NearbyService[];
 }
@@ -63,6 +67,7 @@ export const SURROUNDINGS_VALUES = {
   compound: 0.9,
   road: 0.8,
   built: 0.75,
+  servicesLand: 0.75,
   /** Added when two or more of the above apply (a road-front plot facing a compound). */
   combo: 0.1,
   /** Added when a major service is within FACING.serviceM. */
@@ -73,13 +78,19 @@ export const SURROUNDINGS_VALUES = {
   unknown: 0.5,
 };
 
-export const facesSomething = (f: Faces | null | undefined) => !!f && (f.road != null || f.compound != null || f.built != null);
+export const facesSomething = (f: Faces | null | undefined) =>
+  !!f && (f.road != null || f.compound != null || f.built != null || f.servicesLand != null);
 export const hasMajorService = (f: Faces | null | undefined) => !!f && f.services.some((s) => MAJOR_SERVICES.has(s.sub));
 
 /** 0–1: how good the plot's frontage and surroundings are. */
 export function surroundingsFactor(f: Faces | null | undefined, v = SURROUNDINGS_VALUES): number {
   if (!f) return v.unknown;
-  const parts = [f.compound ? (f.compound.premium ? v.premiumCompound : v.compound) : 0, f.road != null ? v.road : 0, f.built != null ? v.built : 0];
+  const parts = [
+    f.compound ? (f.compound.premium ? v.premiumCompound : v.compound) : 0,
+    f.road != null ? v.road : 0,
+    f.built != null ? v.built : 0,
+    f.servicesLand != null ? v.servicesLand : 0,
+  ];
   const hits = parts.filter((x) => x > 0).length;
   let s = hits ? Math.max(...parts) : v.none;
   if (hits >= 2) s += v.combo;
