@@ -85,5 +85,12 @@ from the old drawing in places.
 Zone 1475 (6th district M) was removed on review: it had been given a sheet-mate's position that its own streets did
 not confirm. New Obour (2026-11-10): 14 of 27 zones (projects 70 and 80 publish the same six zones, so they are drawn
 twice in the same place); 358–360 rejected for the same reason as 1475.
-Not placed: 8th-stage Narges extension (250–256), Amal triangle (288–292), and the small 8th/9th/10th-stage pockets
+Other cities (2026-11-10, every earlier zone the official site lists, matched with batch_g.py and reviewed by
+eye): El Obour 28/45, New Obour 14/27, Sadat 10/33, New Badr 10/27, New Damietta 6/45, Sheikh Zayed 4/17,
+New October 2/18, 6th of October 1/47, New Assiut 1/2, El Shorouk 1/25; none in New Sphinx, New Alamein, New Beni
+Suef, New Mansoura, 10th of Ramadan, New Borg El Arab, New Minya, New Sohag, New Aswan, 15 May, Hadayek El Asema
+(Google has few streets at their sites, or the drawings are close-ups of a few blocks). Qena and Nasser have no
+current plans to search around; New Akhmim, New Fayoum and Hadayek El Asher list no downloadable plans.
+The near-misses are best retried through each project's overview slide (compose.py), as for New Cairo.
+New Cairo not placed: 8th-stage Narges extension (250–256), Amal triangle (288–292), and the small 8th/9th/10th-stage pockets
 (315, 316, 350–353, 429–433, 1509): no unique match, and Google has few streets at several of them.
