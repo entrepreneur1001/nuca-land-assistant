@@ -20,8 +20,11 @@ export interface Compound {
   bounds: [[number, number], [number, number]];
   /** Outline as [lat, lng] points, not closed. */
   ring: [number, number][];
-  /** The master plan fitted onto the map by its silhouette (compoundImageUrl): approximate, a marketing drawing. */
-  plan: { w: number; h: number; corners: PlanCorners; clip: [number, number][] } | null;
+  /**
+   * The master plan laid inside the outline (compoundImageUrl). A marketing drawing, so approximate: "shape" was
+   * matched to the outline, "rough" is the best such match, "cover" is simply stretched over the outline.
+   */
+  plan: { kind: "shape" | "rough" | "cover"; w: number; h: number; corners: PlanCorners; clip: [number, number][] } | null;
   /** Lowest unit price Nawy lists, in EGP; null when it lists none. A moving figure: approximate as of the last fetch. */
   price: number | null;
 }
