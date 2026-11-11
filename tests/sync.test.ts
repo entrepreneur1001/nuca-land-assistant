@@ -591,4 +591,56 @@ describe("live loop: one-request probes", () => {
     expect(lines.find((l) => l.startsWith("tick 5:"))).toMatch(/walked 2 \(0 failed\)/);
     expect(lines.find((l) => l.startsWith("tick 6:"))).toMatch(/^tick 6: 1\/1 probed/);
   });
+
+  it("runLive walks everything again when the site stops accepting the saved page state, and backs off when it does not answer", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1))));
+    const zones: Record<number, FakeSiteData["zones"][number]> = {};
+    const data = siteData(genPlots(45, { square: SQ, status: () => "free" }));
+    for (let z = 0; z < 8; z++) zones[5000 + z] = { name: `z${z}`, egpPerM: 1, plots: genPlots(25, { square: `sq${z}` }) };
+    Object.assign(data.zones, zones);
+    data.projects[2284].zones.push(...Object.keys(zones).map(Number));
+    const { site, opts } = harness(data);
+    let t = T0.getTime();
+    const lines: string[] = [];
+    const stats = await runLive(m.store, {
+      durationMs: 3 * 60_000,
+      delayMs: 0,
+      fetchHtml: opts.fetchHtml,
+      sync: { ...opts, log: () => {} },
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+      log: (...a) => {
+        const line = a.join(" ");
+        lines.push(line);
+        // after tick 1 the site "restarts": every replayed postback gets the error page once
+        if (line.startsWith("tick 1:")) for (let i = 0; i < 9; i++) site.failOnce((r) => r.method === "POST" && r.argument === "Page$2", "302");
+      },
+    });
+    expect(lines.find((l) => l.startsWith("tick 2:"))).toMatch(/page state stale, walked everything again, walked 10/);
+    expect(stats.reseeds).toBe(1);
+    expect(lines.find((l) => l.startsWith("tick 3:"))).toMatch(/0 error\(s\), 0 changed$/);
+
+    // no answer at all: back off instead
+    const lines2: string[] = [];
+    const stats2 = await runLive(m.store, {
+      durationMs: 3 * 60_000,
+      delayMs: 0,
+      fetchHtml: opts.fetchHtml,
+      sync: { ...opts, log: () => {} },
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+      log: (...a) => {
+        const line = a.join(" ");
+        lines2.push(line);
+        if (line.startsWith("seed:")) for (let i = 0; i < 40; i++) site.failOnce((r) => r.method === "POST", "reset");
+      },
+    });
+    expect(stats2.backoffs).toBeGreaterThan(0);
+    expect(lines2.some((l) => /probes got no answer \(.*ECONNRESET/.test(l))).toBe(true);
+  });
 });

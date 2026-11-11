@@ -54,6 +54,7 @@ export interface LiveStats {
   walks: number;
   newlyBooked: number;
   backoffs: number;
+  reseeds: number;
 }
 
 export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStats> {
@@ -79,7 +80,7 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
   // Walks use runSync's own fetcher (15 s, 2 retries) unless a test passes one.
   const probeFetch: FetchHtml = opts.fetchHtml ?? ((url, init) => fetchText(url, { method: init?.method, body: init?.body, headers: init?.headers, timeoutMs: probeTimeoutMs, retries: 0 }));
   const client = createClient(probeFetch, { delayMs, sleep, now });
-  const stats: LiveStats = { ticks: 0, probes: 0, probeErrors: 0, walks: 0, newlyBooked: 0, backoffs: 0 };
+  const stats: LiveStats = { ticks: 0, probes: 0, probeErrors: 0, walks: 0, newlyBooked: 0, backoffs: 0, reseeds: 0 };
   const probes = new Map<number, ZoneProbe>();
   const lastProbeAt = new Map<number, number>();
   const lastWalkAt = new Map<number, number>();
@@ -133,6 +134,9 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
     const changed: number[] = [];
     let probed = 0;
     let errors = 0;
+    let netErrors = 0;
+    let staleErrors = 0;
+    const samples = new Set<string>();
     let next = 0;
     const worker = async () => {
       while (next < queue.length && now() - t0 < probeBudgetMs) {
@@ -142,7 +146,12 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
         lastProbeAt.set(zid, now());
         if (p.error) {
           errors++;
-          if (!p.changed) lastProbeAt.set(zid, 0); // unanswered: first in line next tick
+          if (samples.size < 2) samples.add(p.error.replace(/ for https?:\/\/\S+/, "").slice(0, 120));
+          if (p.changed) staleErrors++;
+          else {
+            netErrors++;
+            lastProbeAt.set(zid, 0); // unanswered: first in line next tick
+          }
         }
         if (p.changed) {
           changed.push(zid);
@@ -154,18 +163,27 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
     stats.probes += probed;
     stats.probeErrors += errors;
 
-    // The site failing most probes (blocking us, or down): don't turn that into walks; wait and try again.
-    if (errors >= 5 && errors * 2 > probed) {
+    const why = samples.size ? ` (${[...samples].join("; ")})` : "";
+    // The site not answering most probes (down, or blocking us): don't turn that into walks; wait and try again.
+    if (netErrors >= 5 && netErrors * 2 > probed) {
       stats.backoffs++;
-      log(`tick ${tick}: ${errors}/${probed} probes failed; backing off 5 min`);
+      log(`tick ${tick}: ${netErrors}/${probed} probes got no answer${why}; backing off 5 min`);
       await sleep(Math.max(0, Math.min(5 * 60_000, end - now())));
       continue;
+    }
+    // The site answering most replayed postbacks with its error page: the saved page state no longer validates (the
+    // site restarted, which voids every ViewState at once). Walk everything again for fresh state.
+    const stale = staleErrors >= 5 && staleErrors * 2 > probed;
+    if (stale) {
+      stats.reseeds++;
+      probes.clear();
+      changed.length = 0;
     }
 
     // 2. walks: changed zones first, then on rotation ticks the zones walked longest ago (never-walked first)
     let walkList: number[] | undefined = [...changed];
     let budget = Math.max(15_000, Math.min(walkBudgetMs, tickMs - (now() - t0) - 5_000));
-    if (tick % rotateEvery === 0) {
+    if (stale || tick % rotateEvery === 0) {
       known = (await store.getMeta())?.official?.zones?.map((z) => z.zid) ?? known;
       if (!known.length || probes.size < known.length / 2) {
         // The seed failed (site down when the loop started): seed again, every zone stalest first, rather than
@@ -181,7 +199,7 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
       const r = await walk(walkList, budget, tick % newsEvery === 0);
       summary = r.error ? `, walk error: ${r.error}` : `, walked ${r.zonesOk} (${r.zonesFailed} failed), ${r.newlyBooked} newly booked, ${r.newlyAvailable} re-available, ${r.changedChunks.length} chunk(s) written`;
     }
-    log(`tick ${tick}: ${probed}/${queue.length} probed in ${Math.round((now() - t0) / 1000)} s, ${errors} error(s), ${changed.length} changed${changed.length ? ` [${changed.join(", ")}]` : ""}${summary}`);
+    log(`tick ${tick}: ${probed}/${queue.length} probed in ${Math.round((now() - t0) / 1000)} s, ${errors} error(s)${why}, ${stale ? "page state stale, walked everything again" : `${changed.length} changed${changed.length ? ` [${changed.join(", ")}]` : ""}`}${summary}`);
 
     // 3. wait for the next minute
     const wait = t0 + tickMs - now();
