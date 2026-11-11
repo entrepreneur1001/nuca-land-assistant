@@ -163,15 +163,22 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
     }
 
     // 2. walks: changed zones first, then on rotation ticks the zones walked longest ago (never-walked first)
-    const walkList = [...changed];
+    let walkList: number[] | undefined = [...changed];
+    let budget = Math.max(15_000, Math.min(walkBudgetMs, tickMs - (now() - t0) - 5_000));
     if (tick % rotateEvery === 0) {
       known = (await store.getMeta())?.official?.zones?.map((z) => z.zid) ?? known;
-      const stale = known.filter((zid) => !changed.includes(zid)).sort((a, b) => (lastWalkAt.get(a) ?? 0) - (lastWalkAt.get(b) ?? 0));
-      walkList.push(...stale);
+      if (!known.length || probes.size < known.length / 2) {
+        // The seed failed (site down when the loop started): seed again, every zone stalest first, rather than
+        // catching up a few zones at a time.
+        walkList = undefined;
+        budget = seedBudgetMs;
+      } else {
+        walkList.push(...known.filter((zid) => !changed.includes(zid)).sort((a, b) => (lastWalkAt.get(a) ?? 0) - (lastWalkAt.get(b) ?? 0)));
+      }
     }
     let summary = "";
-    if (walkList.length) {
-      const r = await walk(walkList, Math.max(15_000, Math.min(walkBudgetMs, tickMs - (now() - t0) - 5_000)), tick % newsEvery === 0);
+    if (!walkList || walkList.length) {
+      const r = await walk(walkList, budget, tick % newsEvery === 0);
       summary = r.error ? `, walk error: ${r.error}` : `, walked ${r.zonesOk} (${r.zonesFailed} failed), ${r.newlyBooked} newly booked, ${r.newlyAvailable} re-available, ${r.changedChunks.length} chunk(s) written`;
     }
     log(`tick ${tick}: ${probed}/${queue.length} probed in ${Math.round((now() - t0) / 1000)} s, ${errors} error(s), ${changed.length} changed${changed.length ? ` [${changed.join(", ")}]` : ""}${summary}`);

@@ -568,4 +568,27 @@ describe("live loop: one-request probes", () => {
     expect(tuples.find((x) => x[2] === "7")).toBeDefined();
     void site;
   });
+
+  it("runLive seeds again on a rotation tick when the first seed failed", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1))));
+    const { site, opts } = harness(siteData(genPlots(45, { square: SQ, status: () => "free" })));
+    for (let i = 0; i < 4; i++) site.failOnce("ViewZone.aspx", "302"); // both zones, both attempts
+    let t = T0.getTime();
+    const lines: string[] = [];
+    await runLive(m.store, {
+      durationMs: 6 * 60_000,
+      delayMs: 0,
+      fetchHtml: opts.fetchHtml,
+      sync: { ...opts, log: () => {} },
+      now: () => t,
+      sleep: async (ms) => {
+        t += ms;
+      },
+      log: (...a) => lines.push(a.join(" ")),
+    });
+    expect(lines[0]).toMatch(/^seed: 0 zone\(s\) probed-ready/);
+    expect(lines.find((l) => l.startsWith("tick 5:"))).toMatch(/walked 2 \(0 failed\)/);
+    expect(lines.find((l) => l.startsWith("tick 6:"))).toMatch(/^tick 6: 1\/1 probed/);
+  });
 });
