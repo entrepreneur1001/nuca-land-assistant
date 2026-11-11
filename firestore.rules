@@ -37,13 +37,14 @@ service cloud.firestore {
 
     // «نبهني لما تتحجز»: a browser's push token + the plots it saved and the cities / districts it follows, one doc per
     // anonymous visitor (src/lib/push.ts). Only the owner writes it; nobody reads it from the client. The sync job
-    // (Admin SDK) reads it and sends the pushes.
+    // (Admin SDK) reads it and sends the pushes. `test: true` asks the job for one test alert (it clears the flag).
     match /watchers/{uid} {
       allow create, update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['token', 'plots', 'areas', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['token', 'plots', 'areas', 'updatedAt', 'test'])
         && request.resource.data.token is string && request.resource.data.token.size() > 0 && request.resource.data.token.size() < 4096
         && request.resource.data.plots is list && request.resource.data.plots.size() <= 50
         && (!('areas' in request.resource.data) || (request.resource.data.areas is list && request.resource.data.areas.size() <= 20))
+        && (!('test' in request.resource.data) || request.resource.data.test == true)
         && request.resource.data.updatedAt == request.time;
       allow delete: if request.auth != null && request.auth.uid == uid;
       allow read: if false;

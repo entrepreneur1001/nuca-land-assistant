@@ -8,11 +8,12 @@ import type { Plot } from "@/data/snapshot";
 import { acknowledge, bookedChanges, onFavoritesChange, removeFavorite, reopen, useFavorites } from "@/lib/favorites";
 import { followName, onFollowsChange, toggleFollow, useFollows, type Follow } from "@/lib/follows";
 import { CURRENT_PHASE, phasePath } from "@/lib/phases";
-import { enablePush, syncWatcher, usePushSupport } from "@/lib/push";
+import { enablePush, requestTestPush, syncWatcher, usePushSupport, useWatcherSync } from "@/lib/push";
 import { useApp } from "./app-state";
 import { FavoriteButton } from "./favorite-button";
 import { track } from "@/lib/firebase";
 import { areaHref } from "@/lib/phases";
+import { Ago } from "./ago";
 import { Badge, Card } from "./ui";
 import { LoadingOrError } from "./load-state";
 
@@ -44,9 +45,15 @@ export function FavoritesWatcher() {
     };
     const offFav = onFavoritesChange(later);
     const offFollow = onFollowsChange(later);
+    // An installed app is rarely reloaded: register again whenever it comes back to the front.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") later();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       offFav();
       offFollow();
+      document.removeEventListener("visibilitychange", onVisible);
       clearTimeout(timer);
     };
   }, []);
@@ -77,8 +84,10 @@ export function FavoritesWatcher() {
 /** «🔔 فعّل الإشعارات», or why it can't be turned on here. */
 export function PushPrompt({ compact = false }: { compact?: boolean }) {
   const support = usePushSupport();
+  const sync = useWatcherSync();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [test, setTest] = useState<"idle" | "busy" | "sent" | "failed">("idle");
   if (support === "unsupported" && compact) return null;
   const text =
     support === "on"
@@ -101,13 +110,53 @@ export function PushPrompt({ compact = false }: { compact?: boolean }) {
       setBusy(false);
     }
   };
+  // Alerts are on in this browser, but did our copy of the list (what the sync job reads) get through?
+  const registered = support === "on" && sync && !sync.error;
+  const broken = support === "on" && !!sync?.error;
+  const retry = async () => {
+    setBusy(true);
+    await syncWatcher();
+    setBusy(false);
+  };
+  const sendTest = async () => {
+    setTest("busy");
+    try {
+      await requestTestPush();
+      setTest("sent");
+    } catch {
+      setTest("failed");
+    }
+  };
   return (
-    <div className={`flex flex-wrap items-center gap-3 rounded-2xl border border-border px-4 py-3 text-sm ${support === "on" ? "bg-good-soft" : "bg-surface-2"}`}>
-      <span className="flex-1">{failed ? t.fav.push.error : text}</span>
-      {support === "ok" ? (
-        <button type="button" disabled={busy} onClick={enable} className="shrink-0 rounded-xl bg-accent px-4 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-60">
-          {busy ? t.fav.push.enabling : t.fav.push.enable}
-        </button>
+    <div className={`rounded-2xl border px-4 py-3 text-sm ${broken ? "border-warn bg-warn-soft" : support === "on" ? "border-border bg-good-soft" : "border-border bg-surface-2"}`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex-1">{failed ? t.fav.push.error : broken ? t.fav.push.notRegistered : text}</span>
+        {support === "ok" ? (
+          <button type="button" disabled={busy} onClick={enable} className="shrink-0 rounded-xl bg-accent px-4 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-60">
+            {busy ? t.fav.push.enabling : t.fav.push.enable}
+          </button>
+        ) : null}
+        {broken ? (
+          <button type="button" disabled={busy} onClick={retry} className="shrink-0 rounded-xl bg-accent px-4 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-60">
+            {busy ? t.fav.push.retrying : t.fav.push.retry}
+          </button>
+        ) : null}
+      </div>
+      {support === "on" && !compact ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted">
+          {registered ? (
+            <span className="flex-1">
+              {t.fav.push.registered(sync.plots ?? 0, sync.areas ?? 0)} <Ago iso={new Date(sync.at).toISOString()} />
+            </span>
+          ) : (
+            <span className="flex-1" />
+          )}
+          <button type="button" disabled={test === "busy"} onClick={sendTest} className="shrink-0 rounded-xl border border-border bg-surface px-3 py-1.5 font-semibold text-text hover:bg-surface-2 disabled:opacity-60">
+            {test === "busy" ? t.fav.push.retrying : t.fav.push.test}
+          </button>
+          {test === "sent" ? <p className="basis-full text-text">{t.fav.push.testSent}</p> : null}
+          {test === "failed" ? <p className="basis-full text-bad">{t.fav.push.testFailed}</p> : null}
+        </div>
       ) : null}
     </div>
   );

@@ -268,7 +268,7 @@ export function LandDetail() {
               {t.detail.sector(sector.available, sector.recentBookings, sector.expectedBookingsBeforeTurn, sector.expectedRemaining)}
             </p>
           ) : null}
-          <p className="mt-3 text-xs text-muted">{t.detail.source} <Ago iso={app.snapshot.meta.fullSyncAt} /></p>
+          <p className="mt-3 text-xs text-muted">{t.detail.source} <Ago iso={app.snapshot.meta.statsAt ?? app.snapshot.meta.fullSyncAt} /></p>
         </Card>
       </div>
     </div>

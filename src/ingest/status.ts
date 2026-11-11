@@ -123,6 +123,8 @@ export interface DeriveResult {
   inserted: string[];
   newlyBooked: string[];
   newlyAvailable: string[];
+  /** Free plots that now carry a preliminary booking («حجز مبدئى»). */
+  newlyHeld: string[];
   /** Previous plots whose (city, zone) has no official counterpart; their status is frozen. */
   unmapped: number;
   /** Official squares not in the mapping table (plots got new ids). */
@@ -152,7 +154,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
     else byZid.set(zid, [...(byZid.get(zid) ?? []), r]);
   }
   const zoneInfo = new Map(input.zones.map((z) => [z.zid, z]));
-  const result: DeriveResult = { records: [], inserted: [], newlyBooked: [], newlyAvailable: [], unmapped, newSquares: [], perZone: new Map() };
+  const result: DeriveResult = { records: [], inserted: [], newlyBooked: [], newlyAvailable: [], newlyHeld: [], unmapped, newSquares: [], perZone: new Map() };
   const newSquares = new Map<string, { zid: number; square: string; n: number }>();
 
   /**
@@ -207,6 +209,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
         rec.bookingTs = 0;
         result.newlyAvailable.push(rec.id);
       } else if (state === 1 && !rec.bookingTs) rec.bookingTs = now;
+      if (state === 2 && was === 0) result.newlyHeld.push(rec.id);
       return rec;
     }
     const id = officialPlotId(zid, row.square, row.plotNo);
@@ -221,6 +224,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
         existing.bookingTs = 0;
         result.newlyAvailable.push(id);
       }
+      if (state === 2 && was === 0) result.newlyHeld.push(id);
       return existing;
     }
     const fresh: PlotRecord = {

@@ -67,7 +67,7 @@ function Results({ computing }: { computing: boolean }) {
     <div className={`space-y-5 transition-opacity ${computing ? "opacity-60" : ""}`}>
       {f.stale ? (
         <div className="rounded-2xl border border-warn bg-warn-soft px-4 py-3 text-sm text-warn">
-          {t.stale} — {t.lastUpdate} <Ago iso={f.lastFullOkAt} />
+          {t.stale} — {t.lastUpdate} <Ago iso={f.lastStatsOkAt ?? f.lastFullOkAt} />
         </div>
       ) : null}
 
@@ -87,7 +87,7 @@ function Results({ computing }: { computing: boolean }) {
             {f.stale ? t.stale : t.live}
           </div>
           <div className="mt-1 text-lg font-bold">
-            <Ago iso={f.lastFullOkAt} />
+            <Ago iso={f.lastStatsOkAt ?? f.lastFullOkAt} />
           </div>
           <div className="text-xs text-muted">{t.lastUpdate}</div>
         </div>

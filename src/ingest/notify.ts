@@ -23,7 +23,9 @@ export interface Watcher {
   areas?: string[];
 }
 
-export type PushKind = "plot" | "area" | "more";
+export type PushKind = "plot" | "area" | "more" | "test";
+/** What happened to the plot: booked for good, or a preliminary booking («حجز مبدئى») was filed on it. */
+export type PushEvent = "booked" | "held";
 
 export interface Push {
   /** Every watcher doc this push goes to (one browser can end up under two uids after storage is cleared). */
@@ -68,7 +70,8 @@ export const pushLink = (plotId: string, kind: PushKind) => `/land?id=${encodeUR
  * One push per booked plot a browser cares about, saved plots first, then followed districts, then cities; at most
  * MAX_PUSHES_PER_BROWSER, the last one summing up the rest when there are more.
  */
-export function buildPushes(watchers: Watcher[], booked: PlotLabel[]): Push[] {
+export function buildPushes(watchers: Watcher[], booked: PlotLabel[], event: PushEvent = "booked"): Push[] {
+  const held = event === "held";
   const byToken = new Map<string, { watcherIds: string[]; plots: Set<string>; areas: Set<string> }>();
   for (const w of watchers) {
     if (!w.token || typeof w.token !== "string") continue;
@@ -96,14 +99,14 @@ export function buildPushes(watchers: Watcher[], booked: PlotLabel[]): Push[] {
         token,
         kind: h.kind,
         plotId: h.b.id,
-        title: h.kind === "plot" ? t.fav.pushTitle : t.fav.pushAreaTitle(h.area),
+        title: h.kind === "plot" ? (held ? t.fav.pushHeldTitle : t.fav.pushTitle) : held ? t.fav.pushHeldAreaTitle(h.area) : t.fav.pushAreaTitle(h.area),
         body: t.fav.label(h.b.plotNo, h.b.sector, h.b.city),
         link: pushLink(h.b.id, h.kind),
       });
     }
     const rest = hits.length - single.length;
     if (rest > 0) {
-      out.push({ watcherIds, token, kind: "more", plotId: null, title: t.fav.pushMoreTitle(rest), body: t.fav.pushManyBody, link: "/favorites?from=push&k=more" });
+      out.push({ watcherIds, token, kind: "more", plotId: null, title: held ? t.fav.pushHeldMoreTitle(rest) : t.fav.pushMoreTitle(rest), body: t.fav.pushManyBody, link: "/favorites?from=push&k=more" });
     }
   }
   return out;
@@ -111,7 +114,14 @@ export function buildPushes(watchers: Watcher[], booked: PlotLabel[]): Push[] {
 
 /** FCM errors that mean the token is gone for good (the visitor revoked permission, cleared data, …). */
 export function isDeadToken(code: string | undefined): boolean {
-  return code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token" || code === "messaging/invalid-argument";
+  // Not "messaging/invalid-argument": FCM also answers that for a message it dislikes, and a healthy follower must not
+  // lose their registration over it.
+  return code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token";
+}
+
+/** The «إشعار تجريبي» a visitor asks for from /favorites, to see that alerts reach this device. */
+export function testPush(w: Watcher): Push {
+  return { watcherIds: [w.id], token: w.token, kind: "test", plotId: null, title: t.fav.push.testTitle, body: t.fav.push.testBody, link: "/favorites?from=push&k=test" };
 }
 
 /** Totals over a nightly read of every watcher doc, for /impact. */

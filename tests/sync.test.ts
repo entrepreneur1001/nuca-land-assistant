@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { packTuples, tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple } from "@/data/snapshot";
-import { createClient, crawlZone, probeZone } from "@/ingest/nuca-plots";
+import { createClient, crawlZone, probeZone, type ZoneProbe } from "@/ingest/nuca-plots";
 import { runLive } from "@/ingest/live";
 import { OFFICIAL_SITE, officialUrl } from "@/ingest/official";
 import { normalizeName, type OfficialZoneEntry } from "@/ingest/official-map";
@@ -539,6 +539,7 @@ describe("live loop: one-request probes", () => {
     const lines: string[] = [];
     const stats = await runLive(m.store, {
       durationMs: 3 * 60_000,
+      rotateEvery: 5,
       delayMs: 0,
       fetchHtml: opts.fetchHtml,
       sync: { ...opts, log: () => {} },
@@ -567,6 +568,76 @@ describe("live loop: one-request probes", () => {
     const tuples = await loadTuples(m.store, m.meta!);
     expect(tuples.find((x) => x[2] === "7")).toBeDefined();
     void site;
+  });
+
+  it("runLive resumes from the saved probes without a seed walk, saves them again, and survives a tick that throws", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1))));
+    const data = siteData(genPlots(45, { square: SQ, status: () => "free" }));
+    const { site, opts } = harness(data);
+    let t = T0.getTime();
+    const clock = { now: () => t, sleep: async (ms: number) => void (t += ms) };
+    let saved: { probes: Map<number, ZoneProbe>; savedAt: number } | null = null;
+    const state = {
+      load: async () => saved,
+      save: async (probes: Map<number, ZoneProbe>) => void (saved = { probes: new Map(probes), savedAt: t }),
+    };
+    // first job: nothing saved yet, so it seeds and saves
+    const first = await runLive(m.store, { durationMs: 60_000, rotateEvery: 5, delayMs: 0, fetchHtml: opts.fetchHtml, sync: { ...opts, log: () => {} }, ...clock, log: () => {}, state });
+    expect(first.resumed).toBe(false);
+    expect(saved!.probes.size).toBe(2);
+
+    // between the jobs plot 7 is booked; the second job starts from the saved probes and finds it on its first tick
+    data.zones[4797].plots.find((p) => p.plotNo === "7")!.status = "booked";
+    const before = site.requests.length;
+    const lines: string[] = [];
+    const booked: string[] = [];
+    let failTick = true;
+    const failing = {
+      ...m.store,
+      getMeta: async () => {
+        // the store hiccups once, on the second tick's walk
+        if (lines.some((l) => l.startsWith("tick 1:")) && failTick) {
+          failTick = false;
+          throw new Error("firestore unavailable");
+        }
+        return m.store.getMeta();
+      },
+    };
+    const second = await runLive(failing, {
+      durationMs: 3 * 60_000,
+      delayMs: 0,
+      fetchHtml: opts.fetchHtml,
+      sync: { ...opts, log: () => {} },
+      ...clock,
+      log: (...a) => lines.push(a.join(" ")),
+      state,
+      onRun: async (r) => void booked.push(...r.newlyBookedLabels.map((l) => l.plotNo)),
+    });
+    expect(second.resumed).toBe(true);
+    expect(lines[0]).toMatch(/^resumed with 2 of 2 zone\(s\)/);
+    expect(lines.some((l) => l.startsWith("seed:"))).toBe(false);
+    expect(lines[1]).toMatch(/^tick 1: 2\/2 probed .* 1 changed \[4797\].* 1 newly booked/);
+    expect(booked).toEqual(["7"]);
+    expect(second.ticks).toBe(3);
+    // the first request of the second job is a probe (a POST replaying page 2), not a walk from page 1
+    expect(site.requests[before].method).toBe("POST");
+  });
+
+  it("runSync reports free plots that got a preliminary booking, but not ones booked outright", async () => {
+    const m = memStore();
+    await seedStore(m, Array.from({ length: 45 }, (_, i) => rec(String(i + 1))));
+    const data = siteData(genPlots(45, { square: SQ, status: () => "free" }));
+    const { opts } = harness(data);
+    await runSync(m.store, { ...opts, log: () => {} });
+    data.zones[4797].plots.find((p) => p.plotNo === "3")!.status = "held";
+    data.zones[4797].plots.find((p) => p.plotNo === "4")!.status = "booked";
+    const r = await runSync(m.store, { ...opts, log: () => {} });
+    expect(r.newlyHeldLabels.map((l) => l.plotNo)).toEqual(["3"]);
+    expect(r.newlyBookedLabels.map((l) => l.plotNo)).toEqual(["4"]);
+    // still held next run: not reported again
+    const again = await runSync(m.store, { ...opts, log: () => {} });
+    expect(again.newlyHeldLabels).toEqual([]);
   });
 
   it("runLive seeds again on a rotation tick when the first seed failed", async () => {
@@ -605,6 +676,7 @@ describe("live loop: one-request probes", () => {
     const lines: string[] = [];
     const stats = await runLive(m.store, {
       durationMs: 3 * 60_000,
+      rotateEvery: 5,
       delayMs: 0,
       fetchHtml: opts.fetchHtml,
       sync: { ...opts, log: () => {} },

@@ -97,6 +97,8 @@ export interface RunResult {
   newlyBookedPlots: { id: string; city: string; sector: string | null; zone: string | null; plotNo: string; total: number }[];
   /** Every plot that became booked this run, labelled for the «مفضلتك» push alerts (not capped). */
   newlyBookedLabels: PlotLabel[];
+  /** Free plots that got a preliminary booking («حجز مبدئى») this run, labelled the same way. */
+  newlyHeldLabels: PlotLabel[];
   /** One-request change probes for the zones whose available view was walked completely this run. */
   probes: Map<number, ZoneProbe>;
   error?: string;
@@ -195,6 +197,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     officialNew: [],
     newlyBookedPlots: [],
     newlyBookedLabels: [],
+    newlyHeldLabels: [],
     probes: new Map(),
   };
   const news: NewsStep = opts.skipNews
@@ -295,10 +298,14 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     const max = OFFICIAL_SITE.maxNewlyBookedPerRun;
     if (result.newlyBooked > max && !opts.acceptLarge) throw new Error(`suspicious: ${result.newlyBooked} plots newly booked in one run (> ${max}); re-run with --accept-large if the site really says so`);
     const byId = new Map(derived.records.map((r) => [r.id, r]));
-    result.newlyBookedLabels = derived.newlyBooked.map((id) => {
+    const labelOf = (id: string): PlotLabel => {
       const r = byId.get(id)!;
       return { id, plotNo: r.plotNo, sector: r.sectorName, sectorId: r.sectorId, city: r.cityName };
-    });
+    };
+    result.newlyBookedLabels = derived.newlyBooked.map(labelOf);
+    // A plot held and booked in the same run counts as booked only.
+    const bookedNow = new Set(derived.newlyBooked);
+    result.newlyHeldLabels = derived.newlyHeld.filter((id) => !bookedNow.has(id) && byId.get(id)?.state === 2).map(labelOf);
     result.newlyBookedPlots = derived.newlyBooked.slice(0, 200).map((id) => {
       const r = byId.get(id)!;
       return { id, city: r.cityName, sector: r.sectorName, zone: r.zoneName, plotNo: r.plotNo, total: r.total };
@@ -489,7 +496,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     if (oldest) meta.fullSyncAt = oldest;
     meta.lastError = null;
     result.durationMs = Date.now() - t0;
-    const summary = `${result.mode}: ${records.length} plots (${booked} booked, ${held} held), +${result.inserted} new, ${result.newlyBooked} newly booked, ${result.newlyAvailable} re-available, ${result.changedChunks.length} chunk(s) changed, ${Math.round(result.durationMs / 1000)}s`;
+    const summary = `${result.mode}: ${records.length} plots (${booked} booked, ${held} held), +${result.inserted} new, ${result.newlyBooked} newly booked, ${result.newlyHeldLabels.length} newly held, ${result.newlyAvailable} re-available, ${result.changedChunks.length} chunk(s) changed, ${Math.round(result.durationMs / 1000)}s`;
     if (opts.dryRun) {
       log(`DRY RUN ${summary}`);
       const perCity = new Map<string, { total: number; booked: number; held: number; newly: number; inserted: number }>();

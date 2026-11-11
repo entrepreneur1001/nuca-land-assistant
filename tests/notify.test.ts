@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PUSHES_PER_BROWSER, areaKeys, buildPushes, census, chunks, isDeadToken, type PlotLabel } from "@/ingest/notify";
+import { MAX_PUSHES_PER_BROWSER, areaKeys, buildPushes, census, chunks, isDeadToken, testPush, type PlotLabel } from "@/ingest/notify";
 
 const booked: PlotLabel[] = [
   { id: "p1", plotNo: "12", sector: "الحي ٣", sectorId: "s3", city: "العبور" },
@@ -79,6 +79,8 @@ describe("helpers", () => {
   it("dead tokens", () => {
     expect(isDeadToken("messaging/registration-token-not-registered")).toBe(true);
     expect(isDeadToken("messaging/internal-error")).toBe(false);
+    // FCM also says this about a message it dislikes: not a reason to drop a follower
+    expect(isDeadToken("messaging/invalid-argument")).toBe(false);
     expect(isDeadToken(undefined)).toBe(false);
   });
   it("census", () => {
@@ -90,4 +92,20 @@ describe("helpers", () => {
     expect(c).toMatchObject({ people: 2, plotsSaved: 3, areasFollowed: 1 });
     expect(c.topPlots[0]).toEqual({ key: "p1", n: 2 });
   });
+
+  it("words a preliminary booking differently and builds the test alert", () => {
+    const plot: PlotLabel = { id: "p1", plotNo: "12", sector: "الحي 3", sectorId: "s1", city: "العلمين الجديدة" };
+    const w = [{ id: "u1", token: "tok", plots: [], areas: ["c:العلمين الجديدة"] }];
+    const booked = buildPushes(w, [plot]);
+    const held = buildPushes(w, [plot], "held");
+    expect(booked).toHaveLength(1);
+    expect(held).toHaveLength(1);
+    expect(held[0].title).toContain("حجز مبدئي");
+    expect(held[0].title).toContain("العلمين الجديدة");
+    expect(held[0].title).not.toBe(booked[0].title);
+    expect(held[0].link).toBe(booked[0].link);
+    const test = testPush({ id: "u1", token: "tok" });
+    expect(test).toMatchObject({ token: "tok", kind: "test", plotId: null, watcherIds: ["u1"] });
+  });
 });
+

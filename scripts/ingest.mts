@@ -23,6 +23,7 @@ let pushes: Awaited<ReturnType<typeof notifyWatchers>> | null = null;
 if (!r.error && !r.dryRun && !process.env.NO_PUSH) {
   try {
     if (r.newlyBookedLabels.length) pushes = await notifyWatchers(r.newlyBookedLabels);
+    if (r.newlyHeldLabels.length) await notifyWatchers(r.newlyHeldLabels, "held");
     await updateCensus(args.has("--full"));
   } catch (e) {
     console.warn(`push: skipped (${e instanceof Error ? e.message : e})`);
@@ -30,6 +31,6 @@ if (!r.error && !r.dryRun && !process.env.NO_PUSH) {
 }
 
 console.log(
-  JSON.stringify({ ...r, changedChunks: r.changedChunks.length, officialNew: r.officialNew.map((i) => i.nid), newlyBookedPlots: r.newlyBookedPlots.length, newlyBookedLabels: r.newlyBookedLabels.length, pushes }),
+  JSON.stringify({ ...r, changedChunks: r.changedChunks.length, officialNew: r.officialNew.map((i) => i.nid), newlyBookedPlots: r.newlyBookedPlots.length, newlyBookedLabels: r.newlyBookedLabels.length, newlyHeldLabels: r.newlyHeldLabels.length, pushes }),
 );
 process.exit(r.error ? 1 : 0);

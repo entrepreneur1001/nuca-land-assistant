@@ -12,6 +12,8 @@ import { ensureAnonymousAuth, firebaseApp, firestore, track, whenAppCheckReady }
  * plots, or any plot in a followed city / district, gets booked.
  */
 const ON_KEY = "nuca.push";
+/** What this browser last registered with us: { at, plots, areas } on success, { at, error } on failure. */
+const SYNC_KEY = "nuca.push.sync";
 const SW_URL = "/firebase-messaging-sw.js";
 // FCM's own default scope: the worker never controls the site's pages.
 const SW_SCOPE = "/firebase-cloud-messaging-push-scope";
@@ -71,14 +73,55 @@ async function token(): Promise<string> {
   return getToken(getMessaging(firebaseApp()), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
 }
 
-async function writeWatcher() {
+export interface WatcherSync {
+  at: number;
+  plots?: number;
+  areas?: number;
+  error?: string;
+}
+
+let syncCache: { raw: string | null; value: WatcherSync | null } = { raw: null, value: null };
+/** The last attempt to register this browser's list with us (null: never tried). */
+export function watcherSync(): WatcherSync | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(SYNC_KEY);
+  } catch {}
+  if (raw !== syncCache.raw) {
+    let value: WatcherSync | null = null;
+    try {
+      value = raw ? (JSON.parse(raw) as WatcherSync) : null;
+    } catch {}
+    syncCache = { raw, value };
+  }
+  return syncCache.value;
+}
+
+function recordSync(s: WatcherSync) {
+  try {
+    localStorage.setItem(SYNC_KEY, JSON.stringify(s));
+  } catch {}
+  for (const l of listeners) l();
+}
+
+export function useWatcherSync(): WatcherSync | null {
+  return useSyncExternalStore(subscribe, watcherSync, () => null);
+}
+
+async function writeWatcher(test = false) {
   const plots = Object.keys(getFavorites()).slice(0, MAX_FAVORITES);
   const areas = Object.keys(getFollows()).slice(0, MAX_FOLLOWS);
-  await whenAppCheckReady();
-  const user = await ensureAnonymousAuth();
-  const ref = doc(firestore(), "watchers", user.uid);
-  if (!plots.length && !areas.length) return deleteDoc(ref);
-  await setDoc(ref, { token: await token(), plots, areas, updatedAt: serverTimestamp() });
+  try {
+    await whenAppCheckReady();
+    const user = await ensureAnonymousAuth();
+    const ref = doc(firestore(), "watchers", user.uid);
+    if (!plots.length && !areas.length) await deleteDoc(ref);
+    else await setDoc(ref, { token: await token(), plots, areas, updatedAt: serverTimestamp(), ...(test ? { test: true } : {}) });
+    recordSync({ at: Date.now(), plots: plots.length, areas: areas.length });
+  } catch (e) {
+    recordSync({ at: Date.now(), error: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
+    throw e;
+  }
 }
 
 /** Asks for permission and registers this browser for the saved plots and followed areas. Resolves to the resulting state. */
@@ -102,11 +145,21 @@ export async function enablePush(): Promise<PushSupport> {
 }
 
 /** Keeps the Firestore copy in step with the saved plots and followed areas (and the token fresh). Does nothing unless push is on. */
-export async function syncWatcher() {
-  if (pushSupport() !== "on") return;
+export async function syncWatcher(): Promise<boolean> {
+  if (pushSupport() !== "on") return false;
   try {
     await writeWatcher();
+    return true;
   } catch (e) {
     console.warn("push: sync failed", e);
+    void track("push_sync_failed", { error: (e instanceof Error ? e.message : String(e)).slice(0, 100) });
+    return false;
   }
+}
+
+/** «ابعتلي إشعار تجريبي»: registers the list again with a flag the sync job answers with one test alert (within a minute or two). */
+export async function requestTestPush(): Promise<void> {
+  if (pushSupport() !== "on") throw new Error("push is off");
+  await writeWatcher(true);
+  void track("push_test");
 }

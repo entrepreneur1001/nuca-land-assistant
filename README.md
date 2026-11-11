@@ -4,11 +4,11 @@ A public, Arabic (Egyptian), phone-friendly site that answers:
 
 > **With my rank and the money I paid, which NUCA plots can I realistically book, ideally on a garden, a corner (ناصية), and near already-built areas?**
 
-Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the sync, triggered by **cron-job.org**: a loop that catches bookings within about a minute during Cairo working hours, hourly otherwise.
+Everything runs on free tiers: **Firebase (Spark)** Hosting, Firestore, AI Logic, Analytics, plus **GitHub Actions** for the sync, triggered by **cron-job.org**: a loop that runs around the clock and catches bookings within about a minute.
 
 ```
 lands.nuca.gov.eg (official: zone tables + news) ─┐
-OpenStreetMap (only for plots new to the snapshot) ┤→ cron-job.org → GitHub Actions (~1-min loop Sun–Thu 10–22 Cairo; hourly otherwise) → Firestore (meta + 8 gzipped plot chunks, AI cache)
+OpenStreetMap (only for plots new to the snapshot) ┤→ cron-job.org → GitHub Actions (~1-min loop, around the clock) → Firestore (meta + 8 gzipped plot chunks, AI cache)
                                                           ↓ public read
           Firebase Hosting (static Next.js export) → the visitor's browser computes the ranking (Web Worker)
                                                    ↳ Gemini via Firebase AI Logic (App Check / Fraud Defense)
@@ -54,25 +54,28 @@ Deploy: `npm run deploy` (tests, static build, then `firebase deploy` of hosting
 
 ## Data sync (cron-job.org → GitHub Actions)
 
-`.github/workflows/sync.yml` runs `scripts/ingest.mts` (public repo, so Actions minutes are free). The cadence is **about every minute Sunday–Thursday 10:00–22:00 Africa/Cairo (the live loop below), and hourly the rest of the time**.
+`.github/workflows/live.yml` runs `scripts/live.mts` around the clock (public repo, so Actions minutes are free): bookings reach the site and the «مفضلتك» alerts **within about a minute, every day**. `sync.yml` (`scripts/ingest.mts`, one whole run) has no schedule any more; it is for one-off manual jobs.
 
-### The live loop (peak hours, ~1 minute)
+### The live loop (~1 minute, 24/7)
 
 Re-walking every zone every minute would be ~570 requests a minute against a government site behind a firewall, so the loop (`.github/workflows/live.yml` → `scripts/live.mts` → `src/ingest/live.ts`) detects changes instead:
 
 - **Probe.** A booking removes a plot from its zone's available view and shifts every later page by one, so the zone's **last page** loses a row (or disappears) whenever any plot in it is booked, and gains one when a plot is offered again. The probe compares only that row count: the site orders tied rows differently from one request to the next, so comparing the rows themselves flagged changes that weren't there. The site accepts a page's postback state again later, so replaying "go to page N" with the hidden fields of page N−1 (saved from the last walk) reads the last page with **one request**; a one-page zone is a plain GET. A postback for a page that no longer exists answers with the error page, which also counts as a change.
-- **Each minute:** probe zones most overdue first for up to 40 s (zones with plots every minute, empty zones every 5 minutes, zones that changed in the last hour first), walk only the zones whose probe changed with `runSync({ onlyZones })`, and send the «مفضلتك» pushes. Every 5th minute it also walks the zones walked longest ago (held flags, and a booking and a release in the same zone within one minute, which leave the count unchanged); every 15th it re-reads the news. A quiet minute costs ~50 requests (~1 per second, the same pace as a normal crawl) and no Firestore writes. If most probes fail (site down or blocking us) it backs off for 5 minutes instead of turning failures into walks.
-- **Start:** a normal walk of every zone (~7 min) seeds the probes.
-- **Schedule:** cron-job.org dispatches `live.yml` at 10:00 and 15:52, Sun–Thu (two jobs). Each job loops for 350 minutes (a GitHub job may run 6 h); the 15:52 dispatch waits in the shared `sync` concurrency group and starts when the morning job ends (~15:55). Normal `sync.yml` runs that fire meanwhile queue behind the loop, so only one process writes `meta/current` at a time. GitHub keeps one pending run per group and a newer one replaces it, which is why the morning loop must end before the hourly dispatch at 16:05 (the 350-minute margin).
+- **Each minute:** probe zones most overdue first for up to 40 s (zones with plots every minute, empty zones every 5 minutes, zones that changed in the last hour first), walk the zones whose probe changed with `runSync({ onlyZones })`, then spend what is left of the minute walking the zones walked longest ago (held flags, and a booking and a release in the same zone within one minute, which leave the count unchanged), and send the pushes: «اتحجزت» for a booking and «حجز مبدئي» for a preliminary one. A booking is caught by the probe (about a minute); a preliminary booking only by that rotation, so it can take from minutes up to an hour or so. Every 15th minute it re-reads the news. If most probes fail (site down or blocking us) it backs off for 5 minutes instead of turning failures into walks. A tick that throws (Firestore or the site hiccuping) is logged and skipped.
+- **One writer, few reads:** the loop keeps its own copy of the snapshot it last wrote (`cachingStore`), so a walk a minute doesn't read all of Firestore a minute; the copy is dropped every 15 minutes. Don't dispatch `sync.yml` while a loop runs: two writers undo each other's changes and repeat alerts.
+- **Start / hand-over:** the loop saves its probes to Firestore `live/s0..s7` every 5 minutes and when it ends; the next job loads them and starts probing at once (a booking made in between changes the zone's last page, so the first probe finds it). Without recent saved probes (first run, or more than 2 h old) a walk of every zone (~7 min) seeds them.
+- **Nightly full pass:** at 03:00–05:00 Cairo, once a day, the loop walks everything in full (booked views too) and re-reads the zone list, then refreshes the /impact census.
+- **Test alert:** «ابعتلي إشعار تجريبي» on /favorites sets `test: true` on the visitor's `watchers` doc; the loop answers it within a tick with one push and clears the flag.
+- **Schedule:** cron-job.org dispatches `live.yml` **every 10 minutes, every day** (one job). Each job loops for 350 minutes (a GitHub job may run 6 h). In the `live` concurrency group GitHub keeps one run going and one waiting (a newer dispatch replaces the waiting one), so the waiting run starts the moment the running one ends or crashes: at most ~10 minutes without a loop after a crash, none at a normal hand-over. (Until 2026-11-11 the loop shared the `sync` group with the hourly run, and an hourly dispatch replaced the waiting loop, so it never started that day.)
 - Measured on 2026-11-11: 56 of 111 zones had plots on offer, a probe takes ~1.35 s, and a "go to the last page" postback (`Page$Last`) is refused by the site's event validation, hence the replay of page N−1.
 
-The 5-minute runs are *quick* runs (`quick` input): they crawl the stalest zones for 3 minutes (zones not reached go first next run, so every zone is re-read about every 10 minutes) and skip the OpenStreetMap distance work, which waits for the hourly run. A full crawl of all zones takes ~7 minutes at the site's safe pace (2 workers, 750 ms), so it cannot fit a 5-minute slot.
+`sync.yml` also has a *quick* input (crawl the stalest zones for 3 minutes, skip OpenStreetMap), kept from the time before the loop.
 
-GitHub's own `schedule:` cron is **not** the trigger: GitHub runs scheduled workflows best-effort and, with `*/15`, this repo observed gaps of 2–6 hours. The workflow keeps an hourly `schedule:` only as a backup. The real trigger is [cron-job.org](https://cron-job.org) (free, timezone-aware), which calls GitHub's `workflow_dispatch` API.
+GitHub's own `schedule:` cron is **not** used: GitHub runs scheduled workflows best-effort and, with `*/15`, this repo observed gaps of 2–6 hours. The trigger is [cron-job.org](https://cron-job.org) (free, timezone-aware), which calls GitHub's `workflow_dispatch` API.
 
 ```bash
 gh secret set FIREBASE_SERVICE_ACCOUNT < service-account.json
-gh workflow run sync.yml -f full=true                  # a full pass (available + booked views)
+gh workflow run sync.yml -f full=true                  # a full pass by hand (only while no loop is running)
 gh workflow run live.yml -f minutes=20 -f dry_run=true # try the live loop for 20 minutes, writing nothing
 ```
 
@@ -80,16 +83,14 @@ The official site needs no credentials. (Until Nov 2026 the data came from a thi
 
 ### One-time trigger setup
 
-1. **GitHub token.** GitHub → Settings → Developer settings → Fine-grained personal access tokens → *Generate new token*. Repository access: only `entrepreneur1001/nuca-land-assistant`. Permissions: **Actions → Read and write** (nothing else). Pick the longest expiry and put the renewal date in your calendar; when it expires, the 5-minute cadence silently falls back to the hourly GitHub cron.
-2. **cron-job.org jobs.** Create two jobs with the same request and only the schedule different:
-   - URL: `https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/sync.yml/dispatches`
-   - Method: `POST`. Body: `{"ref":"main"}` (Job A: `{"ref":"main","inputs":{"quick":"true"}}`)
+1. **GitHub token.** GitHub → Settings → Developer settings → Fine-grained personal access tokens → *Generate new token*. Repository access: only `entrepreneur1001/nuca-land-assistant`. Permissions: **Actions → Read and write** (nothing else). Pick the longest expiry and put the renewal date in your calendar; when it expires nothing starts the loop any more: the running job finishes its 350 minutes and the site stops updating, so watch cron-job.org's failure emails.
+2. **cron-job.org job.** One job:
+   - URL: `https://api.github.com/repos/entrepreneur1001/nuca-land-assistant/actions/workflows/live.yml/dispatches`
+   - Method: `POST`. Body: `{"ref":"main"}`
    - Headers: `Authorization: Bearer <the token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`, `User-Agent: nuca-sync-trigger`
-   - Timezone: `Africa/Cairo`. Treat HTTP `204` as success. Turn on failure notifications (email).
-   - **Jobs L1/L2, live loop:** URL `…/actions/workflows/live.yml/dispatches`, body `{"ref":"main"}`, at `10:00` (L1) and `15:52` (L2), days `Sun–Thu`.
-   - **Job A, peak (quick):** *disabled since the live loop* (it would only queue behind it). Was: minutes `0,10,15,…,55` (every 5 except `5`), hours `10–21`, days `Sun–Thu`, body `{"ref":"main","inputs":{"quick":"true"}}`.
-   - **Job B, off-hours:** minute `5`, every hour, every day. (Inside the window it takes Job A's minute-5 slot and runs a normal pass, which catches up on OpenStreetMap.)
-3. **Check.** Press *Run now* on Job A, then `gh run list --workflow=sync.yml --limit 5 --json event,createdAt,conclusion` should show a `workflow_dispatch` run within about a minute. After an hour inside the window, runs land every 5 minutes.
+   - Schedule: minutes `0,10,20,30,40,50`, every hour, every day. Timezone: `Africa/Cairo`. Treat HTTP `204` as success. Turn on failure notifications (email).
+   - The older jobs (two loop starts at 10:00/15:52, the 5-minute quick runs, the hourly off-hours run) are disabled.
+3. **Check.** `gh run list --workflow=live.yml --limit 3` should show one run `in_progress` and one `pending`; the running job's log has a `[live] tick N: …` line per minute.
 
 The token lives only in cron-job.org. Nothing secret is stored in this repo.
 
