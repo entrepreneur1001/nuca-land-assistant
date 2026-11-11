@@ -25,6 +25,8 @@ const CITY_SLUGS: Record<string, string> = {
   "حدائق العاصمة": "hadayek-el-asema",
   "دمياط الجديدة": "new-damietta",
   "العبور": "obour",
+  "قنا الجديدة": "new-qena",
+  "ناصر (غرب أسيوط)": "nasser-west-assiut",
 };
 
 export const hasCitySlug = (name: string) => Object.hasOwn(CITY_SLUGS, name);
