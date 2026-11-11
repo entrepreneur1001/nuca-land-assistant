@@ -14,7 +14,7 @@ import { IMAGERY_ATTRIBUTION } from "./map-controls";
 import { addPlaces } from "./places-layer";
 import { loadPlacesNear } from "@/lib/places";
 import { loadPlans } from "@/lib/plans";
-import { addPlanLabels } from "./plan-labels";
+import { addPlanLabels, labelView } from "./plan-labels";
 import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -142,6 +142,12 @@ export function AreaMap({
       });
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
+      // One district chosen: zoom in until its plot numbers show (after limitToCity, so the user can still
+      // pan over the whole district and zoom back out to it).
+      if (districts.length === 1) {
+        const v = labelView(layers.flatMap((l) => [...l.labels()]));
+        if (v && v.zoom > map.getZoom()) map.setView([v.lat, v.lng], v.zoom, { animate: false });
+      }
       for (const l of layers) {
         l.setHighlight(lit.current);
         l.setBookedVisible(!hideBooked.current);

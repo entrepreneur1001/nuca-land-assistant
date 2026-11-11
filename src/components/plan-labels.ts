@@ -65,6 +65,34 @@ export function labelFontPx(sizePx: number, text: string): number {
   return f >= LABEL_MIN_PX ? Math.round(f) : 0;
 }
 
+/**
+ * Where to look so the plot numbers of a district can be read: the lowest zoom at which most plots (judged by the
+ * lower-quartile size and upper-quartile number length) get their number drawn, centred on the plot nearest the
+ * middle of them all (so the view lands on plots, not on a park between blocks). Null when there are no labels.
+ * Capped at `maxZoom`.
+ */
+export function labelView(labels: readonly PlanLabel[], maxZoom = 19): { lat: number; lng: number; zoom: number } | null {
+  if (!labels.length) return null;
+  const pick = (xs: number[], q: number) => xs.sort((a, b) => a - b)[Math.floor((xs.length - 1) * q)];
+  // The smaller plots (lower quartile) and longer numbers (upper quartile) decide, so most numbers show, not half.
+  const sizeM = pick(labels.map((l) => l.sizeM), 0.25);
+  const len = pick(labels.map((l) => l.text.length), 0.75);
+  // Smallest on-screen size labelFontPx accepts for this length.
+  const needPx = Math.max(LABEL_MIN_PX / 0.55, (LABEL_MIN_PX * DIGIT_EM * len) / 0.85);
+  const lat = labels.reduce((s, l) => s + l.lat, 0) / labels.length;
+  const lng = labels.reduce((s, l) => s + l.lng, 0) / labels.length;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  // mPerPx(z) = EARTH_M·cos(lat) / (256·2^z) must be ≤ sizeM / needPx.
+  const zoom = Math.min(maxZoom, Math.max(0, Math.ceil(Math.log2((EARTH_M * cosLat * needPx) / (256 * sizeM)))));
+  let best = labels[0];
+  let bestD = Infinity;
+  for (const l of labels) {
+    const d = (l.lat - lat) ** 2 + ((l.lng - lng) * cosLat) ** 2;
+    if (d < bestD) [best, bestD] = [l, d];
+  }
+  return { lat: best.lat, lng: best.lng, zoom };
+}
+
 const PANE = "nucaPlanLabels";
 /** Above the shapes and dots (overlay pane, 400), below markers and tooltips. */
 const PANE_Z = "450";
