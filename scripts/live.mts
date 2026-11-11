@@ -20,6 +20,8 @@ const stats = await runLive(store, {
   state: liveState,
   // 03:00 Cairo: the daily full pass (booked views, zone list), when hardly anyone books.
   fullHour: 3,
+  // LIVE_FULL_NOW=1 (workflow input `full_now`): do that pass on the first tick instead of waiting for the night.
+  fullNow: process.env.LIVE_FULL_NOW === "1",
   async onRun(r) {
     if (!process.env.NO_PUSH) {
       if (r.newlyBookedLabels.length) {

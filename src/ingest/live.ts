@@ -104,6 +104,8 @@ export interface LiveOptions {
   resumeMaxAgeMs?: number;
   /** Cairo hour (0–23) at which, once a day, everything is walked in full (booked views too, zone list re-read). */
   fullHour?: number;
+  /** Do the full pass on the first tick, whatever the hour (a manual "run it now"). */
+  fullNow?: boolean;
   /** Called once per tick, after the walks (test alerts). */
   onTick?: () => Promise<void>;
   /** Re-read the official news every this many ticks. */
@@ -271,16 +273,17 @@ export async function runLive(rawStore: Store, opts: LiveOptions): Promise<LiveS
   async function runTick(tick: number, t0: number): Promise<void> {
     // Once a night: everything in full (booked views too) and the zone list read again. Skipped when this job is
     // about to end; the next one does it.
-    if (opts.fullHour != null && now() - fullTriedAt > 3 * 3600_000 && end - now() > 30 * 60_000) {
+    const forced = !!opts.fullNow && fullTriedAt === -Infinity;
+    if ((opts.fullHour != null || forced) && now() - fullTriedAt > 3 * 3600_000 && end - now() > 30 * 60_000) {
       const h = cairoHour(now());
-      if (h === opts.fullHour || h === (opts.fullHour + 1) % 24) {
+      if (forced || h === opts.fullHour || h === (opts.fullHour! + 1) % 24) {
         fullTriedAt = now();
         const zones = (await store.getMeta())?.official?.zones ?? [];
         const newest = Math.max(0, ...zones.map((z) => (z.lastFullAt ? Date.parse(z.lastFullAt) : 0)));
-        if (now() - newest > 20 * 3600_000) {
+        if (forced || now() - newest > 20 * 3600_000) {
           const r = await walk(undefined, undefined, true, { full: true, forceZones: true });
           known = (await store.getMeta())?.official?.zones?.map((z) => z.zid) ?? known;
-          log(`tick ${tick}: nightly full pass: ${r.error ? `error: ${r.error}` : `${r.zonesOk} zone(s) ok, ${r.zonesFailed} failed, ${r.newlyBooked} newly booked`}`);
+          log(`tick ${tick}: ${forced ? "requested" : "nightly"} full pass: ${r.error ? `error: ${r.error}` : `${r.zonesOk} zone(s) ok, ${r.zonesFailed} failed, ${r.newlyBooked} newly booked`}`);
           return;
         }
       }

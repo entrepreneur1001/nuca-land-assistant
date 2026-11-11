@@ -15,6 +15,10 @@ on:
         description: "Crawl and log only, write nothing"
         type: boolean
         default: false
+      full_now:
+        description: "Do the nightly full pass on the first tick (then loop as usual)"
+        type: boolean
+        default: false
 
 concurrency:
   group: live
@@ -38,4 +42,5 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           LIVE_MINUTES: ${{ inputs.minutes }}
+          LIVE_FULL_NOW: ${{ inputs.full_now && '1' || '' }}
         run: npx tsx scripts/live.mts ${{ inputs.dry_run && '--dry-run' || '' }}
