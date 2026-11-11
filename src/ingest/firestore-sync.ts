@@ -175,5 +175,6 @@ export async function updateCensus(full: boolean) {
     patch.census = { ...c, topAreas, at: new Date().toISOString() };
   }
   await db.doc("stats/impact").set(patch, { merge: true });
+  return count;
 }
 

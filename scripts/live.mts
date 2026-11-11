@@ -11,7 +11,8 @@ import { runLive } from "@/ingest/live";
 
 const dryRun = process.argv.includes("--dry-run");
 const minutes = Number(process.env.LIVE_MINUTES ?? 350);
-let runs = 0;
+let censusAt = 0;
+let watchers = 0;
 
 const stats = await runLive(store, {
   durationMs: minutes * 60_000,
@@ -20,7 +21,6 @@ const stats = await runLive(store, {
   // 03:00 Cairo: the daily full pass (booked views, zone list), when hardly anyone books.
   fullHour: 3,
   async onRun(r) {
-    runs++;
     if (!process.env.NO_PUSH) {
       if (r.newlyBookedLabels.length) {
         const pushes = await notifyWatchers(r.newlyBookedLabels);
@@ -31,9 +31,13 @@ const stats = await runLive(store, {
         console.log(`[live] push: ${JSON.stringify(pushes)} for ${r.newlyHeldLabels.length} newly held`);
       }
     }
-    // The census is a count query; once every ~60 walks is plenty (the full one after the nightly pass).
-    if (r.mode === "full") await updateCensus(true);
-    else if (runs % 60 === 1) await updateCensus(false);
+    // /impact: what people save and follow, every half hour while reading every watcher doc is cheap (one read per
+    // browser with alerts on); past that only the count, and the full census after the nightly pass.
+    const due = Date.now() - censusAt > 30 * 60_000;
+    if (r.mode === "full" || due) {
+      censusAt = Date.now();
+      watchers = await updateCensus(r.mode === "full" || watchers <= 300);
+    }
   },
   async onTick() {
     if (!process.env.NO_PUSH) await sendTestPushes();
