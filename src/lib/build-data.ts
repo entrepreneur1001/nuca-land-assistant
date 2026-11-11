@@ -64,7 +64,7 @@ let cities: Promise<CityInfo[]> | null = null;
 
 /** Every city that has plots, with its districts; cities and districts are sorted by available plots. */
 export function getCities(): Promise<CityInfo[]> {
-  cities ??= getBuildSnapshot().then(citiesOf);
+  cities ??= getBuildSnapshot().then((snap) => citiesOf(snap, { strict: true }));
   return cities;
 }
 

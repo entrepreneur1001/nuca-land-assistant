@@ -32,3 +32,11 @@ describe("profile from a shared link", () => {
     expect(loadProfile().bookingRank).toBe(6000);
   });
 });
+
+describe("sanitize", () => {
+  it("caps a rank far beyond any real one (a pasted 14-digit national ID)", async () => {
+    const { sanitize } = await import("@/lib/profile");
+    expect(sanitize({ bookingRank: 29901011234567 }).bookingRank).toBe(10_000_000);
+    expect(sanitize({ bookingRank: 5000 }).bookingRank).toBe(5000);
+  });
+});

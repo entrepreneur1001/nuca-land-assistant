@@ -27,6 +27,8 @@ const CITY_SLUGS: Record<string, string> = {
   "العبور": "obour",
 };
 
+export const hasCitySlug = (name: string) => Object.hasOwn(CITY_SLUGS, name);
+
 export function citySlug(name: string): string {
   const s = CITY_SLUGS[name];
   if (!s) throw new Error(`No URL slug for city "${name}"; add it to src/lib/slugs.ts`);

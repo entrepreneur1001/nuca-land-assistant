@@ -1,7 +1,7 @@
 "use client";
 
 import { track } from "@/lib/firebase";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FeatureMode, Profile } from "@/engine/scoring";
 import { num, t } from "@/i18n/ar";
 import { DEFAULT_PROFILE, toQuery } from "@/lib/profile";
@@ -30,7 +30,12 @@ function NumberField({
     setPrev(value);
     setText(value == null ? "" : String(value));
   }
+  // The pending debounce, so blur/Enter can cancel it: otherwise it fires later with the profile from before a city
+  // or preference tap made right after typing, and undoes that tap.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commit = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
     const ascii = text.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
     const digits = ascii.replace(/[^\d.]/g, "");
     const n = digits ? Number(digits) : null;
@@ -40,8 +45,11 @@ function NumberField({
   // Clearing waits for blur, so retyping a number doesn't flash the "enter your rank" card.
   useEffect(() => {
     if (!/[\d٠-٩]/.test(text)) return;
-    const id = setTimeout(commit, 600);
-    return () => clearTimeout(id);
+    timer.current = setTimeout(commit, 600);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
   return (

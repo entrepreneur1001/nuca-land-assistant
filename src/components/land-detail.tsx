@@ -18,6 +18,7 @@ import { PushPrompt } from "./favorites";
 import { NearbyPlaces } from "./nearby-places";
 import { PlotMap } from "./plot-map";
 import { AreaLink, Badge, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
+import { LoadingOrError } from "./load-state";
 
 export function LandDetail() {
   const id = useSearchParams().get("id") ?? "";
@@ -33,7 +34,7 @@ export function LandDetail() {
     if (id) void track("land_view", { id });
   }, [id]);
 
-  if (!app?.result || !app.snapshot) return <div className="py-20 text-center text-muted">{t.loading}</div>;
+  if (!app?.result || !app.snapshot) return <LoadingOrError error={app?.error} />;
   const plot = app.snapshot.plots.find((p) => p.id === id);
   if (!plot) return <Card>{t.detail.notFound}</Card>;
   const { ranked, extras, dashboard } = app.result;

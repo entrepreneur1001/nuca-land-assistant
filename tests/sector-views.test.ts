@@ -38,4 +38,13 @@ describe("city districts", () => {
     expect(city.districts.map((d) => d.id)).toEqual(["axis", "big"]);
     expect(cityBests(city.districts)).toEqual({ cheapest: "axis", lowestDp: "axis" });
   });
+
+  it("skips a city with no URL slug in the browser, but fails the build on it", () => {
+    const withNew = {
+      meta: { ...snap.meta, cities: [...snap.meta.cities, "مدينة جديدة"], sectors: [...snap.meta.sectors, { id: "n", name: "n", city: 1, hot: false }] },
+      plots: [...snap.plots, { ...snap.plots[0], id: "n0", cityName: "مدينة جديدة", projectId: "n" }],
+    } as Snapshot;
+    expect(citiesOf(withNew).map((c) => c.slug)).toEqual(["sadat"]);
+    expect(() => citiesOf(withNew, { strict: true })).toThrow(/No URL slug/);
+  });
 });

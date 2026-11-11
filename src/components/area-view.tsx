@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { Plot } from "@/data/snapshot";
 import type { RankedLand } from "@/engine/compute";
-import { isOnMainRoad } from "@/engine/roads";
 import { onRoad } from "@/engine/surroundings";
 import { unitsRule } from "@/engine/units";
 import { num, t, usd } from "@/i18n/ar";
@@ -18,6 +17,7 @@ import { FavoriteButton, FollowButton } from "./favorite-button";
 import { PushPrompt } from "./favorites";
 import { useFollows, followKey } from "@/lib/follows";
 import { Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
+import { LoadingOrError } from "./load-state";
 
 type Sort = keyof typeof t.area.sorts;
 const PAGE = 20;
@@ -76,7 +76,7 @@ export function AreaView() {
     return out.sort(by[sort]);
   }, [area, f, sort, paid, ranked]);
 
-  if (!app?.snapshot) return <div className="py-20 text-center text-muted">{t.loading}</div>;
+  if (!app?.snapshot) return <LoadingOrError error={app?.error} />;
   if (!area) return <Card>{t.area.notFound}</Card>;
 
   const go = (d: string | null) => {

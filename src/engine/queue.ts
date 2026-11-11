@@ -83,13 +83,20 @@ export function inSyncWindow(d: Date): boolean {
  * walk the batch weekdays after it.
  */
 export function nthBatchDay(lastBatchDay: number, today: number, n: number, firstDay?: number): number {
-  if (firstDay != null) {
-    if (n <= 1) return firstDay;
-    let day = firstDay + DAY;
-    for (let seen = 1; ; day += DAY) if (isBatchDay(day) && ++seen >= n) return day;
-  }
-  let day = Math.max(lastBatchDay + DAY, today);
-  for (let seen = 0; ; day += DAY) if (isBatchDay(day) && ++seen >= n) return day;
+  if (firstDay != null) return n <= 1 ? firstDay : nthBatchDayFrom(firstDay + DAY, n - 1);
+  return nthBatchDayFrom(Math.max(lastBatchDay + DAY, today), n);
+}
+
+/** The n-th batch day (n ≥ 1) on or after `day`. Every 7 days hold the same number of batch days, so whole weeks are
+ *  skipped arithmetically: a walk of one day at a time took seconds for a huge rank and never ended past JS's last Date. */
+function nthBatchDayFrom(day: number, n: number): number {
+  const perWeek = MODEL.batchWeekdays.length;
+  const weeks = Math.max(0, Math.floor((n - 1) / perWeek));
+  let left = n - weeks * perWeek;
+  day += weeks * 7 * DAY;
+  // At most one more week; bounded because past JS's last Date getUTCDay() is NaN and no day matches.
+  for (let i = 0; i < 14; i++, day += DAY) if (isBatchDay(day) && --left <= 0) return day;
+  return day;
 }
 
 /** An official news item that says something about the code queue. */

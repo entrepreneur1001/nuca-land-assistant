@@ -22,7 +22,7 @@ export function NearbyPlaces({ lat, lng }: { lat: number; lng: number }) {
       if (!live) return;
       const best = nearestByCategory(places, lat, lng, RANGE_M);
       setRows(ORDER.flatMap((cat) => (best[cat] ? [{ cat, ...best[cat]! }] : [])));
-    });
+    }).catch(() => live && setRows([]));
     return () => {
       live = false;
     };

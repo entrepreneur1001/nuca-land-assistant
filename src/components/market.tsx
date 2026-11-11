@@ -6,6 +6,7 @@ import type { Plot } from "@/data/snapshot";
 import { date, num, pct, t } from "@/i18n/ar";
 import { useApp } from "./app-state";
 import { AreaLink, Card, Stat } from "./ui";
+import { LoadingOrError } from "./load-state";
 
 const TZ = "Africa/Cairo";
 const dayKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ });
@@ -83,7 +84,7 @@ export function Market() {
   const snapshot = app?.snapshot;
   const result = app?.result;
   const data = useMemo(() => (snapshot ? analytics(snapshot.plots, Date.parse(snapshot.meta.fullSyncAt ?? "") || 0) : null), [snapshot]);
-  if (!snapshot || !result || !data) return <div className="py-20 text-center text-muted">{t.loading}</div>;
+  if (!snapshot || !result || !data) return <LoadingOrError error={app?.error} />;
   const q = result.dashboard.queue;
   const m = result.dashboard.market;
   const batches = snapshot.meta.allocations.map((a) => ({ day: a.d.slice(0, 10), codes: a.c, booked: a.b }));

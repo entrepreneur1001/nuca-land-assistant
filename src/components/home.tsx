@@ -7,7 +7,7 @@ import type { AiResponse } from "@/ai/schema";
 import type { Snapshot } from "@/data/snapshot";
 import { MODEL } from "@/engine/config";
 import { ago, date, num, pct, t, usd } from "@/i18n/ar";
-import { analyze, cooldownLeft } from "@/lib/ai";
+import { analyze, cooldownLeft, type AiOutcome } from "@/lib/ai";
 
 import { useNow } from "@/lib/use-now";
 import { useApp } from "./app-state";
@@ -15,6 +15,7 @@ import { FavoriteButton } from "./favorite-button";
 import { ProfileCard } from "./profile-card";
 import { AdvancedSearch } from "./search";
 import { AreaLink, Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
+import { LoadingOrError } from "./load-state";
 
 /** The snapshot's cities, most available plots first (the form shows the first few as chips). */
 function citiesByAvailable(snapshot: Snapshot | null | undefined): string[] {
@@ -30,12 +31,7 @@ export function Home() {
   if (!app) return <div className="py-20 text-center text-muted">{t.loading}</div>;
   const { snapshot, result, profile, setProfile, error, computing } = app;
 
-  if (error && !result)
-    return (
-      <Card className="text-center">
-        {error === "quota" ? t.quota : error === "no-data" ? t.firstSync : t.loadError}
-      </Card>
-    );
+  if (error && !result) return <LoadingOrError error={error} />;
 
   return (
     <div className="space-y-5">
@@ -268,7 +264,7 @@ function AiPanel() {
     setBusy(true);
     setErr(null);
     const forProfile = JSON.stringify(app.profile);
-    const r = await analyze(dashboard, ranked, app.profile);
+    const r = await analyze(dashboard, ranked, app.profile).catch((e): AiOutcome => ({ ok: false, error: String(e) }));
     setBusy(false);
     if (r.ok) setRes({ data: r.data, cached: r.cached, forVersion: dashboard.dataVersion, forProfile });
     else

@@ -135,11 +135,14 @@ export function AreaMap({
       void loadPlacesNear([
         [reach.getSouth(), reach.getWest()],
         [reach.getNorth(), reach.getEast()],
-      ]).then((places) => {
-        if (cancelled || !places.length) return;
-        addPlaces(L, built, places, undefined);
-        onPlaces?.(true);
-      });
+      ])
+        .then((places) => {
+          if (cancelled) return;
+          // Report false too: the map stays mounted when the plot or district changes, so the legend must reset.
+          onPlaces?.(places.length > 0);
+          if (places.length) addPlaces(L, built, places, undefined);
+        })
+        .catch(() => !cancelled && onPlaces?.(false));
       if (layers.length || past) addPlanToggle(L, map, past ? [...layers, past] : layers);
       if (layers.length) addPlanLabels(L, map, layers);
       // One district chosen: zoom in until its plot numbers show (after limitToCity, so the user can still

@@ -29,6 +29,8 @@ const optNum = (v: unknown) => (v == null || v === "" ? null : posNum(v, NaN) ||
 // Old builds saved these placeholder defaults; treat them as "not entered".
 const LEGACY_RANK = 17000;
 const LEGACY_PAID = 39500;
+// Far above any real booking rank; caps a pasted national ID (14 digits) so the queue maths stays in range.
+const MAX_RANK = 10_000_000;
 
 /** Sanitize anything coming from storage or the URL. */
 export function sanitize(p: Partial<Profile> | null | undefined): Profile {
@@ -39,7 +41,7 @@ export function sanitize(p: Partial<Profile> | null | undefined): Profile {
   for (const k of Object.keys(w)) w[k] = Math.min(50, posNum((p?.weights as Record<string, unknown> | undefined)?.[k] ?? w[k], 0));
   return {
     ...d,
-    bookingRank: rank == null ? null : Math.max(1, Math.round(rank)),
+    bookingRank: rank == null ? null : Math.min(MAX_RANK, Math.max(1, Math.round(rank))),
     moneyPaid: optNum(p?.moneyPaid),
     preferredCities: Array.isArray(p?.preferredCities) ? p!.preferredCities.filter((x) => typeof x === "string").slice(0, 30) : [],
     minArea: p?.minArea == null ? null : posNum(p.minArea, 0),

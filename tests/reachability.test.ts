@@ -215,6 +215,15 @@ describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
     expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 1)).toBe(isoDay("2026-11-11"));
     expect(cairoHourOf(new Date("2026-11-08T10:00:00Z"))).toBe(12);
   });
+
+  it("nthBatchDay skips whole weeks, and returns at once for absurd counts", () => {
+    // 5 batch days a week: the 11th working day from Wednesday 11 Nov is two weeks later, Wednesday 25 Nov.
+    expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 11)).toBe(isoDay("2026-11-25"));
+    expect(nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 6, isoDay("2026-11-13"))).toBe(isoDay("2026-11-19"));
+    const t0 = performance.now();
+    nthBatchDay(isoDay("2026-11-10"), isoDay("2026-11-11"), 1e12);
+    expect(performance.now() - t0).toBeLessThan(50);
+  });
 });
 
 describe("depletion model", () => {

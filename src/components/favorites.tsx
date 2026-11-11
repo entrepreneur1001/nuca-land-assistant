@@ -14,6 +14,7 @@ import { FavoriteButton } from "./favorite-button";
 import { track } from "@/lib/firebase";
 import { areaHref } from "@/lib/phases";
 import { Badge, Card } from "./ui";
+import { LoadingOrError } from "./load-state";
 
 const label = (p: Plot) => t.fav.label(p.plotNumber, p.projectName, p.cityName);
 
@@ -198,7 +199,7 @@ export function FavoritesList() {
           </Link>
         </Card>
       ) : !app?.snapshot || !plots ? (
-        <div className="py-10 text-center text-muted">{t.loading}</div>
+        <LoadingOrError error={app?.error} className="py-10" />
       ) : (
         <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
           {ids.map((id) => {

@@ -19,7 +19,7 @@ export const km = (n: number | null | undefined) =>
 export const date = (iso: string | Date | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Cairo" }) : "—";
 export const dateTime = (iso: string | Date | null | undefined) =>
-  iso ? new Date(iso).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
+  iso ? new Date(iso).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }) : "—";
 
 export function ago(iso: string | null | undefined, now: number) {
   if (!iso) return "لسه ماتحدّثتش";
@@ -360,6 +360,7 @@ export const t = {
   mapLoading: "بنحمّل الخريطة…",
   mapError: "الخريطة ما اتحمّلتش. جرّب تحدّث الصفحة.",
   loadError: "مقدرناش نحمّل البيانات. جرّب تاني بعد شوية.",
+  retry: "جرّب تاني",
   quota: "الموقع عليه ضغط كبير النهارده، جرّب تاني بكرة.",
   firstSync: "أول تحديث للبيانات لسه شغال، استنى دقايق.",
   stale: "⚠ البيانات ممكن تكون قديمة",

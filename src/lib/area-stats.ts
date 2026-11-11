@@ -1,6 +1,6 @@
 import { arDigits } from "@/lib/digits";
 import { displayRules, type BuildingRules, type MetaDoc, type Plot, type Snapshot } from "@/data/snapshot";
-import { citySlug } from "./slugs";
+import { citySlug, hasCitySlug } from "./slugs";
 
 /** Area statistics shared by the build-time SEO pages (lib/build-data.ts) and their live browser refresh. */
 
@@ -77,15 +77,29 @@ export interface CityInfo {
   districts: DistrictInfo[];
 }
 
+/** Map.groupBy, which needs Safari 17.4+; Next's default targets go down to Safari 16.4 and don't polyfill it. */
+function groupBy<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {
+  const out = new Map<K, T[]>();
+  for (const item of items) {
+    const k = key(item);
+    const list = out.get(k);
+    if (list) list.push(item);
+    else out.set(k, [item]);
+  }
+  return out;
+}
+
 const bookedShare = (s: AreaStats) => (s.total ? s.booked / s.total : 0);
 
 /** Every city that has plots, with its districts. Cities are sorted by available plots; districts by demand
  *  (marked hot, then share already booked), then available plots, so in-demand districts aren't buried. */
-export function citiesOf({ meta, plots }: Snapshot): CityInfo[] {
-  const byCity = Map.groupBy(plots, (p) => p.cityName);
-  const bySector = Map.groupBy(plots, (p) => p.projectId ?? "");
+export function citiesOf({ meta, plots }: Snapshot, { strict = false } = {}): CityInfo[] {
+  const byCity = groupBy(plots, (p) => p.cityName);
+  const bySector = groupBy(plots, (p) => p.projectId ?? "");
   return meta.cities
-    .filter((name) => byCity.has(name))
+    // The build (strict) fails on a city with no URL slug; in the browser a city the sync added after the last
+    // deploy is skipped instead of crashing every page that shows live blocks.
+    .filter((name) => byCity.has(name) && (strict || hasCitySlug(name)))
     .map((name) => {
       const slug = citySlug(name);
       const districts = meta.sectors
@@ -147,7 +161,7 @@ export function areaPlots({ meta, plots }: Snapshot, city: string, districtId?: 
   const inCity = plots.filter((p) => p.cityName === city);
   if (!inCity.length) return null;
   const sectors = new Map(meta.sectors.map((s) => [s.id, s]));
-  const districts = [...Map.groupBy(inCity, (p) => p.projectId).entries()]
+  const districts = [...groupBy(inCity, (p) => p.projectId).entries()]
     .map(([id, ps]): AreaDistrict => {
       const s = id ? sectors.get(id) : undefined;
       const unlocated = ps.filter((p) => p.latitude == null || p.longitude == null);
