@@ -3,10 +3,10 @@
  * site within about a minute without re-walking every zone every minute.
  *
  * Each tick:
- *  1. probe zones with one request each (`probeZone`: the zone's last page, whose rows shift whenever any plot in the
- *     zone is booked or offered again), most overdue first, for at most `probeBudgetMs`;
+ *  1. probe zones with one request each (`probeZone`: the zone's last page, whose row count changes whenever any plot
+ *     in the zone is booked or offered again), most overdue first, for at most `probeBudgetMs`;
  *  2. walk the zones that changed (plus, every `rotateEvery` ticks, the zones walked longest ago, so held ↔ free flips
- *     away from the last page stay fresh) with `runSync({ onlyZones })`, which writes Firestore and reports what got booked;
+ *     stay fresh) with `runSync({ onlyZones })`, which writes Firestore and reports what got booked;
  *  3. sleep until the next tick.
  * Firestore is written only by those walks: a quiet minute costs one request per probed zone and no writes.
  */
@@ -125,7 +125,7 @@ export async function runLive(store: Store, opts: LiveOptions): Promise<LiveStat
     // 1. probes, most overdue first; recently changed zones get a minute's head start
     const due = (zid: number) => {
       const p = probes.get(zid)!;
-      const every = p.sig === "" ? emptyEveryMs : tickMs;
+      const every = p.sig === "1:0" ? emptyEveryMs : tickMs;
       const hot = t0 - (changedAt.get(zid) ?? -Infinity) < hotForMs ? tickMs : 0;
       return (lastProbeAt.get(zid) ?? 0) + every - hot;
     };

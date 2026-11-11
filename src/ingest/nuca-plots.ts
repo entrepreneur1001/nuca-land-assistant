@@ -275,8 +275,8 @@ export function createClient(fetchHtml: FetchHtml, opts: { delayMs?: number; sle
 
 /**
  * What it takes to tell, with one request, whether a zone's available view changed since it was walked: a booking
- * removes a row and shifts every later page, so the last page changes whenever any plot in the zone is booked or
- * offered again. The site accepts the same postback state again later, so the hidden fields of the page before the
+ * removes a row and shifts every later page, so the last page loses a row (or disappears) whenever any plot in the
+ * zone is booked, and gains one when a plot is offered again. The site accepts the same postback state again later, so the hidden fields of the page before the
  * last one replay "go to the last page" (a single-page zone is a plain GET). See `probeZone`.
  */
 export interface ZoneProbe {
@@ -306,9 +306,14 @@ const GRID = "ctl00$MainContent$grdPlots";
 const RADIO_BOOKED = "ctl00$MainContent$rdShowBooked";
 const formFields = (view: ZoneView) => ({ "ctl00$MainContent$PlotType": view === "booked" ? "rdShowBooked" : "rdShowAvailable", "ctl00$MainContent$txtPlotNumber": "" });
 
-/** Rows (plot + status) of a zone's last page, plus whether the pager links a page after it. */
+/**
+ * How many rows the zone's last page has, plus whether the pager links a page after it: with full pages before it,
+ * that is the zone's plot count, which a booking lowers and a plot offered again raises. Not the rows themselves:
+ * the site sorts ties differently from one request to the next (zone 3800 in Nov 2026), so rows reshuffle across
+ * reads, even across pages. Held flags are left to the periodic walks.
+ */
 export function lastPageSig(page: ZonePage, n: number): string {
-  return page.rows.map((r) => `${r.square}|${r.plotNo}|${r.status}`).join(";") + (page.pages.includes(n + 1) ? ";+" : "");
+  return `${n}:${page.rows.length}${page.pages.includes(n + 1) ? "+" : ""}`;
 }
 
 async function walkZone(client: WebFormsClient, url: string, view: ZoneView, maxPages: number): Promise<{ rows: ZoneRow[]; pages: number; egpPerM: number | null; probe?: ZoneProbe }> {

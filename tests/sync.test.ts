@@ -494,9 +494,12 @@ describe("live loop: one-request probes", () => {
     expect(await probeZone(client, 4797, c.probe!)).toMatchObject({ changed: false, error: expect.any(String) });
     site.failOnce("ViewZone.aspx", "503");
     expect(await probeZone(client, 4797, c.probe!)).toMatchObject({ changed: false, error: expect.any(String) });
-    // a held flag on the last page counts too
+    // a plot offered again raises the count; reordered rows and held flags do not count as a change
     const fresh = (await crawlZone(client, 4797, "available")).probe!;
+    expect(fresh.sig).toBe("2:9"); // 30 plots, one booked
     data.zones[4797].plots.at(-1)!.status = "held";
+    expect((await probeZone(client, 4797, fresh)).changed).toBe(false);
+    data.zones[4797].plots.push(...genPlots(1, { square: SQ, start: 500 }));
     expect((await probeZone(client, 4797, fresh)).changed).toBe(true);
   });
 
@@ -504,7 +507,7 @@ describe("live loop: one-request probes", () => {
     const site = createFakeSite(siteData());
     const client = createClient(site.fetchHtml);
     const c = await crawlZone(client, 3789, "available");
-    expect(c.probe).toEqual({ pages: 1, hidden: null, sig: "" });
+    expect(c.probe).toEqual({ pages: 1, hidden: null, sig: "1:0" });
     const n = site.requests.length;
     expect(await probeZone(client, 3789, c.probe!)).toEqual({ changed: false });
     expect(site.requests.slice(n).map((r) => r.method)).toEqual(["GET"]);
