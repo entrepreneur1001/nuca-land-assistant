@@ -14,7 +14,7 @@ import { addPlaces } from "./places-layer";
 import { loadPlacesNear } from "@/lib/places";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels } from "./plan-labels";
-import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
+import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, restyleDots, type PlanColors, type PlanLayer, type StatusDot } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -55,6 +55,9 @@ export function PlotMap({
   const bookedDots = useRef<import("leaflet").CircleMarker[]>([]);
   const host = useRef<import("leaflet").Map | null>(null);
   const hideBooked = useRef(false);
+  // Status of each drawn dot and the colours used, so a newer snapshot can recolour the map in place.
+  const statusDots = useRef(new Map<string, StatusDot>());
+  const colors = useRef<PlanColors | null>(null);
   const exact = plot.latitude != null && plot.longitude != null;
   const centre = exact ? { lat: plot.latitude!, lng: plot.longitude! } : plot.approxLoc;
 
@@ -65,6 +68,7 @@ export function PlotMap({
     }
     const el = ref.current;
     const dots = bookedDots.current;
+    const sdots = statusDots.current;
     let map: import("leaflet").Map | null = null;
     let cancelled = false;
     void Promise.all([import("leaflet"), loadPlans(plot.cityName, [plot.projectId], new Set([plot.id])), loadPastIndex(), loadCompounds()]).then(([L, zones, pastIndex, compounds]) => {
@@ -75,6 +79,7 @@ export function PlotMap({
       const bad = color("--bad");
       const accent = color("--accent");
       const warn = color("--warn") || good;
+      colors.current = { good, warn, bad, accent };
 
       map = L.map(el, { scrollWheelZoom: false, attributionControl: true });
       L.tileLayer(IMAGERY, { maxZoom: 19, attribution: IMAGERY_ATTRIBUTION }).addTo(map);
@@ -151,6 +156,7 @@ export function PlotMap({
           });
         if (booked) dots.push(m);
         if (!booked || !hideBooked.current) m.addTo(map);
+        sdots.set(p.id, { marker: m, booked });
       }
 
       if (shaped.has(plot.id)) return; // Its shape, labelled, is on the plan.
@@ -170,6 +176,7 @@ export function PlotMap({
     return () => {
       cancelled = true;
       dots.length = 0;
+      sdots.clear();
       plans.current = [];
       host.current = null;
       map?.remove();
@@ -177,6 +184,15 @@ export function PlotMap({
     // Rebuild only when the shown plot changes; snapshot refreshes don't move plots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plot.id, centre?.lat, centre?.lng]);
+
+  // The live sync replaces the snapshot every minute or so: recolour neighbours booked or released meanwhile.
+  useEffect(() => {
+    const map = host.current;
+    if (!map || !colors.current) return;
+    const byPlot = new Map(plots.map((p) => [p.id, p]));
+    for (const l of plans.current) l.setStatuses(byPlot);
+    restyleDots(map, statusDots.current, byPlot, colors.current, hideBooked.current, bookedDots.current);
+  }, [plots]);
 
   useEffect(() => {
     hideBooked.current = !!availableOnly;

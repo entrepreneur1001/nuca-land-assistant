@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { CURRENT_PHASE, OFFICIAL, phasePath } from "@/lib/phases";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AiResponse } from "@/ai/schema";
 import type { Snapshot } from "@/data/snapshot";
 import { MODEL } from "@/engine/config";
-import { ago, date, num, pct, t, usd } from "@/i18n/ar";
+import { date, num, pct, t, usd } from "@/i18n/ar";
 import { analyze, cooldownLeft, type AiOutcome } from "@/lib/ai";
 
 import { useNow } from "@/lib/use-now";
+import { Ago } from "./ago";
 import { useApp } from "./app-state";
 import { FavoriteButton } from "./favorite-button";
 import { ProfileCard } from "./profile-card";
@@ -27,7 +28,6 @@ function citiesByAvailable(snapshot: Snapshot | null | undefined): string[] {
 
 export function Home() {
   const app = useApp();
-  const now = useNow();
   if (!app) return <div className="py-20 text-center text-muted">{t.loading}</div>;
   const { snapshot, result, profile, setProfile, error, computing } = app;
 
@@ -49,13 +49,13 @@ export function Home() {
       ) : !result ? (
         <div className="py-12 text-center text-muted">{t.loading}</div>
       ) : (
-        <Results now={now} computing={computing} />
+        <Results computing={computing} />
       )}
     </div>
   );
 }
 
-function Results({ now, computing }: { now: number; computing: boolean }) {
+function Results({ computing }: { computing: boolean }) {
   const app = useApp()!;
   const { dashboard: d, ranked } = app.result!;
   const q = d.queue;
@@ -67,7 +67,7 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
     <div className={`space-y-5 transition-opacity ${computing ? "opacity-60" : ""}`}>
       {f.stale ? (
         <div className="rounded-2xl border border-warn bg-warn-soft px-4 py-3 text-sm text-warn">
-          {t.stale} — {t.lastUpdate} {ago(f.lastFullOkAt, now)}
+          {t.stale} — {t.lastUpdate} <Ago iso={f.lastFullOkAt} />
         </div>
       ) : null}
 
@@ -86,7 +86,9 @@ function Results({ now, computing }: { now: number; computing: boolean }) {
             <span className={`inline-block h-2 w-2 rounded-full ${f.stale ? "bg-warn" : "live-dot bg-good"}`} />
             {f.stale ? t.stale : t.live}
           </div>
-          <div className="mt-1 text-lg font-bold">{ago(f.lastFullOkAt, now)}</div>
+          <div className="mt-1 text-lg font-bold">
+            <Ago iso={f.lastFullOkAt} />
+          </div>
           <div className="text-xs text-muted">{t.lastUpdate}</div>
         </div>
       </div>
@@ -258,7 +260,7 @@ function AiPanel() {
   const [err, setErr] = useState<string | null>(null);
   const now = useNow();
   const left = now ? cooldownLeft() : 0;
-  const byId = new Map(ranked.map((r) => [r.id, r]));
+  const byId = useMemo(() => new Map(ranked.map((r) => [r.id, r])), [ranked]);
 
   const run = async () => {
     setBusy(true);

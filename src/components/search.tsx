@@ -141,7 +141,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
           <ul className="mt-3 divide-y divide-border">
             {rows.slice(page * PAGE, (page + 1) * PAGE).map((l) => (
               <li key={l.id} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-[1_1_12rem]">
                     <div className="font-semibold">
                       {/* Stretched over the whole row; the area names sit above it. */}
                       <Link href={`/land?id=${l.id}`} className="after:absolute after:inset-0">
@@ -189,16 +189,8 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {Object.keys(DEFAULT_WEIGHTS).map((k) => (
                 <label key={k} className="flex items-center gap-3 text-sm">
-                  <span className="w-40 text-muted">{FACTOR[k] ?? k}</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={50}
-                    value={weights[k] ?? 0}
-                    onChange={(e) => app.setProfile({ ...app.profile, weights: { ...weights, [k]: Number(e.target.value) } })}
-                    className="flex-1"
-                  />
-                  <span className="w-8 text-center">{num(weights[k])}</span>
+                  <span className="w-28 shrink-0 text-muted sm:w-40">{FACTOR[k] ?? k}</span>
+                  <WeightSlider value={weights[k] ?? 0} onCommit={(v) => app.setProfile({ ...app.profile, weights: { ...weights, [k]: v } })} />
                 </label>
               ))}
             </div>
@@ -209,5 +201,32 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
         </>
       ) : null}
     </Card>
+  );
+}
+
+/** A weight slider that commits on release: committing every tick saved the profile, re-ran the ranking and sent an
+ *  analytics event dozens of times per drag. */
+function WeightSlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? value;
+  const commit = () => {
+    if (draft != null && draft !== value) onCommit(draft);
+    setDraft(null);
+  };
+  return (
+    <>
+      <input
+        type="range"
+        min={0}
+        max={50}
+        value={shown}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+        className="min-w-0 flex-1"
+      />
+      <span className="w-8 text-center">{num(shown)}</span>
+    </>
   );
 }

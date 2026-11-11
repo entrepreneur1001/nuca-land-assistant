@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FACTOR, ago, km, num, pct, t, usd } from "@/i18n/ar";
+import { FACTOR, km, num, pct, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
 import { onRoad } from "@/engine/surroundings";
@@ -11,7 +11,7 @@ import { alameinBlock, unitsRule } from "@/engine/units";
 import { track } from "@/lib/firebase";
 import { useFavorites } from "@/lib/favorites";
 import { useAvailableOnly } from "@/lib/map-prefs";
-import { useNow } from "@/lib/use-now";
+import { Ago } from "./ago";
 import { useApp } from "./app-state";
 import { FavoriteButton, FollowButton } from "./favorite-button";
 import { PushPrompt } from "./favorites";
@@ -23,7 +23,6 @@ import { LoadingOrError } from "./load-state";
 export function LandDetail() {
   const id = useSearchParams().get("id") ?? "";
   const app = useApp();
-  const now = useNow();
   const [hasPlan, setHasPlan] = useState(false);
   const [hasPast, setHasPast] = useState(false);
   const [hasCompounds, setHasCompounds] = useState(false);
@@ -236,7 +235,7 @@ export function LandDetail() {
               <ul className="mt-3 space-y-1.5 text-sm">
                 {Object.entries(s.factors).map(([k, v]) => (
                   <li key={k} className="flex items-center gap-2">
-                    <span className="w-44 text-muted">{FACTOR[k] ?? k}</span>
+                    <span className="w-28 shrink-0 text-muted sm:w-44">{FACTOR[k] ?? k}</span>
                     <div className="h-2 flex-1 rounded-full bg-surface-2">
                       <div className="h-2 rounded-full bg-accent" style={{ width: `${v * 100}%` }} />
                     </div>
@@ -269,7 +268,7 @@ export function LandDetail() {
               {t.detail.sector(sector.available, sector.recentBookings, sector.expectedBookingsBeforeTurn, sector.expectedRemaining)}
             </p>
           ) : null}
-          <p className="mt-3 text-xs text-muted">{t.detail.source(ago(app.snapshot.meta.fullSyncAt, now))}</p>
+          <p className="mt-3 text-xs text-muted">{t.detail.source} <Ago iso={app.snapshot.meta.fullSyncAt} /></p>
         </Card>
       </div>
     </div>

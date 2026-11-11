@@ -15,7 +15,7 @@ import { addPlaces } from "./places-layer";
 import { loadPlacesNear } from "@/lib/places";
 import { loadPlans } from "@/lib/plans";
 import { addPlanLabels, labelView } from "./plan-labels";
-import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, type PlanLayer } from "./plan-layer";
+import { addPastPlans, addPlanLayer, addPlanToggle, plotTooltip, restyleDots, type PlanColors, type PlanLayer, type StatusDot } from "./plan-layer";
 
 const IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const LABELS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -66,6 +66,9 @@ export function AreaMap({
   const bookedDots = useRef<import("leaflet").CircleMarker[]>([]);
   const host = useRef<import("leaflet").Map | null>(null);
   const hideBooked = useRef(false);
+  // Status of each drawn dot and the colours used, so a newer snapshot can recolour the map in place.
+  const statusDots = useRef(new Map<string, StatusDot>());
+  const colors = useRef<PlanColors | null>(null);
   const key = `${plots.length}|${districts.map((d) => d.id).join(",")}`;
   const located = plots.filter((p) => p.latitude != null && p.longitude != null);
   const approx = districts.filter((d) => d.unlocated > 0 && d.centre);
@@ -80,6 +83,7 @@ export function AreaMap({
     const byId = markers.current;
     const layers = plans.current;
     const dots = bookedDots.current;
+    const sdots = statusDots.current;
     let map: import("leaflet").Map | null = null;
     let cancelled = false;
     const city = plots[0]?.cityName ?? "";
@@ -93,6 +97,7 @@ export function AreaMap({
       const bad = color("--bad");
       const accent = color("--accent");
       const warn = color("--warn") || good;
+      colors.current = { good, warn, bad, accent };
 
       // Canvas keeps a few thousand dots smooth.
       map = L.map(el, { scrollWheelZoom: false, preferCanvas: true });
@@ -190,6 +195,7 @@ export function AreaMap({
         if (booked) dots.push(m);
         if (!booked || !hideBooked.current) m.addTo(map);
         byId.set(p.id, m);
+        sdots.set(p.id, { marker: m, booked });
       }
       host.current = map;
     }).catch(() => {
@@ -198,6 +204,7 @@ export function AreaMap({
     return () => {
       cancelled = true;
       byId.clear();
+      sdots.clear();
       dots.length = 0;
       layers.length = 0;
       host.current = null;
@@ -206,6 +213,15 @@ export function AreaMap({
     // Rebuild when the area changes; snapshot refreshes don't move plots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, empty]);
+
+  // The live sync replaces the snapshot every minute or so: recolour what was booked or released meanwhile.
+  useEffect(() => {
+    const map = host.current;
+    if (!map || !colors.current) return;
+    const byPlot = new Map(plots.map((p) => [p.id, p]));
+    for (const l of plans.current) l.setStatuses(byPlot);
+    restyleDots(map, statusDots.current, byPlot, colors.current, hideBooked.current, bookedDots.current);
+  }, [plots]);
 
   useEffect(() => {
     hideBooked.current = !!availableOnly;

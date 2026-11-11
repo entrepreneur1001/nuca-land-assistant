@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Plot } from "@/data/snapshot";
@@ -87,6 +88,8 @@ export function Market() {
   if (!snapshot || !result || !data) return <LoadingOrError error={app?.error} />;
   const q = result.dashboard.queue;
   const m = result.dashboard.market;
+  const hasRank = app?.profile.bookingRank != null;
+  const called = hasRank && q.peopleAhead <= 0;
   const batches = snapshot.meta.allocations.map((a) => ({ day: a.d.slice(0, 10), codes: a.c, booked: a.b }));
 
   return (
@@ -96,12 +99,21 @@ export function Market() {
         <Stat label={t.market.last24} value={num(m.bookedLast24h)} sub={t.market.perHour(m.bookedLast24h / 24)} />
         <Stat label={t.market.last7} value={num(m.bookedLast7d)} sub={t.market.perDay(m.bookedLast7d / 7)} />
         <Stat label={t.market.conversion} value={pct(q.conversion.mid)} sub={t.market.conversionSub(pct(q.conversion.low), pct(q.conversion.high))} />
-        <Stat label={t.market.days} value={`~${num(q.daysToTurn.mid)}`} sub={t.market.daysSub(q.daysToTurn.low, q.daysToTurn.high)} />
+        {!hasRank ? (
+          <Stat label={t.market.days} value="—" sub={<Link href="/" className="font-semibold text-accent hover:underline">{t.market.noRankLink}</Link>} />
+        ) : called ? (
+          <Stat label={t.market.days} value={t.market.called} sub={t.market.calledSub} tone="good" />
+        ) : (
+          <Stat label={t.market.days} value={`~${num(q.daysToTurn.mid)}`} sub={t.market.daysSub(q.daysToTurn.low, q.daysToTurn.high)} />
+        )}
       </div>
 
       <Card>
         <h3 className="font-bold">{t.market.eta}</h3>
         <p className="text-xs text-muted">{t.market.etaNote}</p>
+        {!hasRank || called ? (
+          <p className="mt-3 text-sm">{called ? t.market.calledNote : t.market.noRank}</p>
+        ) : (
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           {(
             [
@@ -117,6 +129,7 @@ export function Market() {
             </div>
           ))}
         </div>
+        )}
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2">

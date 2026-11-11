@@ -148,7 +148,7 @@ function FollowedAreas({ plots }: { plots: Plot[] | null }) {
           const c = counts(f);
           return (
             <li key={k} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-surface-2">
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-[1_1_12rem]">
                 <Link href={areaHref(f.city, f.district?.id)} className="font-semibold after:absolute after:inset-0">
                   {followName(f)}
                 </Link>
@@ -216,7 +216,7 @@ export function FavoritesList() {
             const booked = p.status === "booked";
             return (
               <li key={id} className={`relative flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-surface-2 ${booked ? "opacity-75" : ""}`}>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-[1_1_12rem]">
                   <Link href={`/land?id=${p.id}`} className="font-semibold after:absolute after:inset-0">
                     {label(p)}
                   </Link>

@@ -31,9 +31,33 @@ export function AreaView() {
   const dParam = params.get("d");
   const router = useRouter();
   const app = useApp();
-  const [sort, setSort] = useState<Sort>("ppm");
-  const [f, setF] = useState({ garden: false, corner: false, budget: false });
+  // Sort and filters live in the URL (sort=…&f=garden,corner), so Back and shared links keep them.
+  const sortParam = params.get("sort");
+  const sort: Sort = sortParam && Object.hasOwn(t.area.sorts, sortParam) ? (sortParam as Sort) : "ppm";
+  const fParam = params.get("f") ?? "";
+  const f = useMemo(() => {
+    const on = new Set(fParam.split(","));
+    return { garden: on.has("garden"), corner: on.has("corner"), budget: on.has("budget") };
+  }, [fParam]);
   const [shown, setShown] = useState(PAGE);
+  const replaceParams = (patch: Record<string, string | null>, base = params.toString()) => {
+    const q = new URLSearchParams(base);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) q.set(k, v);
+      else q.delete(k);
+    }
+    setShown(PAGE);
+    router.replace(`/area?${q}`, { scroll: false });
+  };
+  const setSort = (v: Sort) => replaceParams({ sort: v === "ppm" ? null : v });
+  const setF = (next: typeof f) =>
+    replaceParams({
+      f:
+        Object.entries(next)
+          .filter(([, v]) => v)
+          .map(([k]) => k)
+          .join(",") || null,
+    });
   const [hover, setHover] = useState<string | null>(null);
   const [hasPlan, setHasPlan] = useState(false);
   const [hasPast, setHasPast] = useState(false);
@@ -79,10 +103,7 @@ export function AreaView() {
   if (!app?.snapshot) return <LoadingOrError error={app?.error} />;
   if (!area) return <Card>{t.area.notFound}</Card>;
 
-  const go = (d: string | null) => {
-    setShown(PAGE);
-    router.replace(areaHref(city, d), { scroll: false });
-  };
+  const go = (d: string | null) => replaceParams({ sort: params.get("sort"), f: params.get("f") }, areaHref(city, d).split("?")[1] ?? "");
   const following = !!follows[followKey(area.city, area.district?.id)];
   const s = area.stats;
   const mapDistricts = area.district ? [area.district] : area.districts;
@@ -196,7 +217,7 @@ function Row({ plot: p, r, showDistrict, onHover }: { plot: Plot; r?: RankedLand
   return (
     <li onMouseEnter={() => onHover(p.id)} onMouseLeave={() => onHover(null)} className="flex items-center gap-2 hover:bg-surface-2">
       <Link href={`/land?id=${p.id}`} className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-[1_1_12rem]">
           <div className="font-semibold">
             {t.card.plot} {p.plotNumber}
             {showDistrict && p.projectName ? <span className="font-normal"> · {p.projectName}</span> : null}

@@ -5,6 +5,7 @@ import { num, t } from "@/i18n/ar";
 import { MAX_FAVORITES, toggleFavorite, useFavorites } from "@/lib/favorites";
 import { track } from "@/lib/firebase";
 import { MAX_FOLLOWS, followKey, toggleFollow, useFollows } from "@/lib/follows";
+import { showToast } from "./toast";
 
 /**
  * ♡ / ♥: saves a plot to «المفضلة». Sits above a card's stretched plot link (`relative z-10`) and stops the click
@@ -17,7 +18,7 @@ export function FavoriteButton({ id, className = "", label = false }: { id: stri
     e.preventDefault();
     e.stopPropagation();
     if (!on && Object.keys(favs).length >= MAX_FAVORITES) {
-      alert(t.fav.full(MAX_FAVORITES));
+      showToast(t.fav.full(MAX_FAVORITES));
       return;
     }
     const now = toggleFavorite(id);
@@ -63,7 +64,7 @@ export function FollowButton({ city, district }: { city: string; district?: { id
   const name = district ? district.name : city;
   const click = () => {
     if (!on && Object.keys(follows).length >= MAX_FOLLOWS) {
-      alert(t.fav.follow.full(MAX_FOLLOWS));
+      showToast(t.fav.follow.full(MAX_FOLLOWS));
       return;
     }
     const now = toggleFollow(city, district);

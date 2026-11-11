@@ -2,10 +2,12 @@
 
 import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query } from "firebase/firestore";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { dateTime, num, t } from "@/i18n/ar";
 import { firestore } from "@/lib/firebase";
+import { useLive } from "@/lib/live";
+import type { Plot } from "@/data/snapshot";
 import { Card, Stat } from "./ui";
 
 /** What the sync job writes to `stats/impact` (scripts/ingest.mts). */
@@ -22,9 +24,17 @@ const dayKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ });
 const shortDay = (k: string) => new Date(`${k}T12:00:00`).toLocaleDateString("ar-EG", { day: "numeric", month: "numeric" });
 const axis = { stroke: "var(--muted)", fontSize: 11, tickLine: false, axisLine: false } as const;
 
+function plotLabel(p: Plot | undefined): string {
+  if (!p) return t.card.plot;
+  return [`${t.card.plot} ${p.plotNumber}`, p.projectName, p.cityName].filter(Boolean).join(" · ");
+}
+
 export function Impact() {
   const [data, setData] = useState<{ stats: ImpactDoc; opens: Map<string, number>; now: number } | null>(null);
   const [error, setError] = useState(false);
+  // Names for the most-saved plots («قطعة ١٢ · الحي · المدينة»); until the live data loads they read «قطعة».
+  const { snapshot } = useLive();
+  const plotsById = useMemo(() => new Map((snapshot?.plots ?? []).map((p) => [p.id, p])), [snapshot]);
 
   useEffect(() => {
     (async () => {
@@ -96,7 +106,7 @@ export function Impact() {
               {c.topPlots.map((p) => (
                 <li key={p.key} className="flex justify-between gap-2">
                   <Link href={`/land?id=${encodeURIComponent(p.key)}`} className="text-accent hover:underline">
-                    {t.card.plot} ↗
+                    {plotLabel(plotsById.get(p.key))} ↗
                   </Link>
                   <span className="text-muted">{t.impact.savedBy(p.n)}</span>
                 </li>

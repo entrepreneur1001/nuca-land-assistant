@@ -39,6 +39,8 @@ export interface PlanLayer extends PlanLabelSource {
   setImageVisible(on: boolean): void;
   /** Shows/hides the booked plots' shapes (never the `self` plot). */
   setBookedVisible(on: boolean): void;
+  /** Recolours shapes whose status changed in a newer snapshot (the live sync), without rebuilding the map. */
+  setStatuses(plots: ReadonlyMap<string, Plot>): void;
   remove(): void;
 }
 
@@ -325,6 +327,28 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       if (on && lit) apply(lit);
       layer.onChange?.();
     },
+    setStatuses(next) {
+      let bookedChanged = false;
+      for (const [id, e] of polys) {
+        const p = next.get(id);
+        if (!p || id === opts.self) continue;
+        const base = baseStyle(p, false, opts.colors);
+        const booked = p.status === "booked";
+        if (base.fillColor === e.base.fillColor && booked === e.booked) continue;
+        e.base = base;
+        e.poly.setTooltipContent(`${plotTooltip(p)} · ${statusWord(p)}`);
+        if (booked !== e.booked) {
+          e.booked = booked;
+          bookedChanged = true;
+          if (!bookedOn) {
+            if (booked) map.removeLayer(e.poly);
+            else e.poly.addTo(map);
+          }
+        }
+        apply(id);
+      }
+      if (bookedChanged) layer.onChange?.();
+    },
     remove() {
       map.off("zoomend", onZoom);
       showImages(false);
@@ -406,4 +430,34 @@ export function addPlanToggle(L: L, map: Leaflet.Map, layers: readonly { setImag
       for (const l of layers) l.setImageVisible(on);
     },
   });
+}
+
+/** A plot dot on a map, with the status it was drawn in. */
+export interface StatusDot {
+  marker: Leaflet.CircleMarker;
+  booked: boolean;
+}
+
+/** Recolours dots whose plot was booked or released in a newer snapshot; `bookedDots` is refilled in place. */
+export function restyleDots(
+  map: Leaflet.Map,
+  dots: ReadonlyMap<string, StatusDot>,
+  plots: ReadonlyMap<string, Plot>,
+  colors: Pick<PlanColors, "good" | "bad">,
+  hideBooked: boolean,
+  bookedDots: Leaflet.CircleMarker[],
+): void {
+  bookedDots.length = 0;
+  for (const [id, d] of dots) {
+    const p = plots.get(id);
+    const booked = p ? p.status === "booked" : d.booked;
+    if (booked !== d.booked) {
+      d.booked = booked;
+      d.marker.setStyle({ fillColor: booked ? colors.bad : colors.good, fillOpacity: booked ? 0.75 : 0.95 });
+      if (booked && hideBooked) map.removeLayer(d.marker);
+      else if (!map.hasLayer(d.marker)) d.marker.addTo(map);
+      if (!booked) d.marker.bringToFront();
+    }
+    if (d.booked) bookedDots.push(d.marker);
+  }
 }
