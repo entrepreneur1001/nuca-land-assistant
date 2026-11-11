@@ -1,7 +1,8 @@
-# The 1-minute loop for the peak hours (see README "Data sync" and src/ingest/live.ts). cron-job.org dispatches it
-# Sunday–Thursday at 10:00 and 15:52 Africa/Cairo; each job loops for LIVE_MINUTES (350) and the 15:52 dispatch waits
-# in the shared `sync` group until the morning job ends, so the two cover ~10:00–21:45 back to back. While a loop runs,
-# normal sync runs queue behind it (one writer to meta/current at a time) and run when it ends.
+# The 1-minute loop, running around the clock (see README "Data sync" and src/ingest/live.ts). cron-job.org dispatches
+# it every 10 minutes, every day. Each job loops for LIVE_MINUTES (350); in the `live` group GitHub keeps one run going
+# and one waiting, so the waiting run starts the moment the running one ends (or crashes) and the loops follow each
+# other back to back. The loop is the only regular writer of meta/current: it also does the nightly full pass, so
+# sync.yml is manual only (don't dispatch it while a loop is running: two writers would undo each other's changes).
 name: Live sync (1 min)
 
 on:
@@ -16,7 +17,7 @@ on:
         default: false
 
 concurrency:
-  group: sync
+  group: live
   cancel-in-progress: false
 
 jobs:
