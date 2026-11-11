@@ -4,6 +4,12 @@
  * requests with `302 → ~/Error.aspx`, so any redirect is a failure and is never retried.
  */
 import "./tls";
+import { OFFICIAL_SITE } from "./official";
+import { officialFetch } from "./official-tls";
+
+const officialHost = new URL(OFFICIAL_SITE.base).host;
+/** The official site goes through `officialFetch` (pinned certificates); everything else through plain fetch. */
+const defaultFetch: typeof fetch = (input, init) => (new URL(String(input)).host === officialHost ? officialFetch(input, init) : fetch(input, init));
 
 export class FetchError extends Error {
   constructor(
@@ -50,7 +56,7 @@ const isRedirect = (res: Response) => res.type === "opaqueredirect" || (res.stat
  * backoff, `retry-after` honoured); fails fast on redirects and other 4xx.
  */
 async function fetchBody(url: string, accept: string, opts: FetchTextOptions): Promise<string> {
-  const { method = "GET", body, retries = 3, timeoutMs = 30_000, baseDelayMs = 1000, fetchImpl = fetch, sleep = defaultSleep } = opts;
+  const { method = "GET", body, retries = 3, timeoutMs = 30_000, baseDelayMs = 1000, fetchImpl = defaultFetch, sleep = defaultSleep } = opts;
   const headers: Record<string, string> = { accept, "accept-language": "ar,en;q=0.5", "user-agent": USER_AGENT, ...opts.headers };
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
