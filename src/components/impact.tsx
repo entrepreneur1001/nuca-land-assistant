@@ -1,6 +1,6 @@
 "use client";
 
-import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -39,7 +39,11 @@ export function Impact() {
   useEffect(() => {
     (async () => {
       const db = firestore();
-      const [s, o] = await Promise.all([getDoc(doc(db, "stats", "impact")), getDocs(query(collection(db, "opens"), orderBy(documentId(), "desc"), limit(90)))]);
+      // The last 90 days of opens, by document id (the Cairo day). Ascending only: newest-first needs an index Firestore doesn't create by itself.
+      const since = dayKey(new Date(Date.now() - 90 * 86_400_000));
+      const opensQ = query(collection(db, "opens"), where(documentId(), ">=", since), limit(100));
+      // The opens are an extra: without them the page still shows the sync job's numbers.
+      const [s, o] = await Promise.all([getDoc(doc(db, "stats", "impact")), getDocs(opensQ).catch(() => ({ docs: [] }))]);
       setData({ stats: (s.data() as ImpactDoc) ?? {}, opens: new Map(o.docs.map((d) => [d.id, Number(d.data().n) || 0])), now: Date.now() });
     })().catch(() => setError(true));
   }, []);
