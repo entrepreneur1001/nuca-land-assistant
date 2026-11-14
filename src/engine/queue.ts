@@ -294,8 +294,8 @@ export function estimateQueue(input: {
   const peopleAhead = Math.max(0, input.rank - codesIssued);
 
   // NUCA sends one batch per working day (Sun–Thu) and only ever grew it (200 → 300 on 1 Oct 2026, 300 → 700 on
-  // 8 Nov 2026), so the latest batch size is both the expected and the worst case; the best case allows it to grow
-  // again. The official news names the next batch's range and day, which fixes the first step of the walk.
+  // 8 Nov 2026, 700 → 1000 on 15 Nov 2026), so the latest batch size is both the expected and the worst case; the
+  // best case allows it to grow again. The official news names the next batch's range and day, which fixes the first step of the walk.
   const codesPerBatch: Range = { low: latest, mid: latest, high: Math.round(latest * MODEL.optimisticBatchGrowth) };
   const batchesPerWeek = MODEL.batchWeekdays.length;
   assumptions.push("A3: one batch per working day; Friday and Saturday are off (public holidays are not modelled).");

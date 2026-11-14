@@ -34,10 +34,10 @@ export type PremiumValues = typeof DEFAULT_PREMIUM_VALUES;
 export const MODEL = {
   /** Fallback booking conversion (codes → bookings) when allocation history is missing. */
   defaultConversion: 0.7,
-  /** Fallback codes per batch when there is no allocation history (NUCA sends 700 a day since 8 Nov 2026; 300 from 1 Oct 2026, 200 before). */
-  defaultCodesPerBatch: 700,
-  /** Cairo hour at which a day's batch counts as issued when the official news item names none; observed 10–12. */
-  defaultBatchHour: 11,
+  /** Fallback codes per batch when there is no allocation history (NUCA sends 1000 a day since 15 Nov 2026; 700 from 8 Nov 2026, 300 from 1 Oct 2026, 200 before). */
+  defaultCodesPerBatch: 1000,
+  /** Cairo hour at which a day's batch counts as issued when the official news item names none; every announcement since 9 Nov 2026 says 10:00 (10–12 before). */
+  defaultBatchHour: 10,
   /** Booking codes go out one batch per working day; Friday and Saturday (Cairo time) are off. */
   batchWeekdays: [0, 1, 2, 3, 4],
   batchTimeZone: "Africa/Cairo",
@@ -50,7 +50,7 @@ export const MODEL = {
   lateBookingShare: { low: 0, mid: 0.1, high: 0.25 },
   /** How many most recent completed batches feed the rate/conversion estimate. */
   recentBatches: 6,
-  /** Optimistic scenario: NUCA enlarges daily batches by this factor (700 → 933). Batches never shrink below the latest size. */
+  /** Optimistic scenario: NUCA enlarges daily batches by this factor (1000 → 1333). Batches never shrink below the latest size. */
   optimisticBatchGrowth: 4 / 3,
   /** Max plots from the same sector in the Top-10 list (diversity). */
   topPerSector: 2,

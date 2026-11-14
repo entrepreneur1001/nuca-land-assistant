@@ -137,11 +137,11 @@ How a plan is georeferenced (tools in `scripts/plans/`, see its README): the yel
 All constants: `src/engine/config.ts`, `src/engine/nearbuilt.ts`.
 
 - **Queue:**
-  - People ahead = rank − booking codes issued. Codes go out in one batch per working day, Sunday–Thursday in Cairo time (Friday and Saturday are off; public holidays are not modelled). Batches were 200 codes, 300 from 1 Oct 2026 and 700 from 8 Nov 2026.
-  - Codes issued, the batch size and the next batch day come from the **official news** (`officialQueue` in `src/engine/queue.ts`): the latest «حتى مسلسل N» and the announced «من A حتى B» range, which counts as issued from its announced hour (default 11:00 Cairo). When the synthesized batches are newer than the latest news item, they are used instead. With no data at all the fallback is 700 codes per batch.
+  - People ahead = rank − booking codes issued. Codes go out in one batch per working day, Sunday–Thursday in Cairo time (Friday and Saturday are off; public holidays are not modelled). Batches were 200 codes, 300 from 1 Oct 2026, 700 from 8 Nov 2026 and 1,000 from 15 Nov 2026.
+  - Codes issued, the batch size and the next batch day come from the **official news** (`officialQueue` in `src/engine/queue.ts`): the latest «حتى مسلسل N» and the announced «من A حتى B» range, which counts as issued from its announced hour (default 10:00 Cairo). When the synthesized batches are newer than the latest news item, they are used instead. With no data at all the fallback is 1,000 codes per batch.
   - Conversion = booked ÷ codes for recently completed batches (~60–71%), where "booked" is the plots seen booked on the batch's Cairo day.
   - Bookings before your turn = people ahead × conversion, plus pending bookings from people already called: today's batch still booking, and a share (10% expected, 25% worst) of earlier code holders who haven't booked and may book late (`MODEL.lateBookingShare`).
-  - The ETA walks the working-day calendar. The expected and worst cases keep the latest batch size; the best case assumes NUCA grows batches by a third (700 → 933).
+  - The ETA walks the working-day calendar. The expected and worst cases keep the latest batch size; the best case assumes NUCA grows batches by a third (1,000 → 1,333).
 - **Depletion:**
   - Future bookings are spread across districts by last-week demand (25% smoothed toward inventory). A district that sells out spills its demand over to the others.
   - Inside a district, plots are picked using weights learned from what was already booked: garden+corner ≈3.2×, garden ≈1.9×, corner ≈1.6×.

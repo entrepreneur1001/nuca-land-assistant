@@ -202,6 +202,16 @@ describe("bookings per day and synthesized batches", () => {
     expect(a[0].d).toBe("2026-11-02T09:00:00.000Z");
   });
 
+  it("the 15 Nov 2026 announcement becomes a 1000-code batch at 10:00 Cairo", () => {
+    const items: OfficialNewsItem[] = [
+      { nid: 9121, day: "2026-11-12", title: "", servedThrough: 12800 },
+      { nid: 9122, day: "2026-11-14", title: "", next: { from: 12801, to: 13800, day: "2026-11-15", hour: 10 } },
+    ];
+    const a = synthesizeAllocations(items, { "2026-11-15": 480 }, new Date("2026-11-15T12:00:00Z"));
+    expect(a).toEqual([{ id: "nid-9122", d: "2026-11-15T08:00:00.000Z", c: 1000, b: 480 }]);
+    expect(synthesizeAllocations(items, {}, new Date("2026-11-14T12:00:00Z"))).toEqual([]); // not before its day
+  });
+
   it("hot sectors need enough recent bookings", () => {
     const recs = [
       ...Array.from({ length: 12 }, (_, i) => rec(`a${i}`, 1, { sectorId: "A", bookingTs: NOW.getTime() - i * 3_600_000 })),

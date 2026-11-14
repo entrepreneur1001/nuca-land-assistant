@@ -155,7 +155,7 @@ describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
     expect(q.assumptions.find((a) => a.startsWith("A5:"))).toMatch(/older than the latest synced batch/);
   });
 
-  it("without official items the synced data (or the default 700) is used as before", () => {
+  it("without official items the synced data (or the default 1000) is used as before", () => {
     const synced = at("2026-11-08T10:00:00Z", [], nov);
     expect(synced.codesIssuedSource).toBe("allocations");
     expect(synced.codesIssued).toBe(1200);
@@ -163,7 +163,7 @@ describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
     expect(synced.official).toBeNull();
     const bare = at("2026-11-08T10:00:00Z", [], []);
     expect(bare.codesIssuedSource).toBe("estimated-from-booked");
-    expect(bare.codesPerBatch.mid).toBe(700);
+    expect(bare.codesPerBatch.mid).toBe(1000);
     expect(bare.official).toBeNull();
     expect(at("2026-11-08T10:00:00Z", all.filter((i) => i.nid === 9114), nov).official).toBeNull(); // no queue items
   });
@@ -185,7 +185,7 @@ describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
     expect(officialQueue([], new Date())).toBeNull();
   });
 
-  it("officialQueue: a batch announced without its end takes the last batch size, then +1 batch per working day at 11:00", () => {
+  it("officialQueue: a batch announced without its end takes the last batch size, then +1 batch per working day at 10:00", () => {
     // NID 9118 (Mon 9 Nov): «through 10700; resume Tue 10 Nov at 10 from 10701 to» with no end number.
     const nid9118 = { nid: 9118, day: "2026-11-09", title: "", servedThrough: 10700, next: { from: 10701, to: null, day: "2026-11-10", hour: 10 } };
     const items = [...all.filter((i) => [9116, 9117].includes(i.nid)), nid9118];
@@ -193,19 +193,37 @@ describe("official NUCA news (lands.nuca.gov.eg news list)", () => {
     expect(q("2026-11-10T07:00:00Z").issuedThrough).toBe(10700); // Tue 09:00 Cairo
     const tue = q("2026-11-10T08:00:00Z"); // Tue 10:00 Cairo, the announced hour
     expect(tue).toMatchObject({ issuedThrough: 11400, newsThrough: 11400, batchSize: 700, todayBatch: 700, projectedBatches: 0, next: null });
-    expect(q("2026-11-11T08:30:00Z").issuedThrough).toBe(11400); // Wed 10:30: not yet
-    const wed = q("2026-11-11T09:00:00Z"); // Wed 11:00
+    expect(q("2026-11-11T07:30:00Z").issuedThrough).toBe(11400); // Wed 09:30: not yet
+    const wed = q("2026-11-11T08:00:00Z"); // Wed 10:00
     expect(wed).toMatchObject({ issuedThrough: 12100, newsThrough: 11400, todayBatch: 700, projectedBatches: 1 });
     expect(wed.asOfDay).toBe(isoDay("2026-11-10")); // a projection is not news
     expect(q("2026-11-12T10:00:00Z").issuedThrough).toBe(12800); // Thu
     expect(q("2026-11-14T10:00:00Z").issuedThrough).toBe(12800); // Fri and Sat off
-    expect(q("2026-11-15T09:00:00Z").issuedThrough).toBe(13500); // Sun 11:00
+    expect(q("2026-11-15T08:00:00Z").issuedThrough).toBe(13500); // Sun 10:00
     // A newer news item replaces the projection.
     const posted = { nid: 9119, day: "2026-11-11", title: "", servedThrough: 11900, next: { from: 11901, to: 12500, day: "2026-11-12", hour: 10 } };
     expect(officialQueue([...items, posted], new Date("2026-11-11T18:00:00Z"))!.issuedThrough).toBe(11900);
     // The estimate follows it.
     const est = estimateQueue({ rank: 20000, booked: 6889, available: 8658, official: items, now: new Date("2026-11-10T10:00:00Z") });
     expect(est.codesIssued).toBe(11400);
+  });
+
+  it("1000-code batches from Sun 15 Nov 2026 (NID 9121 + 9122)", () => {
+    const items = [
+      { nid: 9121, day: "2026-11-12", title: "", servedThrough: 12800 },
+      { nid: 9122, day: "2026-11-14", title: "", next: { from: 12801, to: 13800, day: "2026-11-15", hour: 10 } },
+    ];
+    const q = (iso: string) => officialQueue(items, new Date(iso))!;
+    const sat = q("2026-11-14T18:00:00Z");
+    expect(sat).toMatchObject({ issuedThrough: 12800, batchSize: 1000, next: { from: 12801, to: 13800, day: isoDay("2026-11-15"), hour: 10 } });
+    expect(q("2026-11-15T07:30:00Z").issuedThrough).toBe(12800); // Sun 09:30 Cairo
+    expect(q("2026-11-15T08:00:00Z")).toMatchObject({ issuedThrough: 13800, todayBatch: 1000 }); // Sun 10:00
+    expect(q("2026-11-16T08:00:00Z")).toMatchObject({ issuedThrough: 14800, projectedBatches: 1 }); // Mon, no news yet
+    const est = estimateQueue({ rank: 20000, booked: 7877, available: 7745, official: items, now: new Date("2026-11-14T18:00:00Z") });
+    expect(est.codesPerBatch).toEqual({ low: 1000, mid: 1000, high: 1333 });
+    expect(est.peopleAhead).toBe(7200);
+    // 8 batches of 1000 from Sun 15 Nov (Sun–Thu, then Sun–Tue): rank 20000 is in Tue 24 Nov's batch.
+    expect(est.eta.expected?.toISOString().slice(0, 10)).toBe("2026-11-24");
   });
 
   it("nthBatchDay honours an announced first day, even a Friday, then walks working days", () => {
