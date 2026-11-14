@@ -41,10 +41,18 @@ async function readDoc<T>(docPath: string): Promise<T> {
     const name = docPath === "meta/current" ? "meta" : docPath.split("/").pop();
     return JSON.parse(await readFile(path.join(process.cwd(), "public/dev-snapshot", `${name}.json`), "utf8")) as T;
   }
-  const r = await fetch(`${REST}/${docPath}`);
-  if (!r.ok) throw new Error(`Firestore ${docPath}: HTTP ${r.status}`);
-  const body = (await r.json()) as { fields: Record<string, FsValue> };
-  return fromFsFields(body.fields) as T;
+  // The build reads every chunk at once from several workers; a connection that times out is retried, not fatal.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch(`${REST}/${docPath}`);
+      if (!r.ok) throw new Error(`Firestore ${docPath}: HTTP ${r.status}`);
+      const body = (await r.json()) as { fields: Record<string, FsValue> };
+      return fromFsFields(body.fields) as T;
+    } catch (e) {
+      if (attempt >= 4) throw e;
+      await new Promise((ok) => setTimeout(ok, 2000 * attempt));
+    }
+  }
 }
 
 let snapshot: Promise<Snapshot> | null = null;
