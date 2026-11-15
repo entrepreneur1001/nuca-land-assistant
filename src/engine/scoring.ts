@@ -30,6 +30,8 @@ export interface Profile {
     units?: FeatureMode;
     /** Faces a main road, a compound or existing buildings (الواجهة). */
     facing?: FeatureMode;
+    /** The street side faces north (واجهة بحري). */
+    north?: FeatureMode;
     onlyPreferredCities?: boolean;
     premiumValues?: Partial<PremiumValues>;
   } | null;
@@ -143,6 +145,7 @@ export function exclusionReason(l: ScorableLand, p: Profile): keyof ExclusionSta
   if (p.preferences?.nearBuilt === "require" && !isNearBuilt(l.builtKm)) return "featureRequired";
   if (p.preferences?.units === "require" && !isMultiUnit(l.area, l.cityName)) return "featureRequired";
   if (p.preferences?.facing === "require" && !facesSomething(l.faces) && !isOnMainRoad(l.mainRoadM)) return "featureRequired";
+  if (p.preferences?.north === "require" && !facesNorth(l.frontage)) return "featureRequired";
   if (p.preferences?.onlyPreferredCities && p.preferredCities.length && !p.preferredCities.includes(l.cityName))
     return "city";
   return null;
@@ -207,6 +210,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
   const nearMode = profile.preferences?.nearBuilt ?? "prefer";
   const unitsMode = profile.preferences?.units ?? "prefer";
   const facingMode = profile.preferences?.facing ?? "prefer";
+  const northMode = profile.preferences?.north ?? "prefer";
 
   const scored: ScoredLand[] = eligible.map((l) => {
     const s = ctx.survival.get(l.id) ?? { low: 0, mid: 0, high: 0 };
@@ -261,7 +265,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       demand: ctx.demand?.get(sectorKey(l)) ?? 0,
       surroundings:
         facingMode === "ignore" ? 0.5 : surroundingsFactor(faces ?? (hasStreet ? { road: l.mainRoadM ?? 0, compound: null, built: null, services: [] } : null)),
-      orientation: facingMode === "ignore" ? 0.5 : orientationFactor(l.frontage),
+      orientation: northMode === "ignore" ? 0.5 : orientationFactor(l.frontage),
     };
     const score =
       (100 *
@@ -275,7 +279,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     else if (hasCorner) reasons.push(R.corner);
     if (faces?.compound) reasons.push(faces.compound.premium ? R.premiumCompound(faces.compound.name) : R.compound(faces.compound.name));
     if (hasStreet) reasons.push(R.street);
-    if (facesNorth(l.frontage)) reasons.push(R.north);
+    if (northMode !== "ignore" && facesNorth(l.frontage)) reasons.push(R.north);
     if (faces?.built != null) reasons.push(R.facingBuilt);
     if (faces?.servicesLand != null) reasons.push(R.servicesLand);
     if (faces?.nearCompound) {

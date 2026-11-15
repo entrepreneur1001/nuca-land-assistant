@@ -397,6 +397,7 @@ export const t = {
     nearBuilt: "🏘️ قريبة من العمار",
     units: "🏢 ٣ شقق أو أكتر في الدور",
     facing: "🛣️ على طريق أو قدام كمبوند / مباني / خدمات",
+    north: "🧭 واجهة بحري",
     modes: { prefer: "أفضّلها", require: "لازم", ignore: "مش فارقة" },
     cities: "المدن اللي بتفضلها (دوس بالترتيب)",
     allCities: (n: number) => `كل المدن (${num(n)})`,

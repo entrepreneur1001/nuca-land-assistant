@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ORIENTATION_VALUES } from "@/engine/config";
 import { compass8, directions, facesNorth, isCornerPlot, orientationFactor, plotFrontage, plotSides, sideVertices, type Frontage, type Ground, type Probe } from "@/engine/frontage";
 import { boxOf, type Blocker, type XY } from "@/engine/surroundings";
+import { scoreLands, type Profile, type ScorableLand } from "@/engine/scoring";
 import { parseFrontage } from "@/lib/frontage";
 
 // Local metres: x = east, y = north.
@@ -196,5 +197,46 @@ describe("parseFrontage", () => {
     expect(idx.get("zz")).toBeUndefined();
     expect(parseFrontage({ v: 9, generated: "x", plots: { a: [2, []] } } as never).size).toBe(0);
     expect(parseFrontage(null).size).toBe(0);
+  });
+});
+
+describe("the north preference", () => {
+  const land = (id: string, bearing: number | null): ScorableLand => ({
+    id,
+    cityName: "c",
+    projectId: "p",
+    projectName: "p",
+    plotNumber: id,
+    area: 500,
+    pricePerMeter: 100,
+    totalPrice: 50000,
+    downPayment: 10000,
+    gardenPct: 0,
+    cornerPct: 0,
+    seaPct: 0,
+    status: "available",
+    latitude: 30,
+    frontage: bearing == null ? null : { conf: 2, sides: [{ bearing, from: 0, to: 1, widthM: 10 }] },
+  });
+  const lands = [land("n", 0), land("s", 180), land("u", null)];
+  const base: Profile = { bookingRank: 1, moneyPaid: 99999, preferredCities: [], preferredProjects: [], minArea: null, maxArea: null, preferredArea: null, maxPrice: null, preferredPricePerMeter: null };
+  const ctx = { survival: new Map(lands.map((l) => [l.id, { low: 1, mid: 1, high: 1 }])), cityPopularity: new Map() };
+  const run = (north: "prefer" | "require" | "ignore") => scoreLands(lands, { ...base, preferences: { north } }, ctx);
+
+  it("prefer ranks بحري first and قبلي last", () => {
+    const by = new Map(run("prefer").scored.map((x) => [x.id, x.score]));
+    expect(by.get("n")!).toBeGreaterThan(by.get("u")!);
+    expect(by.get("u")!).toBeGreaterThan(by.get("s")!);
+  });
+
+  it("require keeps only plots facing north", () => {
+    const r = run("require");
+    expect(r.scored.map((x) => x.id)).toEqual(["n"]);
+    expect(r.excluded.featureRequired).toBe(2);
+  });
+
+  it("ignore scores every direction the same", () => {
+    const scores = new Set(run("ignore").scored.map((x) => x.score));
+    expect(scores.size).toBe(1);
   });
 });

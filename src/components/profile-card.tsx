@@ -78,7 +78,7 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
   // The cities come most-available first (home.tsx); the rest wait behind a button so the form stays short. Picked cities always show.
   const shownCities = allCities ? cities : cities.filter((c, i) => i < CITY_CHIPS || profile.preferredCities.includes(c));
   const prefs = profile.preferences ?? {};
-  const setPref = (k: "garden" | "corner" | "nearBuilt" | "units" | "facing", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
+  const setPref = (k: "garden" | "corner" | "nearBuilt" | "units" | "facing" | "north", v: FeatureMode) => setProfile({ ...profile, preferences: { ...prefs, [k]: v } });
   const share = async () => {
     const url = `${location.origin}${location.pathname}?${toQuery(profile)}`;
     void track("share_link");
@@ -119,6 +119,7 @@ export function ProfileCard({ profile, setProfile, cities }: { profile: Profile;
             ["nearBuilt", t.profile.nearBuilt],
             ["units", t.profile.units],
             ["facing", t.profile.facing],
+            ["north", t.profile.north],
           ] as const
         ).map(([k, label]) => (
           <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-2">
