@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { REC, num, t } from "@/i18n/ar";
+import { REC, num, t, COMPASS } from "@/i18n/ar";
 import type { Faces } from "@/engine/surroundings";
 import { areaHref } from "@/lib/phases";
 
@@ -49,6 +49,18 @@ export function RecBadge({ rec }: { rec: string }) {
   // «تحت المراقبة» and «سيبها» aren't shown; such plots just carry no recommendation badge.
   if (rec === "WATCH" || rec === "SKIP") return null;
   return <Badge tone={recTone(rec)}>{REC[rec] ?? rec}</Badge>;
+}
+
+/** «اتجاه الواجهة» filter: any direction, or one of the eight. `value` is "" or the compass sector "0"…"7". */
+export function DirectionSelect({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
+  return (
+    <select className={className ?? "rounded-lg border border-border bg-surface-2 px-2 py-1 text-sm"} aria-label={t.search.direction} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">🧭 {t.search.direction}: {t.search.anyDirection}</option>
+      {COMPASS.map((name, i) => (
+        <option key={i} value={String(i)}>🧭 {name}</option>
+      ))}
+    </select>
+  );
 }
 
 export function FeatureBadges({

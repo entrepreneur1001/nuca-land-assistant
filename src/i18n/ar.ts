@@ -96,11 +96,11 @@ export const t = {
     noteBooklet: "منقولة من كراسة شروط الطرح أو بروشور المنطقة الرسمي (المصدر مانشرهاش للمنطقة دي)، اتأكد منها قبل الحجز.",
   },
   tagline: "بترتيبك وفلوسك… إيه أحسن أرض تقدر تحجزها؟",
-  /** Home-page notice: every plot now has its exact place and shape on the map, from the official plans. */
+  /** Home-page notice (green): the newest features. Now: frontage direction with its filter, and favourites with alerts. */
   plansNotice: {
     lead: "جديد:",
-    text: "أماكن كل قطع الأراضي اتحدّثت على الخريطة من مخططات الهيئة الرسمية. افتح أي مدينة وشوف شكل كل قطعة ومكانها بالظبط: الأخضر متاح، والأحمر اتحجز. وكمان بقينا نعرض الأراضي اللي عليها حجز مبدئي (البرتقالي): لسه ينفع تحجزها، وأول تحويل بيكسب.",
-    link: "شوف الأراضي على الخريطة",
+    text: "بقينا نعرض اتجاه واجهة كل أرض (بحري، قبلي، شرقي، غربي) من مخططات الهيئة الرسمية، وتقدر تختار الاتجاه اللي عايزه من فلتر «اتجاه الواجهة». وكمان تقدر تحفظ أي أرض في المفضلة ♡ ويوصلك إشعار أول ما حالتها تتغير (حجز مبدئي أو اتحجزت).",
+    link: "شوف الأراضي المتاحة",
   },
   nav: { home: "الرئيسية", market: "السوق", available: "المتاح", guide: "دليل الحجز", favorites: "المفضلة" },
   /** /impact: how many people the alerts helped (unlisted page for the team). */
@@ -515,7 +515,8 @@ export const t = {
     units: "٣ شقق أو أكتر في الدور",
     facing: "على طريق أو قدام كمبوند / مباني / خدمات",
     sort: "رتّب حسب",
-    north: "واجهتها بحري",
+    direction: "اتجاه الواجهة",
+    anyDirection: "كل الاتجاهات",
     sorts: { score: "التقييم", reach: "فرصة الوصول", nearBuilt: "القرب من العمار", facing: "الواجهة", orientation: "اتجاه الواجهة", premium: "الأعلى تميزًا", price: "الأرخص", ppm: "الأرخص سعر متر", area: "الأكبر" },
     results: (n: number) => `${num(n)} أرض`,
     prev: "اللي قبله",

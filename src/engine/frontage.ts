@@ -92,6 +92,9 @@ export function directions(f: Frontage | null | undefined): Compass[] {
   return out;
 }
 
+/** Has a determined frontage facing the given direction, on any of its street sides. */
+export const facesDirection = (f: Frontage | null | undefined, c: Compass) => !!f && f.conf > 0 && directions(f).includes(c);
+
 /** Has a determined frontage facing north (بحري), on any of its street sides. */
 export const facesNorth = (f: Frontage | null | undefined) => !!f && f.conf > 0 && directions(f).includes(0);
 

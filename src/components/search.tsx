@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_WEIGHTS } from "@/engine/config";
 import type { RankedLand } from "@/engine/compute";
-import { facesNorth } from "@/engine/frontage";
+import { facesDirection, facesNorth, type Compass } from "@/engine/frontage";
 import { facesSomething } from "@/engine/surroundings";
 import { FACTOR, km, num, t, usd } from "@/i18n/ar";
 import { track } from "@/lib/firebase";
 import { useApp } from "./app-state";
-import { AreaLink, Card, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
+import { AreaLink, Card, DirectionSelect, FeatureBadges, RecBadge, SurvivalBar } from "./ui";
 
 type Sort = keyof typeof t.search.sorts;
 const PAGE = 30;
@@ -25,7 +25,7 @@ const premiumPct = (r: RankedLand) => r.cornerPct + r.gardenPct + r.seaPct;
 export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; cities: string[] }) {
   const app = useApp()!;
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ city: "", project: "", minArea: "", maxArea: "", maxDp: "", minReach: "", garden: false, corner: false, near: false, units: false, facing: false, north: false });
+  const [f, setF] = useState({ city: "", project: "", minArea: "", maxArea: "", maxDp: "", minReach: "", garden: false, corner: false, near: false, units: false, facing: false, dir: "" });
   const [sort, setSort] = useState<Sort>("score");
   const [page, setPage] = useState(0);
 
@@ -46,7 +46,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
         (!f.corner || r.hasCorner) &&
         (!f.near || r.isNearBuilt) &&
         (!f.facing || r.hasStreet || facesSomething(r.faces)) &&
-        (!f.north || facesNorth(r.frontage)) &&
+        (!f.dir || facesDirection(r.frontage, Number(f.dir) as Compass)) &&
         // null = the city sets units per plot (New Alamein): always multi-unit.
         (!f.units || r.unitsPerFloor == null || r.unitsPerFloor >= 3),
     );
@@ -132,13 +132,13 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                 ["near", `🏘️ ${t.search.nearBuilt}`],
                 ["units", `🏢 ${t.search.units}`],
                 ["facing", `🛣️ ${t.search.facing}`],
-                ["north", `🧭 ${t.search.north}`],
               ] as const
             ).map(([k, label]) => (
               <label key={k} className="flex items-center gap-1.5">
                 <input type="checkbox" checked={f[k]} onChange={(e) => set(k, e.target.checked)} /> {label}
               </label>
             ))}
+            <DirectionSelect value={f.dir} onChange={(v) => set("dir", v)} />
             <span className="ms-auto text-muted">{t.search.results(rows.length)}</span>
           </div>
 

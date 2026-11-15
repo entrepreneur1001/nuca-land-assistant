@@ -1,6 +1,6 @@
 "use client";
 
-import { facesNorth } from "@/engine/frontage";
+import { facesDirection, facesNorth, type Compass } from "@/engine/frontage";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -17,7 +17,7 @@ import { AreaMap } from "./area-map";
 import { FavoriteButton, FollowButton } from "./favorite-button";
 import { PushPrompt } from "./favorites";
 import { useFollows, followKey } from "@/lib/follows";
-import { Badge, Card, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
+import { Badge, Card, DirectionSelect, FeatureBadges, RecBadge, Stat, SurvivalBar } from "./ui";
 import { LoadingOrError } from "./load-state";
 
 type Sort = keyof typeof t.area.sorts;
@@ -40,6 +40,9 @@ export function AreaView() {
     const on = new Set(fParam.split(","));
     return { garden: on.has("garden"), corner: on.has("corner"), budget: on.has("budget") };
   }, [fParam]);
+  // «اتجاه الواجهة»: "" = any, else the compass sector 0–7 (kept in the address like the other filters).
+  const dirParam = params.get("dir") ?? "";
+  const dir = /^[0-7]$/.test(dirParam) ? dirParam : "";
   const [shown, setShown] = useState(PAGE);
   const replaceParams = (patch: Record<string, string | null>, base = params.toString()) => {
     const q = new URLSearchParams(base);
@@ -89,6 +92,7 @@ export function AreaView() {
         p.status === "available" &&
         (!f.garden || p.gardenPct > 0) &&
         (!f.corner || p.cornerPct > 0) &&
+        (!dir || facesDirection(p.frontage, Number(dir) as Compass)) &&
         (!f.budget || paid == null || p.downPayment <= paid),
     );
     const chance = (p: Plot) => ranked.get(p.id)?.survival.mid ?? -1;
@@ -99,12 +103,12 @@ export function AreaView() {
       reach: (a, b) => chance(b) - chance(a),
     };
     return out.sort(by[sort]);
-  }, [area, f, sort, paid, ranked]);
+  }, [area, f, dir, sort, paid, ranked]);
 
   if (!app?.snapshot) return <LoadingOrError error={app?.error} />;
   if (!area) return <Card>{t.area.notFound}</Card>;
 
-  const go = (d: string | null) => replaceParams({ sort: params.get("sort"), f: params.get("f") }, areaHref(city, d).split("?")[1] ?? "");
+  const go = (d: string | null) => replaceParams({ sort: params.get("sort"), f: params.get("f"), dir: params.get("dir") }, areaHref(city, d).split("?")[1] ?? "");
   const following = !!follows[followKey(area.city, area.district?.id)];
   const s = area.stats;
   const mapDistricts = area.district ? [area.district] : area.districts;
@@ -194,6 +198,7 @@ export function AreaView() {
           <Check checked={f.garden} onChange={(v) => setF({ ...f, garden: v })} label={`🌳 ${t.search.garden}`} />
           <Check checked={f.corner} onChange={(v) => setF({ ...f, corner: v })} label={`📐 ${t.search.corner}`} />
           {paid != null ? <Check checked={f.budget} onChange={(v) => setF({ ...f, budget: v })} label={`💵 ${t.area.budget}`} /> : null}
+          <DirectionSelect value={dir} onChange={(v) => replaceParams({ dir: v || null })} />
         </div>
 
         <ul className="mt-3 divide-y divide-border">
