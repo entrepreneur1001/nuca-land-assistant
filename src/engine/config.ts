@@ -12,10 +12,22 @@ export const DEFAULT_WEIGHTS = {
   area: 5,
   /** What the plot faces: a premium compound, a compound, a main road, existing buildings (engine/surroundings.ts). */
   surroundings: 20,
+  /** Which way the plot's street side faces: بحري best, قبلي least (engine/frontage.ts). */
+  orientation: 10,
   /** How fast the plot's district is selling now; only counts when the user's turn is near (see engine/demand.ts). */
   demand: 15,
 } as const;
 export type Weights = Record<keyof typeof DEFAULT_WEIGHTS, number>;
+
+/**
+ * Orientation factor (0–1) by the direction the plot's street side faces (engine/frontage.ts). بحري is the
+ * sought-after one and قبلي the least; a plot whose direction is not determined scores the neutral `unknown`.
+ */
+export const ORIENTATION_VALUES = {
+  /** Index = compass sector: بحري, بحري شرقي, شرقي, قبلي شرقي, قبلي, قبلي غربي, غربي, بحري غربي. */
+  byCompass: [1, 0.85, 0.6, 0.4, 0.3, 0.4, 0.5, 0.85],
+  unknown: 0.5,
+};
 
 /** Premium factor (0–1) per feature combination. Garden + corner (ناصية) are a priority. */
 export const DEFAULT_PREMIUM_VALUES = {

@@ -6,6 +6,7 @@
 
 import type * as Leaflet from "leaflet";
 import type { Plot } from "@/data/snapshot";
+import { sideVertices, type Frontage } from "@/engine/frontage";
 import { num, t, usd } from "@/i18n/ar";
 import { pastImageUrl, pastZoneInView, type PastPlanZone } from "@/lib/past-plans";
 import { planClip, planProjector, type PlanZone } from "@/lib/plans";
@@ -27,6 +28,9 @@ export interface PlanLayerOptions {
   /** Plot id drawn as "this plot" (accent fill, permanent label, no click). */
   self?: string | null;
   onClick?: (plotId: string) => void;
+  /** Street sides of the `self` plot, drawn over its outline, with a colour per side (main frontage first). */
+  frontage?: Frontage | null;
+  frontColor?: (i: number) => string;
 }
 
 export interface PlanLayer extends PlanLabelSource {
@@ -283,6 +287,22 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       .addTo(map);
   }
   if (opts.self) polys.get(opts.self)?.poly.bringToFront();
+  // The plot's street sides, thick and coloured, on top of its outline (a dark casing keeps them readable on any ground).
+  const fronts: Leaflet.Polyline[] = [];
+  const selfPixels = opts.self ? zone.plots[opts.self] : undefined;
+  if (selfPixels && polys.has(opts.self!) && opts.frontage?.conf)
+    opts.frontage.sides
+      .map((s, i) => ({ s, i }))
+      .reverse()
+      .forEach(({ s, i }) => {
+        const line = sideVertices(selfPixels, s).map(([x, y]) => toLatLng(x, y));
+        if (line.length < 2) return;
+        for (const style of [
+          { color: "#0f172a", weight: 9, opacity: 0.55 },
+          { color: opts.frontColor?.(i) ?? opts.colors.accent, weight: 5, opacity: 1 },
+        ])
+          fronts.push(L.polyline(line, { ...style, renderer, pane: "overlayPane", interactive: false, lineCap: "round" }).addTo(map));
+      });
 
   let lit: string | null = null;
   let bookedOn = true;
@@ -324,6 +344,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       }
       // Re-added shapes land on top: put the emphasised ones back above them.
       if (on && opts.self) polys.get(opts.self)?.poly.bringToFront();
+      if (on) for (const f of fronts) f.bringToFront();
       if (on && lit) apply(lit);
       layer.onChange?.();
     },
@@ -353,6 +374,7 @@ export function addPlanLayer(L: L, map: Leaflet.Map, zid: string, zone: PlanZone
       map.off("zoomend", onZoom);
       showImages(false);
       for (const { poly } of polys.values()) map.removeLayer(poly);
+      for (const f of fronts) map.removeLayer(f);
       map.removeLayer(renderer);
       polys.clear();
       layer.onChange?.();

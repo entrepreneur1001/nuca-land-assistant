@@ -1,6 +1,7 @@
 import { DEFAULT_PREMIUM_VALUES, DEFAULT_WEIGHTS, MODEL, type PremiumValues, type Weights } from "./config";
 import { sectorKey } from "./demand";
 import { featureKey, type Survival } from "./depletion";
+import { facesNorth, orientationFactor, type Frontage } from "./frontage";
 import { NEAR_BUILT, nearBuiltFactor } from "./nearbuilt";
 import { isOnMainRoad } from "./roads";
 import { MAJOR_SERVICES, facesSomething, hasMajorService, onRoad, surroundingsFactor, type Faces } from "./surroundings";
@@ -54,6 +55,8 @@ export interface ScorableLand {
   mainRoadM?: number | null;
   /** What the plot faces; null/undefined = not measured. */
   faces?: Faces | null;
+  /** Which way its street side faces; null/undefined = not measured. */
+  frontage?: Frontage | null;
 }
 
 export type Recommendation = "STRONG_BUY" | "GOOD" | "WATCH" | "SKIP";
@@ -68,6 +71,7 @@ export interface Factors {
   area: number;
   demand: number;
   surroundings: number;
+  orientation: number;
 }
 
 export interface ScoredLand {
@@ -257,6 +261,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
       demand: ctx.demand?.get(sectorKey(l)) ?? 0,
       surroundings:
         facingMode === "ignore" ? 0.5 : surroundingsFactor(faces ?? (hasStreet ? { road: l.mainRoadM ?? 0, compound: null, built: null, services: [] } : null)),
+      orientation: facingMode === "ignore" ? 0.5 : orientationFactor(l.frontage),
     };
     const score =
       (100 *
@@ -270,6 +275,7 @@ export function scoreLands(lands: ScorableLand[], profile: Profile, ctx: ScoreCo
     else if (hasCorner) reasons.push(R.corner);
     if (faces?.compound) reasons.push(faces.compound.premium ? R.premiumCompound(faces.compound.name) : R.compound(faces.compound.name));
     if (hasStreet) reasons.push(R.street);
+    if (facesNorth(l.frontage)) reasons.push(R.north);
     if (faces?.built != null) reasons.push(R.facingBuilt);
     if (faces?.servicesLand != null) reasons.push(R.servicesLand);
     if (faces?.nearCompound) {

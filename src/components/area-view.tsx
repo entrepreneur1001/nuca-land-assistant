@@ -1,5 +1,6 @@
 "use client";
 
+import { facesNorth } from "@/engine/frontage";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -230,7 +231,7 @@ function Row({ plot: p, r, showDistrict, onHover }: { plot: Plot; r?: RankedLand
           garden={p.gardenPct > 0}
           corner={p.cornerPct > 0}
           street={onRoad(p.faces, p.mainRoadM)}
-          faces={p.faces}
+          faces={p.faces} north={facesNorth(p.frontage)}
           sea={p.seaPct > 0}
           nearBuilt={r?.isNearBuilt}
           units={unitsRule(p.area, p.cityName)}

@@ -1,5 +1,6 @@
 import { arDigits } from "@/lib/digits";
 import type { Faces } from "@/engine/surroundings";
+import type { Frontage } from "@/engine/frontage";
 /**
  * Compact snapshot format shared by the ingest job (Node) and the browser.
  * Firestore holds `meta/current` plus a handful of `plots/{chunkId}` docs, each a
@@ -171,6 +172,8 @@ export interface Plot {
   rules: BuildingRules | null;
   /** What the plot faces (road, compound, buildings, services), from public/surroundings.json; null/absent = not measured. */
   faces?: Faces | null;
+  /** Which way its street side faces (بحري / قبلي …), from public/frontage.json; null/absent = no outline to measure. */
+  frontage?: Frontage | null;
 }
 
 export interface Snapshot {

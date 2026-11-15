@@ -9,6 +9,7 @@ import type { Plot } from "@/data/snapshot";
 import { loadPastIndex, pastZonesOfCity } from "@/lib/past-plans";
 import { loadCompounds } from "@/lib/compounds";
 import { addCompounds, limitToCity } from "./compound-layer";
+import { frontColor } from "./compass";
 import { IMAGERY_ATTRIBUTION } from "./map-controls";
 import { addPlaces } from "./places-layer";
 import { loadPlacesNear } from "@/lib/places";
@@ -103,6 +104,8 @@ export function PlotMap({
         addPlanLayer(L, map!, z.zid, z.zone, z.image, byPlot, {
           colors: { good, warn, bad, accent },
           self: plot.id,
+          frontage: plot.frontage,
+          frontColor,
           onClick: (id) => {
             void track("map_plot_click", { id, page: location.pathname });
             router.push(`/land?id=${encodeURIComponent(id)}`);

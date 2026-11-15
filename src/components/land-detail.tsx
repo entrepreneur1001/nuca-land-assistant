@@ -1,9 +1,11 @@
 "use client";
 
+import { compass8, facesNorth, isCornerPlot } from "@/engine/frontage";
+import { FrontageCompass, frontColor } from "./compass";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FACTOR, km, num, pct, t, usd } from "@/i18n/ar";
+import { COMPASS, FACTOR, km, num, pct, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
 import { onRoad } from "@/engine/surroundings";
@@ -45,6 +47,8 @@ export function LandDetail() {
   const sectorKey = plot.projectId ?? `city:${plot.cityName}`;
   const sector = dashboard.sectors.find((x) => x.key === sectorKey);
   const booked = plot.status === "booked";
+  // A determined frontage direction (medium or high); null = not determined or no outline.
+  const front = plot.frontage && plot.frontage.conf > 0 && plot.frontage.sides.length ? plot.frontage : null;
   // Only show regulation fields the source actually publishes.
   const rules = [
     [t.rules.ratio, plot.rules?.ratio],
@@ -79,7 +83,7 @@ export function LandDetail() {
             garden={plot.gardenPct > 0}
             corner={plot.cornerPct > 0}
             street={onRoad(plot.faces, plot.mainRoadM)}
-            faces={plot.faces}
+            faces={plot.faces} north={facesNorth(plot.frontage)}
             sea={plot.seaPct > 0}
             nearBuilt={s?.isNearBuilt}
             units={units}
@@ -144,6 +148,30 @@ export function LandDetail() {
               </dd>
             </>
           ) : null}
+          {front ? (
+            <>
+              <dt className="text-muted">{t.detail.orientation}</dt>
+              <dd>
+                <span className="font-semibold">{COMPASS[compass8(front.sides[0].bearing)]}</span>{" "}
+                <span className="text-xs text-muted">({front.conf === 2 ? t.detail.confHigh : t.detail.confMedium})</span>
+              </dd>
+              {front.sides.length > 1 ? (
+                <>
+                  <dt className="text-muted">{t.detail.extraFrontage}</dt>
+                  <dd>{front.sides.slice(1).map((s) => COMPASS[compass8(s.bearing)]).join("، ")}</dd>
+                  <dt className="text-muted">{t.detail.plotType}</dt>
+                  <dd>{isCornerPlot(front) ? t.detail.cornerType : t.detail.throughType}</dd>
+                </>
+              ) : null}
+            </>
+          ) : plot.frontage ? (
+            <>
+              <dt className="text-muted">{t.detail.orientation}</dt>
+              <dd>
+                {t.detail.unknownDir} <span className="text-xs text-muted">{t.detail.unknownDirNote}</span>
+              </dd>
+            </>
+          ) : null}
           {ex?.n != null ? (
             <>
               <dt className="text-muted">{t.detail.neighbours}</dt>
@@ -166,6 +194,23 @@ export function LandDetail() {
             ) : null}
           </dd>
         </dl>
+        {front ? (
+          <div className="mt-3 flex items-center gap-3 border-t border-border pt-3">
+            <FrontageCompass frontage={front} />
+            <div className="text-sm">
+              <div className="font-semibold">{t.detail.compassTitle}</div>
+              <ul className="mt-1 space-y-0.5">
+                {front.sides.map((s, i) => (
+                  <li key={i} className="flex items-center gap-1.5">
+                    <span className="inline-block h-1.5 w-5 rounded-full" style={{ background: frontColor(i) }} />
+                    {i === 0 ? t.detail.legendFront : t.detail.legendFront2}: {COMPASS[compass8(s.bearing)]}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-1 text-xs text-muted">{t.detail.orientationNote}</div>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {plot.latitude != null || plot.approxLoc ? (
@@ -176,6 +221,8 @@ export function LandDetail() {
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
             <Legend className="bg-accent" label={t.detail.legendThis} />
+            {front && hasPlan ? <Legend className="bg-[#06b6d4]" label={t.detail.legendFront} /> : null}
+            {front && hasPlan && front.sides.length > 1 ? <Legend className="bg-[#d946ef]" label={t.detail.legendFront2} /> : null}
             <Legend className="bg-good" label={t.detail.legendAvailable} />
             {hasPlan ? <Legend className="bg-warn" label={t.plan.legendHeld} /> : null}
             {availableOnly ? null : <Legend className="bg-bad" label={t.detail.legendBooked} />}

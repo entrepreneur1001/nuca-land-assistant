@@ -60,7 +60,10 @@ export function FeatureBadges({
   units,
   held,
   faces,
+  north,
 }: {
+  /** The plot's street side faces north (بحري). */
+  north?: boolean;
   /** What the plot faces: badges a compound (premium or not) and existing buildings. */
   faces?: Faces | null;
   garden: boolean;
@@ -83,6 +86,7 @@ export function FeatureBadges({
         </span>
       ) : null}
       {street ? <Badge tone="accent">{t.badge.street}</Badge> : null}
+      {north ? <Badge tone="good">{t.badge.north}</Badge> : null}
       {faces?.built != null ? <Badge tone="warn">{t.badge.facingBuilt}</Badge> : null}
       {faces?.servicesLand != null ? <Badge tone="accent">{t.badge.servicesLand}</Badge> : null}
       {faces?.nearCompound ? (

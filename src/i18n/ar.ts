@@ -56,7 +56,11 @@ export const FACTOR: Record<string, string> = {
   area: "المساحة",
   demand: "بتتحجز بسرعة دلوقتي",
   surroundings: "الواجهة: طريق / كمبوند / مباني / خدمات",
+  orientation: "اتجاه الواجهة: بحري أحسن وقبلي أقل",
 };
+
+/** The eight directions a frontage can face, by compass sector (engine/frontage.ts): north first, clockwise. */
+export const COMPASS = ["بحري", "بحري شرقي", "شرقي", "قبلي شرقي", "قبلي", "قبلي غربي", "غربي", "بحري غربي"] as const;
 
 const availText = (n: number) => (n ? num(n) + " أرض متاحة" : "كل الأراضي اتحجزت");
 const areaCount = (n: number) => (n === 1 ? "منطقة واحدة" : n === 2 ? "منطقتين" : num(n) + (n <= 10 ? " مناطق" : " منطقة"));
@@ -472,6 +476,7 @@ export const t = {
     compound: "🏰 قدام كمبوند",
     premiumCompound: "🏰 قدام كمبوند مميز",
     facingBuilt: "🏠 قدام مباني",
+    north: "🧭 بحري",
     servicesLand: "🕌 قدام أرض خدمات",
     nearCompound: "🏰 جنب كمبوند",
     nearPremiumCompound: "🏰 جنب كمبوند مميز",
@@ -510,7 +515,8 @@ export const t = {
     units: "٣ شقق أو أكتر في الدور",
     facing: "على طريق أو قدام كمبوند / مباني / خدمات",
     sort: "رتّب حسب",
-    sorts: { score: "التقييم", reach: "فرصة الوصول", nearBuilt: "القرب من العمار", facing: "الواجهة", premium: "الأعلى تميزًا", price: "الأرخص", ppm: "الأرخص سعر متر", area: "الأكبر" },
+    north: "واجهتها بحري",
+    sorts: { score: "التقييم", reach: "فرصة الوصول", nearBuilt: "القرب من العمار", facing: "الواجهة", orientation: "اتجاه الواجهة", premium: "الأعلى تميزًا", price: "الأرخص", ppm: "الأرخص سعر متر", area: "الأكبر" },
     results: (n: number) => `${num(n)} أرض`,
     prev: "اللي قبله",
     next: "اللي بعده",
@@ -555,6 +561,7 @@ export const t = {
     compound: (name: string) => `قدام كمبوند ${name}`,
     premiumCompound: (name: string) => `قدام كمبوند مميز (${name})`,
     facingBuilt: "قدام مباني قائمة",
+    north: "واجهتها بحري",
     servicesLand: "قدام أرض خدمات على خريطة الهيئة (مسجد / مدرسة / مول…)",
     nearCompound: (name: string, m: number) => `جنب كمبوند ${name} (${num(Math.round(m / 10) * 10)} متر)`,
     nearPremiumCompound: (name: string, m: number) => `جنب كمبوند مميز (${name}، ${num(Math.round(m / 10) * 10)} متر)`,
@@ -615,6 +622,19 @@ export const t = {
       const svc = near ? ". قريب منها: " + near : "";
       return head + nearC + svc;
     },
+    orientation: "اتجاه الواجهة",
+    extraFrontage: "واجهة إضافية",
+    plotType: "نوع القطعة",
+    cornerType: "ناصية (على شارعين)",
+    throughType: "على شارعين متقابلين",
+    unknownDir: "غير محدد",
+    confHigh: "مؤكد",
+    confMedium: "تقريبي",
+    orientationNote: "(من شكل القطعة والشارع على مخطط الهيئة، مش من بيانات الهيئة)",
+    unknownDirNote: "(مفيش شارع واضح قدامها على المخطط)",
+    legendFront: "الواجهة الرئيسية",
+    legendFront2: "واجهة إضافية",
+    compassTitle: "اتجاه واجهة الأرض",
     neighbours: "الأراضي اللي حواليها اتحجزت",
     breakdown: "تفاصيل التقييم",
     chanceTitle: "فرصة إنها تفضل فاضية لحد دورك",

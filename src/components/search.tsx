@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_WEIGHTS } from "@/engine/config";
 import type { RankedLand } from "@/engine/compute";
+import { facesNorth } from "@/engine/frontage";
 import { facesSomething } from "@/engine/surroundings";
 import { FACTOR, km, num, t, usd } from "@/i18n/ar";
 import { track } from "@/lib/firebase";
@@ -24,7 +25,7 @@ const premiumPct = (r: RankedLand) => r.cornerPct + r.gardenPct + r.seaPct;
 export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; cities: string[] }) {
   const app = useApp()!;
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ city: "", project: "", minArea: "", maxArea: "", maxDp: "", minReach: "", garden: false, corner: false, near: false, units: false, facing: false });
+  const [f, setF] = useState({ city: "", project: "", minArea: "", maxArea: "", maxDp: "", minReach: "", garden: false, corner: false, near: false, units: false, facing: false, north: false });
   const [sort, setSort] = useState<Sort>("score");
   const [page, setPage] = useState(0);
 
@@ -45,6 +46,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
         (!f.corner || r.hasCorner) &&
         (!f.near || r.isNearBuilt) &&
         (!f.facing || r.hasStreet || facesSomething(r.faces)) &&
+        (!f.north || facesNorth(r.frontage)) &&
         // null = the city sets units per plot (New Alamein): always multi-unit.
         (!f.units || r.unitsPerFloor == null || r.unitsPerFloor >= 3),
     );
@@ -53,6 +55,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
       reach: (a, b) => b.survival.mid - a.survival.mid,
       nearBuilt: (a, b) => (a.builtKm ?? 99) - (b.builtKm ?? 99),
       facing: (a, b) => b.factors.surroundings - a.factors.surroundings || b.score - a.score,
+      orientation: (a, b) => b.factors.orientation - a.factors.orientation || b.score - a.score,
       premium: (a, b) => premiumPct(b) - premiumPct(a) || b.score - a.score,
       price: (a, b) => a.totalPrice - b.totalPrice,
       ppm: (a, b) => a.pricePerMeter - b.pricePerMeter,
@@ -129,6 +132,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                 ["near", `🏘️ ${t.search.nearBuilt}`],
                 ["units", `🏢 ${t.search.units}`],
                 ["facing", `🛣️ ${t.search.facing}`],
+                ["north", `🧭 ${t.search.north}`],
               ] as const
             ).map(([k, label]) => (
               <label key={k} className="flex items-center gap-1.5">
@@ -154,7 +158,7 @@ export function AdvancedSearch({ ranked, cities }: { ranked: RankedLand[]; citie
                       {num(l.area)} {t.card.m2} · {t.card.dp} {usd(l.downPayment)} · 🏘️ {km(l.builtKm)}
                     </div>
                   </div>
-                  <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} faces={l.faces} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} held={l.held} />
+                  <FeatureBadges garden={l.hasGarden} corner={l.hasCorner} street={l.hasStreet} faces={l.faces} north={facesNorth(l.frontage)} nearBuilt={l.isNearBuilt} units={l.unitsPerFloor} held={l.held} />
                   <SurvivalBar {...l.survival} />
                   <span className="text-center" title={t.card.scoreHint}>
                     <span className="font-bold">{num(l.score)}</span>
