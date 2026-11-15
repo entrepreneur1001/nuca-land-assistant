@@ -9,8 +9,12 @@
 import { ORIENTATION_VALUES } from "./config";
 import { boxOf, pointInPolygon, type Blocker, type XY } from "./surroundings";
 
-/** What the official plan shows at a point: a street, a street drawn faded (outside the zone), a pavement, greenery, a plot, anything else. */
-export type Ground = "road" | "pale" | "pave" | "green" | "plot" | "other";
+/**
+ * What the official plan shows at a point: a street, a street drawn faded (outside the zone), a pavement, greenery,
+ * a plot, one of the red blocks the plans draw along their streets, something else drawn on or beside a street
+ * (a tree's crown, a kerb or lane line, a pavement in an unusual tint), anything else.
+ */
+export type Ground = "road" | "pale" | "pave" | "green" | "plot" | "block" | "clutter" | "other";
 export type Probe = (x: number, y: number) => Ground;
 
 /** 0 = not determined («غير محدد»), 1 = medium, 2 = high. */
@@ -52,6 +56,21 @@ export const FRONTAGE = {
   /** Sides shorter than this, or than `minRatio` of the longest frontage, are corner cuts, not frontages. */
   minSideM: 4,
   minRatio: 0.3,
+  /**
+   * Second look, only for a plot the rules above find no street for: the plan often draws trees and red blocks on
+   * the street, which hide it. A red block counts as street; up to this many metres of clutter, pavement or planting
+   * in a row are looked through once the street has begun, and before it begins they count like a pavement. Such a
+   * side is never "high".
+   */
+  coveredGapM: 14,
+  /**
+   * …and a test point that sees no street at all because a tree's crown covers it (nothing but planting, clutter and
+   * pavement for the first `hiddenM` metres, at least `hiddenMinM` of them planting or clutter) stands in for one, as
+   * long as this share of the side's points do see the street.
+   */
+  hiddenM: 10,
+  hiddenMinM: 4,
+  coveredShare: 0.25,
 } as const;
 
 // ---- compass ----
@@ -197,6 +216,8 @@ export interface SideEvidence {
   across: number;
   /** Median width of the street seen, metres. */
   widthM: number;
+  /** Second look only: share that see no street because a tree's crown or the like covers the first metres. */
+  hidden: number;
 }
 
 const inBlockers = (x: number, y: number, blockers: Blocker[]) => {
@@ -205,7 +226,7 @@ const inBlockers = (x: number, y: number, blockers: Blocker[]) => {
 };
 
 /** Looks outward from every test point of a side: is there a street, how wide, and what is across it. */
-export function sideEvidence(ring: XY[], side: Side, probe: Probe, blockers: Blocker[], F: typeof FRONTAGE = FRONTAGE): SideEvidence {
+export function sideEvidence(ring: XY[], side: Side, probe: Probe, blockers: Blocker[], F: typeof FRONTAGE = FRONTAGE, covered = false): SideEvidence {
   const n = ring.length;
   const ccw = signedArea(ring) > 0;
   let tests = 0;
@@ -214,6 +235,7 @@ export function sideEvidence(ring: XY[], side: Side, probe: Probe, blockers: Blo
   let open = 0;
   let free = 0;
   let across = 0;
+  let hidden = 0;
   const widths: number[] = [];
   for (const i of side.edges) {
     const a = ring[i];
@@ -237,6 +259,10 @@ export function sideEvidence(ring: XY[], side: Side, probe: Probe, blockers: Blo
       let green = 0;
       let pave = 0;
       let planted = 0;
+      let yellow = 0;
+      let cover = 0; // planting, clutter and red blocks in the first metres
+      let bare = 0; // …and anything that is neither those nor pavement nor street
+      let grey = 0; // metres of street actually seen (what is looked through does not count)
       for (let d = 1; d <= F.reachM; d++) {
         const x = px + nx * d;
         const y = py + ny * d;
@@ -244,35 +270,48 @@ export function sideEvidence(ring: XY[], side: Side, probe: Probe, blockers: Blo
           blockedAt = d;
           break;
         }
-        if (ended) continue;
+        if (ended && !(covered && d <= F.hiddenM)) continue;
         const g = probe(x, y);
+        if (covered && d <= F.hiddenM) {
+          if (g === "green" || g === "clutter" || g === "block") cover++;
+          else if (g === "plot" || g === "other") bare++;
+        }
+        // Second look: yellow right outside is a plot that was not outlined, not a street's edge.
+        if (ended) continue;
+        if (covered && first < 0 && g === "plot" && ++yellow > 1) {
+          ended = true;
+          continue;
+        }
         if (d <= F.roadStartM && g === "green") green++;
         // A pavement, or a planted strip, between the plot and its street is part of the street's edge.
-        if ((g === "pave" || g === "green") && first < 0) pave++;
-        if (g === "green" && first < 0) planted++;
+        const soft = g === "pave" || g === "green" || (covered && g === "clutter");
+        if (soft && first < 0) pave++;
+        if ((g === "green" || (covered && g === "clutter")) && first < 0) planted++;
         const lead = d - pave; // metres walked so far that are not pavement
-        if (g === "road" || g === "pale") {
+        if (g === "road" || g === "pale" || (covered && g === "block")) {
           if (first < 0) {
             if (lead > F.roadStartM || d > F.paveReachM) ended = true;
             else {
               first = d;
               firstKind = g;
               last = d;
+              grey = 1;
             }
           } else {
             last = d;
             gap = 0;
+            grey++;
           }
-        } else if (first >= 0 && ++gap > 1) ended = true; // one odd sample (a lane line, a kerb) does not end the street
+        } else if (first >= 0 && ++gap > (covered && soft ? F.coveredGapM : 1)) ended = true; // one odd sample (a lane line, a kerb) does not end the street
         else if (first < 0 && (lead >= F.roadStartM || d >= F.paveReachM)) ended = true;
       }
       const width = first >= 0 ? last - first + 1 : 0;
-      if (width >= F.minRoadM) {
+      if ((covered ? grey : width) >= F.minRoadM) {
         // Behind more than a kerb's width of planting the street is less certain: counted like a faded one.
-        if (firstKind === "road" && planted <= 2) road++;
+        if (!covered && firstKind === "road" && planted <= 2) road++;
         else pale++;
         widths.push(width);
-      }
+      } else if (covered && blockedAt > F.hiddenM && bare <= 2 && cover >= F.hiddenMinM) hidden++;
       if (blockedAt > F.roadStartM) free++;
       if (blockedAt > F.roadStartM && green < F.roadStartM / 2) open++;
       if (blockedAt > F.roadStartM && blockedAt <= F.reachM) across++;
@@ -280,7 +319,7 @@ export function sideEvidence(ring: XY[], side: Side, probe: Probe, blockers: Blo
   }
   widths.sort((x, y) => x - y);
   const share = (x: number) => (tests ? x / tests : 0);
-  return { n: tests, road: share(road), pale: share(pale), open: share(open), free: share(free), across: share(across), widthM: widths.length ? widths[widths.length >> 1] : 0 };
+  return { n: tests, road: share(road), pale: share(pale), open: share(open), free: share(free), across: share(across), widthM: widths.length ? widths[widths.length >> 1] : 0, hidden: share(hidden) };
 }
 
 export interface FrontageContext {
@@ -313,6 +352,13 @@ export function plotFrontage(ring: XY[], probe: Probe, blockers: Blocker[], ctx:
       else if (ev.road + ev.pale >= F.sideShare) found.push({ side, ev, sure: false });
     } else if (ev.open >= F.sideShare && ev.across >= 0.5) found.push({ side, ev, sure: false });
   }
+  // No street side: look again through what the plan draws on top of its streets. Medium at best.
+  if (!found.length && ctx.roadColour)
+    for (const side of plotSides(ring, F.mergeDeg)) {
+      if (side.lengthM < F.minSideM) continue;
+      const ev = sideEvidence(ring, side, probe, near, F, true);
+      if (ev.road + ev.pale >= F.coveredShare && ev.road + ev.pale + ev.hidden >= F.sideShare) found.push({ side, ev, sure: false });
+    }
   if (!found.length) return { conf: 0, sides: [] };
   const longest = Math.max(...found.map((f) => f.side.lengthM));
   const kept = found.filter((f) => f.side.lengthM >= F.minRatio * longest);

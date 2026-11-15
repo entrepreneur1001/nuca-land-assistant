@@ -64,10 +64,14 @@ function ground(r: number, g: number, b: number): Ground {
     const v = (r + g + b) / 3;
     if (v >= 170 && v <= 216) return "road"; // streets: grey ≈ 196
     if (v >= 218 && v <= 243) return "pale"; // the same streets faded, outside the zone
-    return "other";
+    return v < 170 ? "clutter" : "other"; // kerbs, lane lines, shadows; blank paper is "other"
   }
   if (g > r + 6 && g > b + 15) return "green";
   if (r >= 185 && r <= 240 && r - g >= 12 && r - g <= 45 && g - b >= 4 && g - b <= 30 && b >= 130) return "pave"; // pavements: tan ≈ 213,183,170
+  if (r > 200 && g < 60 && b < 60) return "block"; // the red blocks drawn along the streets
+  if (r > 150 && g < 130 && b < 130 && r - g > 60) return "clutter"; // a block's blurred edge
+  if (hi < 175 && r >= b && Math.abs(r - g) <= 20) return "clutter"; // tree crowns and their shadows (olive)
+  if (r >= 170 && r <= 240 && r - g >= 8 && r - g <= 45 && g - b >= 4 && g - b <= 75 && b >= 110) return "clutter"; // pavements in other tints
   return "other";
 }
 

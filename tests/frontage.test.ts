@@ -53,6 +53,45 @@ describe("compass8", () => {
   });
 });
 
+describe("plotFrontage, second look (a street the plan draws things on)", () => {
+  const sides = [blocker(rect(-20, 0)), blocker(rect(20, 0)), blocker(rect(0, -30))];
+
+  it("sees a street whose near edge is covered by a red block", () => {
+    // North of the plot: 2 m of street, a 9 m red block, then street again. The strict rule needs 3 m of street.
+    const p = plan([[-100, 30, 100, 32], [-100, 41, 100, 50]], [[[-100, 32, 100, 41], "block"]]);
+    const f = plotFrontage(rect(0, 0), p, sides, ctx);
+    expect(directions(f)).toEqual([0]);
+    expect(f.conf).toBe(1);
+  });
+
+  it("sees a street half hidden under tree crowns", () => {
+    // The street is visible along 8 of the side's 20 m; a crown covers the rest.
+    const p = plan([NORTH], [[[8, 30, 20, 42], "green"]]);
+    const f = plotFrontage(rect(0, 0), p, sides, ctx);
+    expect(directions(f)).toEqual([0]);
+    expect(f.conf).toBe(1);
+  });
+
+  it("does not take a garden for a street", () => {
+    const p = plan([], [[[-100, 30, 100, 42], "green"]]);
+    expect(plotFrontage(rect(0, 0), p, sides, ctx).conf).toBe(0);
+  });
+
+  it("does not look through a neighbouring plot that was not outlined", () => {
+    // Yellow right outside, with its red number further in: not a street.
+    const p = plan([], [[[-100, 34, 100, 40], "block"], [[-100, 30, 100, 60], "plot"]]);
+    expect(plotFrontage(rect(0, 0), p, sides, ctx).conf).toBe(0);
+  });
+
+  it("leaves a plot the strict rule already measures untouched", () => {
+    // A clear street to the south, a covered one to the north: only the clear one is reported, still high.
+    const p = plan([SOUTH, [-100, 30, 100, 32], [-100, 41, 100, 50]], [[[-100, 32, 100, 41], "block"]]);
+    const f = plotFrontage(rect(0, 0), p, [blocker(rect(-20, 0)), blocker(rect(20, 0))], ctx);
+    expect(directions(f)).toEqual([4]);
+    expect(f.conf).toBe(2);
+  });
+});
+
 describe("plotSides", () => {
   it("gives a rectangle four sides facing the four directions, whatever the winding", () => {
     for (const ring of [rect(0, 0), [...rect(0, 0)].reverse()]) {
