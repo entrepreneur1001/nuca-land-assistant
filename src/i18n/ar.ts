@@ -308,6 +308,10 @@ export const t = {
       corner: "ناصية",
     },
     hot: "مطلوبة",
+    /** Plots that were booked and are offered again. */
+    returned: (n: number) => (n === 1 ? "رجعت قطعة" : n === 2 ? "رجعت قطعتين" : n <= 10 ? `رجعت ${num(n)} قطع` : `رجعت ${num(n)} قطعة`),
+    returnedH: "قطع رجعت متاحة",
+    returnedNote: "قطع كانت اتحجزت وصاحب الحجز سابها، فرجعت متاحة للحجز تاني.",
     cheapest: "أرخص سعر متر في المدينة",
     lowestDp: "أقل مقدم في المدينة",
     noRules: "الاشتراطات البنائية للمنطقة دي مش منشورة في بيانات الطرح، راجع كراسة الشروط.",
@@ -582,6 +586,7 @@ export const t = {
     back: "→ ارجع للرئيسية",
     available: "متاحة",
     booked: "اتحجزت",
+    returned: (d: string) => `رجعت متاحة ${d}`,
     rankOf: (n: number) => `رقم ${num(n)} في الأراضي المناسبة ليك`,
     total: "السعر الكلي",
     base: "سعر المتر الأساسي",

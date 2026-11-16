@@ -7,7 +7,7 @@ import type { AreaStats, CityInfo } from "@/lib/area-stats";
 import { OFFICIAL, phasePath, type Phase } from "@/lib/phases";
 import { SITE_URL } from "@/lib/site";
 import { JsonLd, breadcrumbs } from "./json-ld";
-import { Card, Stat } from "./ui";
+import { Badge, Card, Stat } from "./ui";
 
 /** Building blocks for the static phase pages (/[phase]/…); the live versions in live-blocks.tsx reuse them in the browser. */
 
@@ -226,16 +226,26 @@ export function HubLinks({ phase, exclude }: { phase: Phase; exclude?: "availabl
 export function CityLinks({ phase, cities }: { phase: Phase; cities: CityInfo[] }) {
   return (
     <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-      {cities.map((c) => (
-        <li key={c.slug}>
-          <Link href={phasePath.city(phase, c.slug)} className="block rounded-xl border border-border bg-surface px-3 py-2 text-sm hover:border-accent">
-            <div className="font-semibold">{c.name}</div>
-            <div className="text-xs text-muted">
-              {s.stat.available}: {num(c.stats.available)} · {usd(c.stats.ppmMin)}/م²
-            </div>
-          </Link>
-        </li>
-      ))}
+      {cities.map((c) => {
+        // A city with nothing left reads as finished: grey card, muted name, «خلصت» instead of a zero.
+        const open = c.stats.available > 0;
+        return (
+          <li key={c.slug}>
+            <Link
+              href={phasePath.city(phase, c.slug)}
+              className={`block h-full rounded-xl border border-border px-3 py-2 text-sm ${open ? "bg-surface hover:border-accent" : "bg-surface-2 text-muted hover:border-muted"}`}
+            >
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
+                {c.name}
+                {c.stats.returned ? <Badge tone="good">{s.returned(c.stats.returned)}</Badge> : null}
+              </div>
+              <div className="text-xs text-muted">
+                {open ? `${s.stat.available}: ${num(c.stats.available)}` : s.available.soldOut} · {usd(c.stats.ppmMin)}/م²
+              </div>
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }

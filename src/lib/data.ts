@@ -1,7 +1,7 @@
 "use client";
 
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import { tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple, type Snapshot } from "@/data/snapshot";
+import { markReturned, tupleToPlot, unpackTuples, type MetaDoc, type PlotTuple, type Snapshot } from "@/data/snapshot";
 import { firestore } from "./firebase";
 import { loadFrontage } from "./frontage";
 import { loadSurroundings } from "./surroundings";
@@ -64,12 +64,15 @@ export async function buildSnapshot(meta: MetaDoc): Promise<Snapshot> {
   const frontage = await frontageP;
   return {
     meta,
-    plots: parts.flat().map((t) => {
-      const p = tupleToPlot(t, meta);
-      p.faces = faces.get(p.id) ?? null;
-      p.frontage = frontage.get(p.id) ?? null;
-      return p;
-    }),
+    plots: markReturned(
+      parts.flat().map((t) => {
+        const p = tupleToPlot(t, meta);
+        p.faces = faces.get(p.id) ?? null;
+        p.frontage = frontage.get(p.id) ?? null;
+        return p;
+      }),
+      meta,
+    ),
   };
 }
 

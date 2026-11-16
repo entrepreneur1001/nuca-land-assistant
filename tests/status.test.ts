@@ -4,6 +4,7 @@ import { buildOfficialIndex, officialPlotId, type OfficialZoneEntry } from "@/in
 import type { ZoneCrawl, ZoneRow } from "@/ingest/nuca-plots";
 import {
   bumpBookingsByDay,
+  bumpReturned,
   cairoDayKey,
   cairoTimeIso,
   deriveStatuses,
@@ -89,6 +90,13 @@ describe("deriveStatuses", () => {
     expect(by.get("g-1")).toMatchObject({ state: 0, bookingTs: 0 });
     expect(by.get("g-2")).toMatchObject({ state: 1, bookingTs: Date.parse("2026-11-01T08:00:00Z") });
     expect(r.newlyAvailable).toEqual(["g-1"]);
+    expect(r.returned).toEqual([{ id: "g-1", bookedTs: Date.parse("2026-11-01T08:00:00Z") }]);
+  });
+
+  it("a booked plot that comes back with a preliminary booking on it also counts as returned", () => {
+    const r = deriveStatuses({ prev: [rec("1", 1)], crawls: new Map([[4797, [crawl("available", [row("1", "held")])]]]), index, zones, now: NOW });
+    expect(r.records[0]).toMatchObject({ state: 2, bookingTs: 0 });
+    expect(r.returned.map((x) => x.id)).toEqual(["g-1"]);
   });
 
   it("the booked view marks rows booked without rewriting an existing timestamp", () => {
@@ -219,5 +227,42 @@ describe("bookings per day and synthesized batches", () => {
       ...Array.from({ length: 5 }, (_, i) => rec(`c${i}`, 1, { sectorId: "C", bookingTs: NOW.getTime() - 30 * 86_400_000 })),
     ];
     expect([...hotSectors(recs, NOW)]).toEqual(["A"]);
+  });
+});
+
+describe("returned plots (booked, then offered again)", () => {
+  const H = 3600_000;
+  const opts = { minBookedMs: 3 * H, maxPerRun: 20 };
+  const t = NOW.getTime();
+
+  it("records a return only when the plot had been booked long enough to be a real booking", () => {
+    const records = [rec("1"), rec("2"), rec("3")];
+    const out = bumpReturned(undefined, [{ id: "g-1", bookedTs: t - 5 * H }, { id: "g-2", bookedTs: t - 600_000 }, { id: "g-3", bookedTs: 0 }], records, NOW, opts);
+    expect(out).toEqual([{ id: "g-1", at: NOW.toISOString() }]);
+  });
+
+  it("ignores a pass that returns many plots at once (a misread page correcting itself)", () => {
+    const records = Array.from({ length: 21 }, (_, i) => rec(String(i + 1)));
+    const prev = [{ id: "g-1", at: new Date(t - H).toISOString() }];
+    const out = bumpReturned(prev, records.map((r) => ({ id: r.id, bookedTs: t - 24 * H })), records, NOW, opts);
+    expect(out).toEqual(prev);
+  });
+
+  it("drops entries booked again or older than two weeks, keeps the rest newest first", () => {
+    const prev = [
+      { id: "g-1", at: new Date(t - 2 * 24 * H).toISOString() },
+      { id: "g-2", at: new Date(t - 3 * 24 * H).toISOString() }, // booked again
+      { id: "g-3", at: new Date(t - 15 * 24 * H).toISOString() }, // too old
+      { id: "g-9", at: new Date(t - H).toISOString() }, // plot no longer exists
+    ];
+    const records = [rec("1"), rec("2", 1), rec("3"), rec("4"), rec("5", 2)];
+    const out = bumpReturned(prev, [{ id: "g-4", bookedTs: t - 4 * H }, { id: "g-5", bookedTs: t - 4 * H }], records, NOW, opts);
+    expect(out.map((x) => x.id)).toEqual(["g-4", "g-5", "g-1"]);
+  });
+
+  it("a plot that returns a second time moves to the top with the new time", () => {
+    const prev = [{ id: "g-2", at: new Date(t - H).toISOString() }, { id: "g-1", at: new Date(t - 5 * 24 * H).toISOString() }];
+    const out = bumpReturned(prev, [{ id: "g-1", bookedTs: t - 4 * H }], [rec("1"), rec("2")], NOW, opts);
+    expect(out).toEqual([{ id: "g-1", at: NOW.toISOString() }, prev[0]]);
   });
 });

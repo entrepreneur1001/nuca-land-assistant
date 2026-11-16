@@ -1,7 +1,7 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { tupleToPlot, unpackTuples, type MetaDoc, type Snapshot } from "@/data/snapshot";
+import { markReturned, tupleToPlot, unpackTuples, type MetaDoc, type Snapshot } from "@/data/snapshot";
 import { citiesOf, dataDateOf, statsOf, type CityInfo } from "./area-stats";
 
 export type { AreaStats, CityInfo, DistrictInfo } from "./area-stats";
@@ -63,7 +63,7 @@ export function getBuildSnapshot(): Promise<Snapshot> {
     const parts = await Promise.all(
       meta.chunks.map(async (c) => unpackTuples((await readDoc<{ data: string }>(`plots/${c.id}`)).data)),
     );
-    return { meta, plots: parts.flat().map((t) => tupleToPlot(t, meta)) };
+    return { meta, plots: markReturned(parts.flat().map((t) => tupleToPlot(t, meta)), meta) };
   })();
   return snapshot;
 }

@@ -158,6 +158,7 @@ describe("sync runner (official site)", () => {
     expect(r.inserted).toBe(0);
     expect(r.newlyBooked).toBe(2);
     expect(r.newlyAvailable).toBe(1); // plot 3 was booked in the snapshot but is offered again
+    expect(m.meta!.returned).toEqual([{ id: "guid-3", at: T0.toISOString() }]); // booked four days earlier: a real return
     expect(r.newlyBookedPlots.map((p) => p.plotNo).sort()).toEqual(["20", "7"]);
     expect(r.newlyBookedLabels.map((p) => p.id).sort()).toEqual(r.newlyBookedPlots.map((p) => p.id).sort());
     expect(r.newlyBookedLabels.every((p) => p.city && p.plotNo)).toBe(true);

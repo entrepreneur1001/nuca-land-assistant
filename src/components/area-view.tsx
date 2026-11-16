@@ -152,7 +152,9 @@ export function AreaView() {
             <Chip active={!area.district} onClick={() => go("all")}>{t.area.allDistricts}</Chip>
             {area.districts.map((d) => (
               <Chip key={d.id ?? "none"} active={area.district?.id === d.id} onClick={() => go(d.id)}>
-                {d.name} <span className="text-muted">({num(d.available)})</span>
+                <span className={d.available ? "" : "text-muted"}>{d.name}</span>{" "}
+                <span className="text-muted">({d.available ? num(d.available) : t.seo.available.soldOut})</span>
+                {d.returned ? <span className="text-good"> · {t.seo.returned(d.returned)}</span> : null}
               </Chip>
             ))}
           </div>

@@ -69,6 +69,36 @@ export function LiveCityLinks({ phase, initial, exclude }: { phase: Phase; initi
   return <CityLinks phase={phase} cities={exclude ? cities.filter((c) => c.slug !== exclude) : cities} />;
 }
 
+/**
+ * Plots that were booked and are offered again (meta.returned), newest first. Live only: the list changes by the
+ * minute and is empty most days, so the block appears once the snapshot is in and stays hidden when there are none.
+ */
+export function LiveReturned() {
+  const { snapshot } = useLive();
+  const plots = (snapshot?.plots ?? []).filter((p) => p.returnedAt).sort((a, b) => b.returnedAt!.localeCompare(a.returnedAt!));
+  if (!plots.length) return null;
+  return (
+    <section className="mt-8 space-y-3">
+      <div>
+        <h2 className="text-lg font-bold">{s.returnedH}</h2>
+        <p className="text-sm text-muted">{s.returnedNote}</p>
+      </div>
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {plots.slice(0, 12).map((p) => (
+          <li key={p.id}>
+            <Link href={`/land?id=${p.id}`} className="block h-full rounded-xl border border-border bg-surface px-3 py-2 text-sm hover:border-accent">
+              <div className="font-semibold">{t.fav.label(p.plotNumber, p.projectName, p.cityName)}</div>
+              <div className="text-xs text-muted">
+                {t.detail.returned(date(p.returnedAt))} · {usd(p.totalPrice)}
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function LiveHomeIntro({ phase, initial }: { phase: Phase; initial: { cities: CityInfo[]; totals: AreaStats; at: string | null } }) {
   const live = useDerived();
   const cities = useCities(initial.cities);
@@ -162,9 +192,11 @@ export function LiveDistricts({ initial }: { initial: CityInfo }) {
     const st = d.stats;
     const src = ruleSource(d.rules);
     return (
-      <Card key={d.id} className="space-y-3">
+      <Card key={d.id} className={`space-y-3 ${st.available ? "" : "bg-surface-2"}`}>
         <h3 className="flex flex-wrap items-center gap-2 text-lg font-bold">
           <AreaLink city={d.city} district={d.id}>{d.name}</AreaLink>
+          {st.available ? null : <Badge tone="muted">{s.available.soldOut}</Badge>}
+          {st.returned ? <Badge tone="good">{s.returned(st.returned)}</Badge> : null}
           {d.hot ? <Badge tone="warn">{s.hot}</Badge> : null}
           {best.cheapest === d.id ? <Badge tone="good">{s.cheapest}</Badge> : null}
           {best.lowestDp === d.id ? <Badge tone="good">{s.lowestDp}</Badge> : null}

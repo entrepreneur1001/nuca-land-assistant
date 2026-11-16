@@ -96,6 +96,9 @@ export interface MetaDoc {
   officialErrorAt?: string | null;
   /** Plots observed newly booked per Cairo day ("YYYY-MM-DD"), last 45 days. */
   bookingsByDay?: Record<string, number>;
+  /** Plots that were booked and are offered again (someone dropped the booking), newest first; `at` = when seen (ISO).
+   *  Kept 14 days, and only while the plot stays unbooked. */
+  returned?: { id: string; at: string }[];
   cities: string[];
   sectors: {
     id: string;
@@ -174,6 +177,8 @@ export interface Plot {
   faces?: Faces | null;
   /** Which way its street side faces (بحري / قبلي …), from public/frontage.json; null/absent = no outline to measure. */
   frontage?: Frontage | null;
+  /** When the plot came back after being booked (ISO), from `MetaDoc.returned`; null/absent = it did not. */
+  returnedAt?: string | null;
 }
 
 export interface Snapshot {
@@ -213,6 +218,14 @@ export function tupleToPlot(t: PlotTuple, meta: Pick<MetaDoc, "cities" | "sector
     mainRoadM: t[19] ?? null,
     rules: displayRules(sector?.rules ?? null),
   };
+}
+
+/** Sets `returnedAt` on the plots listed in `meta.returned` that are still available. */
+export function markReturned(plots: Plot[], meta: Pick<MetaDoc, "returned">): Plot[] {
+  if (!meta.returned?.length) return plots;
+  const at = new Map(meta.returned.map((r) => [r.id, r.at]));
+  for (const p of plots) if (p.status === "available" && at.has(p.id)) p.returnedAt = at.get(p.id)!;
+  return plots;
 }
 
 /** Stable chunk assignment: hash of the id → chunk index. */

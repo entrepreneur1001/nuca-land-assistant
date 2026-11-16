@@ -18,7 +18,7 @@ import { loadPlanFiles, planCentroids } from "./plan-places";
 const PLAN_MOVE_KM = 0.02;
 /** meta.distancePending entry for a whole district (sector id) whose distances are still to be measured. */
 const PENDING_SECTOR = "s:";
-import { bumpBookingsByDay, deriveStatuses, hotSectors, recordToTuple, seedBookingsByDay, synthesizeAllocations, tupleToRecord, type PlotRecord } from "./status";
+import { bumpBookingsByDay, bumpReturned, deriveStatuses, hotSectors, recordToTuple, seedBookingsByDay, synthesizeAllocations, tupleToRecord, type PlotRecord } from "./status";
 
 export interface ChunkDoc {
   version: string;
@@ -461,6 +461,7 @@ export async function runSync(store: Store, opts: RunOptions = {}): Promise<RunR
     const seeded = prev.bookingsByDay ?? seedBookingsByDay(prevRecords, now, prev.allocations);
     const bookingsByDay = bumpBookingsByDay(seeded, result.newlyBooked, now);
     meta.bookingsByDay = bookingsByDay;
+    meta.returned = bumpReturned(prev.returned, derived.returned, records, now, { minBookedMs: OFFICIAL_SITE.returnedMinBookedMs, maxPerRun: OFFICIAL_SITE.maxReturnedPerRun });
     meta.allocations = synthesizeAllocations(meta.officialNews ?? [], bookingsByDay, now);
     const oq = meta.officialNews?.length ? officialQueue(meta.officialNews, now) : null;
     meta.market = {

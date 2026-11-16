@@ -26,6 +26,10 @@ export const OFFICIAL_SITE = {
   zonesMaxAgeMs: 24 * 3600_000,
   /** A run that would mark more plots booked than this is refused unless --accept-large (protects against a broken page). */
   maxNewlyBookedPerRun: Number(process.env.OFFICIAL_MAX_NEWLY_BOOKED ?? 1500),
+  /** A plot offered again counts as "came back" only after being booked this long; shorter is a misread page correcting itself. */
+  returnedMinBookedMs: 3 * 3600_000,
+  /** More plots than this offered again in one pass is a correction of a misread page; none of them is recorded. */
+  maxReturnedPerRun: 20,
   /** A district is "hot" when its bookings in the last 7 days reach max(hotMinBookings, hotShare × its plots). */
   hotMinBookings: 10,
   hotShare: 0.05,

@@ -5,7 +5,7 @@ import { FrontageCompass, frontColor } from "./compass";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { COMPASS, FACTOR, km, num, pct, t, usd } from "@/i18n/ar";
+import { COMPASS, FACTOR, date, km, num, pct, t, usd } from "@/i18n/ar";
 import type { Plot } from "@/data/snapshot";
 import { isOnMainRoad } from "@/engine/roads";
 import { onRoad } from "@/engine/surroundings";
@@ -78,6 +78,7 @@ export function LandDetail() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {booked ? <Badge tone="bad">{t.detail.booked}</Badge> : <Badge tone="good">{t.detail.available}</Badge>}
+          {!booked && plot.returnedAt ? <Badge tone="accent">{t.detail.returned(date(plot.returnedAt))}</Badge> : null}
           {s && personal ? <RecBadge rec={s.recommendation} /> : null}
           <FeatureBadges
             garden={plot.gardenPct > 0}

@@ -123,6 +123,8 @@ export interface DeriveResult {
   inserted: string[];
   newlyBooked: string[];
   newlyAvailable: string[];
+  /** The same plots with the time they had been observed booked (0 = unknown), before it is cleared. */
+  returned: { id: string; bookedTs: number }[];
   /** Free plots that now carry a preliminary booking («حجز مبدئى»). */
   newlyHeld: string[];
   /** Previous plots whose (city, zone) has no official counterpart; their status is frozen. */
@@ -154,7 +156,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
     else byZid.set(zid, [...(byZid.get(zid) ?? []), r]);
   }
   const zoneInfo = new Map(input.zones.map((z) => [z.zid, z]));
-  const result: DeriveResult = { records: [], inserted: [], newlyBooked: [], newlyAvailable: [], newlyHeld: [], unmapped, newSquares: [], perZone: new Map() };
+  const result: DeriveResult = { records: [], inserted: [], newlyBooked: [], newlyAvailable: [], returned: [], newlyHeld: [], unmapped, newSquares: [], perZone: new Map() };
   const newSquares = new Map<string, { zid: number; square: string; n: number }>();
 
   /**
@@ -206,6 +208,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
         rec.bookingTs = now;
         result.newlyBooked.push(rec.id);
       } else if (state !== 1 && was === 1) {
+        result.returned.push({ id: rec.id, bookedTs: rec.bookingTs });
         rec.bookingTs = 0;
         result.newlyAvailable.push(rec.id);
       } else if (state === 1 && !rec.bookingTs) rec.bookingTs = now;
@@ -221,6 +224,7 @@ export function deriveStatuses(input: DeriveInput): DeriveResult {
         existing.bookingTs = now;
         result.newlyBooked.push(id);
       } else if (state !== 1 && was === 1) {
+        result.returned.push({ id, bookedTs: existing.bookingTs });
         existing.bookingTs = 0;
         result.newlyAvailable.push(id);
       }
@@ -333,6 +337,35 @@ export function seedBookingsByDay(records: PlotRecord[], now: Date, batches: Met
     out[cairoDayKey(t)] = a.b;
   }
   return out;
+}
+
+export const RETURNED_KEEP_DAYS = 14;
+export const RETURNED_KEEP = 100;
+
+/**
+ * The list of plots that were booked and are offered again (newest first). A return counts only when the plot
+ * had been booked for `minBookedMs` (a misread page "books" plots and the next pass "returns" them within the
+ * hour), and a pass that returns more than `maxPerRun` at once is a correction, not people changing their mind.
+ * Entries leave when the plot is booked again or after `RETURNED_KEEP_DAYS`.
+ */
+export function bumpReturned(
+  prev: MetaDoc["returned"],
+  returned: { id: string; bookedTs: number }[],
+  records: PlotRecord[],
+  now: Date,
+  { minBookedMs, maxPerRun }: { minBookedMs: number; maxPerRun: number },
+): NonNullable<MetaDoc["returned"]> {
+  const t = now.getTime();
+  const open = new Set(records.filter((r) => r.state !== 1).map((r) => r.id));
+  const real = returned.length > maxPerRun ? [] : returned.filter((x) => x.bookedTs > 0 && t - x.bookedTs >= minBookedMs);
+  const fresh = new Set(real.map((x) => x.id));
+  const since = t - RETURNED_KEEP_DAYS * 86_400_000;
+  return [
+    ...real.map((x) => ({ id: x.id, at: now.toISOString() })),
+    ...(prev ?? []).filter((x) => !fresh.has(x.id) && Date.parse(x.at) >= since),
+  ]
+    .filter((x) => open.has(x.id))
+    .slice(0, RETURNED_KEEP);
 }
 
 /** Adds `n` bookings observed at `now` and drops days older than `keepDays`. */

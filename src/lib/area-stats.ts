@@ -18,6 +18,8 @@ export interface AreaStats {
   dpMin: number | null;
   garden: number;
   corner: number;
+  /** Available plots that came back after being booked (someone dropped the booking) in the last two weeks. */
+  returned: number;
 }
 
 const median = (xs: number[]) => {
@@ -47,6 +49,7 @@ export function statsOf(plots: Plot[]): AreaStats {
     dpMin: min(pos((p) => p.downPayment)),
     garden: avail.filter((p) => p.gardenPct > 0).length,
     corner: avail.filter((p) => p.cornerPct > 0).length,
+    returned: avail.filter((p) => p.returnedAt).length,
   };
 }
 
@@ -139,6 +142,8 @@ export interface AreaDistrict {
   hot: boolean;
   total: number;
   available: number;
+  /** Available plots that came back after being booked. */
+  returned: number;
   /** Plots without coordinates, drawn as one approximate circle at the district's centre. */
   unlocated: number;
   unlocatedAvailable: number;
@@ -171,6 +176,7 @@ export function areaPlots({ meta, plots }: Snapshot, city: string, districtId?: 
         hot: !!s?.hot,
         total: ps.length,
         available: ps.filter((p) => p.status === "available").length,
+        returned: ps.filter((p) => p.status === "available" && p.returnedAt).length,
         unlocated: unlocated.length,
         unlocatedAvailable: unlocated.filter((p) => p.status === "available").length,
         centre: s?.c ? { lat: s.c[0], lng: s.c[1] } : null,

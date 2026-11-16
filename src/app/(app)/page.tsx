@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Home } from "@/components/home";
 import { JsonLd } from "@/components/json-ld";
-import { LiveCityLinks, LiveHomeIntro } from "@/components/live-blocks";
+import { LiveCityLinks, LiveHomeIntro, LiveReturned } from "@/components/live-blocks";
 import { HubLinks } from "@/components/phase-blocks";
 import { t } from "@/i18n/ar";
 import { getCities, getDataDate, getTotals } from "@/lib/build-data";
@@ -35,6 +35,7 @@ export default async function Page() {
         <HubLinks phase={phase} />
       </nav>
       <Home />
+      <LiveReturned />
       <section className="mt-8 space-y-3">
         <h2 className="text-lg font-bold">{h.citiesH(phase)}</h2>
         <LiveCityLinks phase={phase} initial={cities} />
